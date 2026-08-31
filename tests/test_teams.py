@@ -3,8 +3,8 @@ import pytest
 
 from nfl.teams import (
     ALIASES, EXPANSION_ELO, FRANCHISES, RELOCATIONS, UnknownTeam,
-    canonical_team, canonical_team_expr, canonicalize, dedupe_team_table,
-    franchise_ids, initial_elo, is_active, team_info,
+    ERA_OVERRIDES, canonical_team, canonical_team_expr, canonicalize,
+    dedupe_team_table, franchise_ids, initial_elo, is_active, team_info,
 )
 from tests.conftest import SCHEDULE_ABBREVIATIONS
 
@@ -151,3 +151,73 @@ def test_joining_raw_teams_inflates_rows_but_team_info_does_not(raw_teams):
 def test_team_info_rejects_a_table_that_is_not_all_32(raw_teams):
     with pytest.raises(AssertionError):
         team_info(raw_teams)          # fixture only covers 4 franchises
+
+
+# --- pre-1999 abbreviations found by the dataset sweep ---------------------
+
+@pytest.mark.parametrize("abbr,expected", [
+    ("PHX", "ARI"),   # Phoenix Cardinals, rosters_weekly.draft_club
+    ("PHO", "ARI"),   # Phoenix Cardinals, draft_picks
+    ("RAM", "LA"),    # Los Angeles Rams pre-1995, draft_picks
+    ("RAI", "LV"),    # Los Angeles Raiders
+])
+def test_defunct_abbreviations_map(abbr, expected):
+    assert canonical_team(abbr) == expected
+
+
+@pytest.mark.parametrize("abbr,season,expected", [
+    ("HOU", 1993, "TEN"),   # Houston Oilers -> Titans lineage
+    ("HOU", 1996, "TEN"),   # last Oilers season
+    ("HOU", 2002, "HOU"),   # Texans, a different franchise entirely
+    ("STL", 1985, "ARI"),   # St. Louis Cardinals
+    ("STL", 1987, "ARI"),
+    ("STL", 2005, "LA"),    # St. Louis Rams
+    ("BAL", 1981, "IND"),   # Baltimore Colts
+    ("BAL", 2000, "BAL"),   # Ravens
+])
+def test_era_collisions_resolve_by_season(abbr, season, expected):
+    assert canonical_team(abbr, season) == expected
+
+
+def test_era_overrides_never_fire_inside_the_modelling_window():
+    """The invariant that makes this change safe: every cutoff predates 1999,
+    so passing a season can never alter a result for 1999+ data."""
+    assert all(cutoff < 1999 for cutoff, _ in ERA_OVERRIDES.values())
+    for abbr in ERA_OVERRIDES:
+        for season in (1999, 2005, 2026):
+            assert canonical_team(abbr, season) == canonical_team(abbr)
+
+
+def test_season_is_optional_and_default_is_the_modern_meaning():
+    assert canonical_team("HOU") == "HOU"
+    assert canonical_team("STL") == "LA"
+    assert canonical_team("BAL") == "BAL"
+
+
+def test_cleveland_is_never_remapped():
+    """The Browns' history stayed in Cleveland through the 1996-98 gap; the
+    Ravens are a 1996 expansion team. CLE -> CLE in every era."""
+    assert "CLE" not in ERA_OVERRIDES
+    for season in (1985, 1995, 1999, 2026):
+        assert canonical_team("CLE", season) == "CLE"
+
+
+def test_expr_applies_era_overrides_row_by_row():
+    df = pl.DataFrame({
+        "season": [1993, 2002, 1985, 2005, 1981, 2000],
+        "team": ["HOU", "HOU", "STL", "STL", "BAL", "BAL"],
+    })
+    got = df.with_columns(canonical_team_expr("team", season="season").alias("f"))
+    assert got["f"].to_list() == ["TEN", "HOU", "ARI", "LA", "IND", "BAL"]
+
+
+def test_expr_without_season_uses_modern_meaning():
+    df = pl.DataFrame({"season": [1993], "team": ["HOU"]})
+    got = df.with_columns(canonical_team_expr("team").alias("f"))
+    assert got["f"].to_list() == ["HOU"]
+
+
+def test_canonicalize_rejects_a_missing_season_column():
+    df = pl.DataFrame({"team": ["HOU"]})
+    with pytest.raises(KeyError):
+        canonicalize(df, "team", season="season")
