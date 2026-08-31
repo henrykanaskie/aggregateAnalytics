@@ -13,8 +13,14 @@ from typing import Any, Callable
 import nflreadpy as nfl
 import polars as pl
 
-DATA_DIR = Path("data/raw")
-MANIFEST = Path("data/manifest.json")
+# Path resolution lives in nfl.data so that modelling code can read the cache
+# without importing nflreadpy, and so paths anchor to the repo root rather than
+# the current working directory.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from nfl.data import MANIFEST_PATH as MANIFEST  # noqa: E402
+from nfl.data import PRED_PATH  # noqa: E402
+from nfl.data import RAW_DIR as DATA_DIR  # noqa: E402
+from nfl.data import dataset_path, scan  # noqa: E402
 
 CURRENT_SEASON = 2026
 
@@ -110,20 +116,6 @@ DATASETS: list[Dataset] = [
 REGISTRY = {d.name: d for d in DATASETS}
 
 
-# fetching
-def dataset_path(name: str) -> Path:
-    d = DATA_DIR / name
-    return d if d.is_dir() else DATA_DIR / f"{name}.parquet"
-
-def scan(name:str) -> pl.LazyFrame:
-    # lazily read a chached dataset
-    p = dataset_path(name)
-    if p.is_dir():
-        # api adds columns over time so season files have drifting schemas
-        # turns missing cols to null instead of errors
-        return pl.scan_parquet(p / "*.parquet", extra_columns="ignore", missing_columns="insert")
-    return pl.scan_parquet(p)
-
 def ingest(names: list[str], start: int, end:int, refresh:bool) -> dict:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     manifest: dict[str, Any] = {}
@@ -208,8 +200,6 @@ def ingest(names: list[str], start: int, end:int, refresh:bool) -> dict:
     return manifest
 
 
-PRED_PATH = Path("data/predictions.parquet")
- 
 PRED_SCHEMA = {
     "logged_at": pl.Datetime,      # when YOU made the call
     "game_id": pl.String,
