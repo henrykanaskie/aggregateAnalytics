@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="referrer" content="no-referrer">
+<title>NFL Data Explorer</title>
+<!-- Empty data URI: keeps the browser from requesting /favicon.ico. -->
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+
+<header class="hdr">
+  <div class="hdr-brand">
+    <span class="hdr-title">NFL Data Explorer</span>
+    <span class="hdr-sub" id="hdr-datadir"></span>
+  </div>
+
+  <div class="hdr-ds" id="hdr-dataset">
+    <span class="muted">no dataset</span>
+  </div>
+
+  <div class="hdr-right">
+    <div class="search-wrap" id="entity-wrap">
+      <input class="input sm" id="entity-search" type="search" autocomplete="off"
+             spellcheck="false" placeholder="Find player or team">
+      <div class="dropdown" id="entity-results" hidden></div>
+    </div>
+    <button class="btn sm ghost" id="btn-save-view" title="Save the current tab as a view">Save view</button>
+    <button class="btn sm ghost" id="btn-help" title="Keyboard shortcuts (?)">?</button>
+  </div>
+</header>
+
+<div class="body">
+  <aside class="sidebar" id="sidebar"></aside>
+
+  <main class="main">
+    <nav class="tabbar" id="tabbar" role="tablist"></nav>
+    <div class="prov" id="prov" hidden></div>
+    <section class="tabpanel" id="tabpanel"></section>
+  </main>
+</div>
+
+<div id="toasts"></div>
+
+<!-- Script order is fixed by the build contract. api.js first, app.js last. -->
+<script src="/static/js/api.js"></script>
+<script src="/static/js/chart.js"></script>
+<script src="/static/js/grid.js"></script>
+<script src="/static/js/schema.js"></script>
+<script src="/static/js/sql.js"></script>
+<script src="/static/js/coverage.js"></script>
+<script src="/static/js/app.js"></script>
+</body>
+</html>
