@@ -20,6 +20,13 @@ drops every Rams game before 2016, every Chargers game before 2017 and every
 Raiders game before 2020 -- roughly 900 team-games. Nothing errors; ratings
 just quietly go wrong. Canonicalise on the way in, always.
 
+Canonicalising creates a second, opposite hazard. ``teams`` holds 36 rows for
+32 franchises -- separate rows for LA/LAR/STL, LAC/SD and LV/OAK. Map those to
+franchise ids and the table now has duplicate keys, so joining it onto the game
+spine multiplies rows instead of dropping them: every Rams game x3, every
+Chargers and Raiders game x2. Use :func:`team_info`, which collapses to exactly
+one row per franchise, rather than joining ``teams`` directly.
+
 The canonical id is the *modern* abbreviation ("LA", "LAC", "LV"), because that
 is what the majority of nflverse tables already use.
 """
@@ -157,3 +164,45 @@ def initial_elo(team: str, season: int, *, base: float = 1500.0) -> float:
     """Starting rating: league average, unless the franchise is new that year."""
     f = FRANCHISES[canonical_team(team)]
     return EXPANSION_ELO if f.first_season == season and season > 1999 else base
+
+
+# --------------------------------------------------------------------------
+# Team metadata
+# --------------------------------------------------------------------------
+
+def dedupe_team_table(teams: pl.DataFrame | pl.LazyFrame) -> pl.DataFrame:
+    """Collapse the nflverse ``teams`` table to one row per franchise.
+
+    Pure transform. Keeps the row carrying the modern abbreviation, so the
+    Rams come back as "Los Angeles Rams" rather than "St. Louis Rams", and
+    falls back to whatever row exists if a franchise somehow lacks one.
+    """
+    lf = teams.lazy().with_columns(franchise=canonical_team_expr("team_abbr"))
+    out = (
+        lf.sort(pl.col("team_abbr") != pl.col("franchise"))  # modern spelling first
+        .group_by("franchise", maintain_order=True)
+        .first()
+        .sort("franchise")
+        .collect()
+    )
+    dupes = out.height - out["franchise"].n_unique()
+    if dupes:
+        raise AssertionError(f"team table still has {dupes} duplicate franchises")
+    return out
+
+
+def team_info(source: pl.DataFrame | pl.LazyFrame | None = None) -> pl.DataFrame:
+    """Franchise metadata, exactly one row per franchise, keyed on ``franchise``.
+
+    Safe to join onto the game spine; joining raw ``teams`` is not.
+    """
+    if source is None:
+        from .data import scan
+
+        source = scan("teams")
+    out = dedupe_team_table(source)
+    if out.height != len(FRANCHISES):
+        raise AssertionError(
+            f"expected {len(FRANCHISES)} franchises, got {out.height}"
+        )
+    return out

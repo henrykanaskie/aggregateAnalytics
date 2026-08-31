@@ -3,8 +3,8 @@ import pytest
 
 from nfl.teams import (
     ALIASES, EXPANSION_ELO, FRANCHISES, RELOCATIONS, UnknownTeam,
-    canonical_team, canonical_team_expr, canonicalize, franchise_ids,
-    initial_elo, is_active,
+    canonical_team, canonical_team_expr, canonicalize, dedupe_team_table,
+    franchise_ids, initial_elo, is_active, team_info,
 )
 from tests.conftest import SCHEDULE_ABBREVIATIONS
 
@@ -110,3 +110,44 @@ def test_expansion_team_starts_below_average():
     assert initial_elo("DAL", 2002) == 1500.0
     # 1999 is the start of the data window, not an expansion year
     assert initial_elo("CLE", 1999) == 1500.0
+
+
+# --- team metadata: the duplicate-row hazard -------------------------------
+
+def test_dedupe_collapses_duplicate_franchise_rows(raw_teams):
+    out = dedupe_team_table(raw_teams)
+    assert raw_teams.height == 8
+    assert out.height == 4                      # LA, LAC, LV, SEA
+    assert out["franchise"].n_unique() == 4
+
+
+def test_dedupe_keeps_the_modern_name(raw_teams):
+    out = dedupe_team_table(raw_teams)
+    names = dict(zip(out["franchise"], out["team_name"]))
+    assert names["LA"] == "Los Angeles Rams"        # not "St. Louis Rams"
+    assert names["LAC"] == "Los Angeles Chargers"   # not "San Diego Chargers"
+    assert names["LV"] == "Las Vegas Raiders"       # not "Oakland Raiders"
+
+
+def test_joining_raw_teams_inflates_rows_but_team_info_does_not(raw_teams):
+    """The bug, demonstrated, then shown fixed.
+
+    Naively canonicalising `teams` and joining gives a Rams game three rows.
+    """
+    games = pl.DataFrame({"game_id": ["g1", "g2"], "home": ["LA", "SEA"]})
+
+    naive = games.join(
+        raw_teams.with_columns(canonical_team_expr("team_abbr").alias("home")),
+        on="home", how="left",
+    )
+    assert naive.height == 4          # the Rams game silently became three rows
+
+    fixed = games.join(
+        dedupe_team_table(raw_teams), left_on="home", right_on="franchise", how="left",
+    )
+    assert fixed.height == games.height == 2
+
+
+def test_team_info_rejects_a_table_that_is_not_all_32(raw_teams):
+    with pytest.raises(AssertionError):
+        team_info(raw_teams)          # fixture only covers 4 franchises

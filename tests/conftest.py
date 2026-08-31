@@ -48,3 +48,18 @@ def raw_schedules() -> pl.DataFrame:
         schema_overrides={"home_score": pl.Int64, "away_score": pl.Int64,
                           "result": pl.Int64, "overtime": pl.Int64},
     )
+
+
+@pytest.fixture
+def raw_teams() -> pl.DataFrame:
+    """`teams` in miniature, reproducing its duplicate-franchise rows.
+
+    Real table: 36 rows, 32 franchises -- LA/LAR/STL, LAC/SD, LV/OAK.
+    """
+    return pl.DataFrame({
+        "team_abbr": ["LA", "LAR", "STL", "LAC", "SD", "LV", "OAK", "SEA"],
+        "team_name": ["Los Angeles Rams", "Los Angeles Rams", "St. Louis Rams",
+                      "Los Angeles Chargers", "San Diego Chargers",
+                      "Las Vegas Raiders", "Oakland Raiders", "Seattle Seahawks"],
+        "team_conf": ["NFC"] * 3 + ["AFC"] * 4 + ["NFC"],
+    })
