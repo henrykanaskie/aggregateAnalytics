@@ -85,13 +85,8 @@ def log_loss(prob: Vector, outcome: Vector, *, eps: float = 1e-15) -> float:
     return float(-(o * p.log() + (1 - o) * (1 - p).log()).mean())
 
 
-def reliability_table(prob: Vector, outcome: Vector, *, bins: int = 10) -> pl.DataFrame:
-    """Bucket forecasts and compare predicted to observed frequency.
-
-    The diagonal is perfect calibration. Read it alongside ``resolution`` --
-    a model that always says 0.63 sits on the diagonal and is worthless.
-    """
-    p, o = _paired(prob, outcome)
+def _binned(p: pl.Series, o: pl.Series, bins: int) -> pl.DataFrame:
+    """Bucket forecasts, carrying the within-bin moments the decomposition needs."""
     edges = [i / bins for i in range(bins + 1)]
     df = pl.DataFrame({"p": p, "o": o}).with_columns(
         bin=pl.col("p").cut(edges[1:-1], labels=[str(i) for i in range(bins)])
@@ -103,9 +98,27 @@ def reliability_table(prob: Vector, outcome: Vector, *, bins: int = 10) -> pl.Da
             n=pl.len(),
             mean_pred=pl.col("p").mean(),
             observed=pl.col("o").mean(),
+            # Sums, not means: they are pooled across bins before dividing by N.
+            _ss_p=((pl.col("p") - pl.col("p").mean()) ** 2).sum(),
+            _sp_po=(
+                (pl.col("p") - pl.col("p").mean()) * (pl.col("o") - pl.col("o").mean())
+            ).sum(),
         )
-        .with_columns(gap=(pl.col("mean_pred") - pl.col("observed")))
         .sort("bin")
+    )
+
+
+def reliability_table(prob: Vector, outcome: Vector, *, bins: int = 10) -> pl.DataFrame:
+    """Bucket forecasts and compare predicted to observed frequency.
+
+    The diagonal is perfect calibration. Read it alongside ``resolution`` --
+    a model that always says 0.56 sits on the diagonal and is worthless.
+    """
+    p, o = _paired(prob, outcome)
+    return (
+        _binned(p, o, bins)
+        .drop("_ss_p", "_sp_po")
+        .with_columns(gap=(pl.col("mean_pred") - pl.col("observed")))
     )
 
 
@@ -118,20 +131,39 @@ def brier_decomposition(prob: Vector, outcome: Vector, *, bins: int = 10) -> dic
                  (HIGHER better -- this is the part that carries information)
     uncertainty  variance of the outcome itself; a property of the games,
                  not of the model, so it is the same for every competitor
+
+    That three-term identity is exact only when every forecast inside a bucket
+    is identical. Real forecasts are continuous, so two more terms appear:
+
+        Brier = reliability - resolution + uncertainty
+                + Var_within(p) - 2*Cov_within(p, o)
+
+    Both are reported, and ``binning_residual`` is their sum, so ``decomposed``
+    reconstructs ``brier`` to floating-point exactness rather than leaving an
+    unexplained gap. The covariance is normally positive -- inside a bucket a
+    higher forecast still tracks a higher win rate -- so binning slightly
+    *understates* a good model's skill. More buckets shrinks the residual but
+    makes each bucket's observed rate noisier.
     """
     p, o = _paired(prob, outcome)
     n = len(p)
     obar = float(o.mean())
-    tbl = reliability_table(p, o, bins=bins)
+    tbl = _binned(p, o, bins)
     rel = float((tbl["n"] / n * (tbl["mean_pred"] - tbl["observed"]) ** 2).sum())
     res = float((tbl["n"] / n * (tbl["observed"] - obar) ** 2).sum())
     unc = obar * (1 - obar)
+    var_p = float(tbl["_ss_p"].sum()) / n
+    cov_po = float(tbl["_sp_po"].sum()) / n
+    residual = var_p - 2 * cov_po
     return {
         "brier": brier(p, o),
         "reliability": rel,
         "resolution": res,
         "uncertainty": unc,
-        "decomposed": rel - res + unc,
+        "within_bin_var_pred": var_p,
+        "within_bin_cov": cov_po,
+        "binning_residual": residual,
+        "decomposed": rel - res + unc + residual,
     }
 
 
@@ -143,13 +175,33 @@ def _norm_cdf(z: float) -> float:
     return 0.5 * (1.0 + math.erf(z / math.sqrt(2.0)))
 
 
-def margin_to_win_prob(margin: Vector | float, sigma: float = 13.0) -> pl.Series | float:
+def fit_sigma(pred: Vector, actual: Vector) -> float:
+    """The sd of your own model's errors -- the sigma to convert margins with.
+
+    Not the sd of raw margins (14.33 league-wide), which is what you get by
+    ignoring the model entirely.
+
+    It is also not a constant. For the closing line it is 13.20 across
+    1999-2026 but 12.70 over 2023-25 alone -- half a point of drift from the
+    choice of window, on the same forecaster. Fit it on the same games you
+    intend to predict.
+    """
+    p, a = _paired(pred, actual)
+    if len(p) < 2:
+        raise ValueError("need at least two paired observations to fit sigma")
+    return float((a - p).std())
+
+
+def margin_to_win_prob(margin: Vector | float, sigma: float) -> pl.Series | float:
     """P(home wins) from a predicted margin, via a fitted normal.
 
-    ``sigma`` should be the residual sd of your own model, not the sd of raw
-    margins -- fit it, do not inherit it. :func:`margin_summary` reports the
-    market's for reference.
+    ``sigma`` is required on purpose. It is the residual sd of *your* model, so
+    there is no defensible default -- inheriting a plausible-looking constant
+    is the same mistake as inheriting 25 points-per-Elo instead of fitting it.
+    Get it from :func:`fit_sigma`.
     """
+    if not isinstance(sigma, (int, float)) or not math.isfinite(sigma) or sigma <= 0:
+        raise ValueError(f"sigma must be a positive finite number, got {sigma!r}")
     if isinstance(margin, (int, float)):
         return _norm_cdf(float(margin) / sigma)
     return _s(margin).map_elements(
