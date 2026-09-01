@@ -4,9 +4,9 @@ import polars as pl
 import pytest
 
 from nfl.evaluate import (
-    bias, brier, brier_decomposition, compare, constant_baseline, log_loss,
-    mae, margin_summary, margin_to_win_prob, market_baseline, reliability_table,
-    rmse, walk_forward_splits,
+    bias, brier, brier_decomposition, compare, constant_baseline, fit_sigma,
+    log_loss, mae, margin_summary, margin_to_win_prob, market_baseline,
+    reliability_table, rmse, walk_forward_splits,
 )
 
 
@@ -92,12 +92,12 @@ def test_a_sharp_forecast_earns_resolution():
 # --- margin <-> probability ------------------------------------------------
 
 def test_pick_em_is_a_coin_flip():
-    assert margin_to_win_prob(0.0) == pytest.approx(0.5)
+    assert margin_to_win_prob(0.0, 12.7) == pytest.approx(0.5)
 
 
 def test_win_prob_is_monotone_and_symmetric():
-    assert margin_to_win_prob(7.0) > margin_to_win_prob(3.0) > 0.5
-    assert margin_to_win_prob(7.0) + margin_to_win_prob(-7.0) == pytest.approx(1.0)
+    assert margin_to_win_prob(7.0, 12.7) > margin_to_win_prob(3.0, 12.7) > 0.5
+    assert margin_to_win_prob(7.0, 12.7) + margin_to_win_prob(-7.0, 12.7) == pytest.approx(1.0)
 
 
 def test_smaller_sigma_means_more_confidence():
@@ -161,3 +161,81 @@ def test_walk_forward_window_expands():
 def test_walk_forward_needs_enough_history():
     with pytest.raises(ValueError):
         list(walk_forward_splits([1999, 2000], min_train=5))
+
+
+# --- sigma must be fitted, not inherited -----------------------------------
+
+def test_sigma_has_no_default():
+    """There is no defensible default; a plausible constant is still a guess."""
+    with pytest.raises(TypeError):
+        margin_to_win_prob(7.0)
+
+
+@pytest.mark.parametrize("bad", [0, -1.0, float("nan"), float("inf"), "13"])
+def test_sigma_must_be_positive_and_finite(bad):
+    with pytest.raises(ValueError):
+        margin_to_win_prob(7.0, bad)
+
+
+def test_fit_sigma_is_the_residual_sd_not_the_raw_sd():
+    margin = [10.0, -3.0, 0.0, 7.0]
+    market = [7.0, -1.0, 1.0, 3.0]
+    got = fit_sigma(market, margin)
+    assert got == pytest.approx(margin_summary(margin, market)["residual_sd"])
+    assert got != pytest.approx(margin_summary(margin)["sd_margin"])
+
+
+def test_fit_sigma_of_a_perfect_model_is_zero():
+    a = [3.0, -7.0, 10.0]
+    assert fit_sigma(a, a) == pytest.approx(0.0)
+
+
+def test_fit_sigma_needs_two_points():
+    with pytest.raises(ValueError):
+        fit_sigma([1.0], [2.0])
+
+
+# --- the binning residual is now reported, not hidden ----------------------
+
+def test_discrete_forecasts_have_no_binning_residual():
+    prob = [0.25] * 40 + [0.75] * 40
+    outcome = [1.0] * 10 + [0.0] * 30 + [1.0] * 30 + [0.0] * 10
+    d = brier_decomposition(prob, outcome)
+    assert d["within_bin_var_pred"] == pytest.approx(0.0)
+    assert d["within_bin_cov"] == pytest.approx(0.0)
+    assert d["binning_residual"] == pytest.approx(0.0)
+    assert d["decomposed"] == pytest.approx(d["brier"], abs=1e-12)
+
+
+def test_continuous_forecasts_close_exactly_once_the_residual_is_included():
+    """Forecasts spread inside their buckets, so the three-term identity alone
+    leaves a gap. The five-term one does not."""
+    prob = [i / 200 + 0.25 for i in range(100)]
+    outcome = [float(i % 3 == 0) for i in range(100)]
+    d = brier_decomposition(prob, outcome)
+    three_term = d["reliability"] - d["resolution"] + d["uncertainty"]
+    assert three_term != pytest.approx(d["brier"], abs=1e-9)      # gap is real
+    assert d["binning_residual"] != pytest.approx(0.0)
+    assert d["decomposed"] == pytest.approx(d["brier"], abs=1e-12)  # and accounted for
+
+
+def test_residual_is_variance_minus_twice_covariance():
+    prob = [i / 200 + 0.25 for i in range(100)]
+    outcome = [float(i % 3 == 0) for i in range(100)]
+    d = brier_decomposition(prob, outcome)
+    assert d["binning_residual"] == pytest.approx(
+        d["within_bin_var_pred"] - 2 * d["within_bin_cov"], abs=1e-15
+    )
+
+
+def test_more_bins_shrinks_the_residual():
+    prob = [i / 200 + 0.25 for i in range(400)]
+    outcome = [float(i % 3 == 0) for i in range(400)]
+    coarse = brier_decomposition(prob, outcome, bins=5)
+    fine = brier_decomposition(prob, outcome, bins=50)
+    assert abs(fine["binning_residual"]) < abs(coarse["binning_residual"])
+
+
+def test_reliability_table_does_not_leak_internal_columns():
+    tbl = reliability_table([0.25] * 10, [1.0] * 5 + [0.0] * 5)
+    assert set(tbl.columns) == {"bin", "n", "mean_pred", "observed", "gap"}
