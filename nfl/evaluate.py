@@ -1,9 +1,7 @@
 """Scoring, baselines and walk-forward validation.
 
 The point of this module is that the *judging* of a model should be fixed and
-boring, so that the only thing that varies between experiments is the model.
-Phase 1.4 ("beat the baselines") and Phase 3.2 ("calibration check") in the
-roadmap are both one call each once this exists.
+boring, so that the only thing that varies between experiments is the model. 
 
 Measured on the live nflverse schedules, 2023-2025 regular + post season:
 
