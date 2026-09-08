@@ -557,6 +557,97 @@ opinion in the world.
 
 ---
 
+## Phase 5: player props (Weeks 8+, a second project that reuses the first)
+
+A prop is not a feature of the game model. It is a distribution over one
+player's stat line, and it needs three sub-models stacked, of which the game
+model supplies only the third:
+
+    prop = opportunity(player, game) x efficiency(player, matchup) | game script
+
+    opportunity   targets, carries, dropbacks. Driven by role and by who is
+                  active. The stable part.
+    efficiency    yards per target, yards per carry, catch rate. Noisy; shrink
+                  hard toward position priors.
+    game script   a team trailing by ten throws more. Your margin and total
+                  feed this, which is the only thing Phases 0-4 contribute
+                  directly.
+
+You planned for this on day one without saying so: `ff_opportunity` is
+annotated "opportunity beats efficiency", `snap_counts` is "the foundation of
+role", and the NGS and PFR tables are player-level charting. The data layer
+was built for props. The model layer has not started, and this phase is where
+it does.
+
+**Why not sooner.** Every prerequisite is something an earlier phase builds:
+
+- The as-of joins from Phase 2. Inactives are announced ninety minutes before
+  kickoff. Without `join_asof` against the depth chart and injury snapshots,
+  every prop backtest leaks the final roster and looks better than it is.
+- The rolling-form pattern from Phase 2. Target share over the prior N games,
+  shifted, is the same sort-shift-over code as QB form, keyed on player.
+- The feature-table discipline and the leak test from Phase 3.1.
+- A scored game-model track record, so the game-script input is a number you
+  trust rather than a number you hope.
+
+**5.0 Decide why, before what.** Two honest reasons lead to different first
+props. If it is edge: prop markets are softer than the spread (lower limits,
+more books, slower lines), but the edge is mostly line shopping and speed,
+and books limit winners fast. If it is product: props are what people
+actually read every week, which is the better reason and the one this phase
+assumes. Write the answer at the top of the module.
+
+**5.1 The line problem, and a clock that starts when you decide.** Historical
+prop lines are not free anywhere. If you ever want to claim a prop track
+record against a line, the snapshots must start before the predictions, same
+as Clock 2. The free odds tier cannot afford per-event prop pulls on top of
+the game odds. This is a cost decision: either pay for a tier that covers
+props from the week you start, or accept that the props record is scored
+against outcomes only, never against a line. Either is defensible. Not
+deciding is the one wrong answer, because it is the same as deciding "no
+line" while believing otherwise.
+
+**5.2 First prop: receptions.** Then passing attempts. Both are driven by
+opportunity, which is stable week to week, and both are roughly Poisson, so
+the whole distribution is tractable from one rate. Definition of done for the
+first version: a mean and a distribution per active receiver, backtested
+walk-forward on 2020+, scored by log-likelihood of the observed count and by
+hit rate over a fixed set of thresholds (3.5, 4.5, 5.5 ...), with the
+reliability table reused from `nfl/evaluate.py` on "over 4.5" as a binary
+forecast.
+
+- *Opportunity:* target share over the prior N games, shifted, shrunk toward
+  a position-and-depth-rank prior. Multiply by the team's expected pass
+  attempts, which is where game script enters: expected attempts as a
+  function of your predicted margin and total, fit on 2020+.
+- *Efficiency:* catch rate, shrunk hard. Forty targets tell you almost nothing.
+- *The active gate:* a player only gets a prediction if the latest depth
+  snapshot before kickoff lists them and `injuries` does not rule them out.
+  Log the snapshot timestamp with the prediction.
+
+**5.3 What not to model first.** Touchdowns: rare, almost pure noise at the
+player level, and the prop everyone wants. Rushing yards: one sixty-yard run
+breaks a normal and a Poisson alike; needs a heavy-tailed distribution and
+more data than you have. Both come after receptions works, if at all.
+
+**5.4 Its own log, its own namespace.** `data/props.parquet` with its own
+schema (`logged_at, game_id, gsis_id, market, line_or_none, pred_mean,
+pred_dist_params, model_version, snapshot_asof, notes`) and `model_version`
+strings prefixed `props-`. Do not put prop rows in the game log. The scoring
+rules differ and the two records should be readable separately.
+
+**5.5 Couple, do not merge.** The game model stays an input to the props
+model, never the reverse. Re-run props whenever the game prediction changes;
+never adjust a margin because a prop looked wrong.
+
+> **Learning objectives:** count models and overdispersion, a Poisson whose
+> variance exceeds its mean is telling you the rate is not constant; hierarchical
+> shrinkage, how much to trust a player versus their position; distribution
+> forecasts scored as distributions rather than as point estimates; the gap
+> between a stat line you can model and a market you can access.
+
+---
+
 ## Weekly cadence, from Week 1 onwards
 
 Non-negotiable, about 45 minutes:
@@ -607,6 +698,7 @@ the parameters it keeps.
 | weeks 2-4 | QB adjustment, leaky version scored first | temporal leakage, shrinkage |
 | weeks 4-7 | feature table, ridge, then GBM | feature engineering, regularisation, small-data reality |
 | weeks 7+ | market residual model, subset hypotheses | market efficiency, multiple comparisons |
+| weeks 8+ | props track: receptions first, own log, own namespace | count models, shrinkage, distribution scoring |
 
 ---
 
@@ -797,6 +889,34 @@ wildly different scales (Elo diff ~±200, rest diff ~±10, EPA/play ~±0.3).
 Without scaling the penalty lands almost entirely on the small-scale features
 and you will conclude EPA doesn't matter.
 
+## Phase 5
+
+`player_stats_week` has `targets`, `receptions`, `receiving_yards`,
+`carries`, `attempts` per `(player_id, season, week)`, and the key is unique,
+so the rolling window is the Phase 2 pattern with `player_id` in place of the
+QB. `ff_opportunity` carries expected values per opportunity already; check
+whether its `targets` agrees with `player_stats_week` before trusting either.
+
+Team pass attempts as a function of game script: regress `attempts` (team,
+from `team_stats_week`) on `spread_line` and `total_line` over 2020+. The
+coefficients are the game-script coupling. Expect the spread coefficient to be
+small and the total coefficient to carry most of it.
+
+**Poisson first, then check the variance.** If observed variance of receptions
+around your predicted mean is well above the mean, that is overdispersion and
+the honest fix is a negative binomial, not a wider Poisson. Measure before
+switching; the measurement is one group-by.
+
+The roster gate is a `join_asof` on `asof` from `nfl.depth.load_depth_charts`,
+`by="team"`, `strategy="backward"`, then a filter on `rank`. It is the same
+call as the Phase 2 starter lookup with a different position filter. Log the
+`asof` you used with every prop row; when a player is scratched at 11:30 on
+Sunday and your snapshot was Tuesday, that timestamp is the difference between
+"model was wrong" and "model was right about a different game".
+
+`snap_counts` is the one table keyed on PFR ids. Route it through
+`players.pfr_id`, per the ID table above, before it touches anything GSIS.
+
 ## What is deliberately not here
 
 - Every blanked expression body and the parameters that go in them.
@@ -808,3 +928,5 @@ and you will conclude EPA doesn't matter.
 - The odds API client. Thirty lines, and writing them is how you notice what
   the response actually contains. The sign flip in A3 is the one thing worth
   knowing before you start.
+- The shrinkage weights in Phase 5, and whether to pay for prop lines. The
+  first is a modelling judgement; the second is a budget.
