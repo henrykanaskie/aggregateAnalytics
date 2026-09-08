@@ -18,11 +18,11 @@ BREAK_EVEN = 0.5238
 
 @dataclass(frozen=True, slots=True)
 class EloParams:
-    k: float = 16.0
+    k: float = 15.0
 
-    hfa: float = 45.0
+    hfa: float = 32.5
 
-    carryover: float = 0.75
+    carryover: float = 0.45
 
     points_per_elo: float = 20.0
 
@@ -32,7 +32,7 @@ class EloParams:
 #: One row per game, in the order :func:`run_elo` builds them.
 RATED_COLUMNS = [
     "game_id", "season", "week", "home", "away",
-    "pre_home_elo", "pre_away_elo", "pred_margin", "margin", "spread_line",
+    "pre_home_elo", "pre_away_elo", "pred_margin", "margin", "spread_line", "total_line",
 ]
 
 
@@ -68,6 +68,7 @@ def run_elo(games: pl.DataFrame, params: EloParams = EloParams()) -> pl.DataFram
         gid = block["game_id"].to_list()
         wk = block["week"].to_list()
         home, away = block["home"].to_list(), block["away"].to_list()
+        tl = block["total_line"].to_list()
 
         pre_h = [ratings[i] for i in h]
         pre_a = [ratings[i] for i in a]
@@ -81,10 +82,10 @@ def run_elo(games: pl.DataFrame, params: EloParams = EloParams()) -> pl.DataFram
                 "home": ht, "away": at,
                 "pre_home_elo": ph, "pre_away_elo": pa,
                 "pred_margin": d / params.points_per_elo,
-                "margin": mg, "spread_line": line,
+                "margin": mg, "spread_line": line, "total_line": t
             }
-            for g, w, ht, at, ph, pa, d, mg, line
-            in zip(gid, wk, home, away, pre_h, pre_a, diff, m, ln)
+            for g, w, ht, at, ph, pa, d, mg, line, t
+            in zip(gid, wk, home, away, pre_h, pre_a, diff, m, ln, tl)
         )
 
         for i, j, margin, d in zip(h, a, m, diff):
