@@ -63,3 +63,54 @@ def raw_teams() -> pl.DataFrame:
                       "Las Vegas Raiders", "Oakland Raiders", "Seattle Seahawks"],
         "team_conf": ["NFC"] * 3 + ["AFC"] * 4 + ["NFC"],
     })
+
+
+@pytest.fixture
+def raw_depth_legacy() -> pl.DataFrame:
+    """`depth_charts` in the 2001-2024 shape.
+
+    Includes a pre-relocation Rams row so canonicalisation is exercised, and
+    the string `depth_team` ranks the old format used.
+    """
+    return pl.DataFrame(
+        {
+            "season": [2005, 2005, 2024],
+            "week": [1, 1, 3],
+            "game_type": ["REG", "REG", "REG"],
+            "club_code": ["STL", "STL", "SEA"],
+            "depth_team": ["1", "2", "1"],
+            "position": ["QB", "QB", "QB"],
+            "depth_position": ["QB", "QB", "QB"],
+            "gsis_id": ["00-0000001", "00-0000002", "00-0000003"],
+            "full_name": ["Marc Bulger", "Jamie Martin", "Geno Smith"],
+        },
+        schema_overrides={"season": pl.Int32, "week": pl.Int32},
+    )
+
+
+@pytest.fixture
+def raw_depth_modern() -> pl.DataFrame:
+    """`depth_charts` in the 2025+ shape: timestamped snapshots, no week.
+
+    `dt` is a string in the real table, which is the detail that makes a naive
+    cast fail.
+    """
+    return pl.DataFrame(
+        {
+            "season": [2026, 2026, 2026],
+            "dt": [
+                "2026-08-30T12:30:54Z",
+                "2026-08-30T12:30:54Z",
+                "2026-09-02T09:00:00Z",
+            ],
+            "team": ["SEA", "SEA", "LA"],
+            "player_name": ["Sam Darnold", "Drew Lock", "Matthew Stafford"],
+            "espn_id": ["1", "2", "3"],
+            "gsis_id": ["00-0000004", "00-0000005", "00-0000006"],
+            "pos_grp": ["OFF", "OFF", "OFF"],
+            "pos_abb": ["QB", "QB", "QB"],
+            "pos_slot": [9, 9, 9],
+            "pos_rank": [1, 2, 1],
+        },
+        schema_overrides={"season": pl.Int32, "pos_slot": pl.Int32, "pos_rank": pl.Int32},
+    )

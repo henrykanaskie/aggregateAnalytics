@@ -8,3 +8,7 @@ __pycache__/
 !package.json
 !package-lock.json
 !.vscode/*.json
+
+# generated output
+nfl_data_profile.html
+data_handling/explorer/cache/
