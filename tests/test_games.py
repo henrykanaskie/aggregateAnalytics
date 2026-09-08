@@ -69,3 +69,35 @@ def test_upcoming_returns_only_unplayed(raw_schedules):
     spine = build_game_spine(raw_schedules)
     assert upcoming(spine, 2026, 1)["game_id"].to_list() == ["2026_01_NE_SEA"]
     assert upcoming(spine, 2005, 1).height == 0
+
+
+# --- kickoff -----------------------------------------------------------------
+
+def test_kickoff_is_utc_from_eastern_wall_clock(raw_schedules):
+    """nflverse `gametime` is Eastern. 16:05 EDT on 2005-09-11 is 20:05 UTC."""
+    spine = build_game_spine(raw_schedules)
+    assert spine.schema["kickoff"] == pl.Datetime("us", "UTC")
+    row = spine.filter(pl.col("game_id") == "2005_01_SEA_STL")
+    assert str(row["kickoff"][0]) == "2005-09-11 20:05:00+00:00"
+
+
+def test_primetime_kickoff_crosses_midnight_in_utc(raw_schedules):
+    """A 20:20 ET kickoff is the *next* calendar day in UTC. Anything that
+    compares kickoff to a date rather than a datetime gets this wrong."""
+    spine = build_game_spine(raw_schedules)
+    row = spine.filter(pl.col("game_id") == "2026_01_NE_SEA")
+    assert str(row["kickoff"][0]) == "2026-09-10 00:20:00+00:00"
+    assert row["gameday"][0].isoformat() == "2026-09-09"
+
+
+def test_null_gametime_leaves_kickoff_null_not_midnight(raw_schedules):
+    df = raw_schedules.with_columns(gametime=pl.Series(["16:05", None, "20:20"]))
+    spine = build_game_spine(df)
+    assert spine.filter(pl.col("game_id") == "2005_01_NE_OAK")["kickoff"][0] is None
+    assert spine["kickoff"].null_count() == 1
+
+
+def test_spine_without_gametime_column_still_builds(raw_schedules):
+    spine = build_game_spine(raw_schedules.drop("gametime"))
+    assert "kickoff" in spine.columns
+    assert spine["kickoff"].null_count() == spine.height

@@ -1,6 +1,15 @@
 import polars as pl
 import pytest
 
+from nfl.data import RAW_DIR
+
+
+def pytest_runtest_setup(item):
+    """`needs_data` tests read the parquet cache. A fresh clone and CI do not
+    have one, so they skip rather than fail."""
+    if item.get_closest_marker("needs_data") and not RAW_DIR.is_dir():
+        pytest.skip(f"parquet cache not present at {RAW_DIR}")
+
 # Every abbreviation that actually appears in nflverse `schedules`, 1999-2026,
 # captured from the live table. If nflverse ever adds one, test_teams will fail
 # loudly rather than letting an unmapped team through.
@@ -26,6 +35,9 @@ def raw_schedules() -> pl.DataFrame:
             "week": [1, 1, 1],
             "game_type": ["REG", "REG", "REG"],
             "gameday": ["2005-09-11", "2005-09-11", "2026-09-09"],
+            # Eastern wall-clock, as nflverse ships it. The 2005 Rams game is a
+            # late-afternoon window; the 2026 game is a primetime kickoff.
+            "gametime": ["16:05", "13:00", "20:20"],
             "home_team": ["STL", "OAK", "SEA"],
             "away_team": ["SEA", "NE", "NE"],
             "home_score": [10, 20, None],

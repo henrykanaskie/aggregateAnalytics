@@ -42,6 +42,7 @@ def test_unsafe_union_datasets_refuse_to_scan():
             scan(name)
 
 
+@pytest.mark.needs_data
 def test_unsafe_union_can_be_opted_out_of():
     """The profiler reports *on* the mess, so it has to be able to read it."""
     for name in UNSAFE_UNION:

@@ -1,14 +1,15 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
+from pathlib import Path
 
 import polars as pl
 
 from data_handling.ingest import PRED_SCHEMA, log_predictions
 from model.elo import EloParams, run_elo
-from nfl.data import PRED_PATH
-from nfl.evaluate import margin_summary, margin_to_win_prob
+from nfl.data import PRED_PATH, TRACK_CSV
+from nfl.evaluate import fit_sigma, margin_to_win_prob
 from nfl.games import load_games
 
 
@@ -26,22 +27,27 @@ def predict_week(
     params: EloParams = EloParams(),
     model_version: str = "elo-v1",
     rated: pl.DataFrame | None = None,
+    games: pl.DataFrame | None = None,
 ) -> pl.DataFrame:
+    if games is None:
+        games = load_games()
     if rated is None:
-        rated = run_elo(load_games(), params)
+        rated = run_elo(games, params)
 
     played_recent = rated.filter(
         (pl.col("season") >= SIGMA_FROM) & pl.col("margin").is_not_null()
     )
-    sigma = margin_summary(
-        played_recent["margin"], played_recent["pred_margin"]
-    )["residual_sd"]
+    sigma = fit_sigma(played_recent["pred_margin"], played_recent["margin"])
 
     slate = rated.filter(
         pl.col("margin").is_null()
         & (pl.col("season") == season)
         & (pl.col("week") == week)
     )
+    # `run_elo` keeps only the rating columns; kickoff comes from the spine so
+    # that `check_slate` can refuse a game that has already started.
+    if "kickoff" in games.columns:
+        slate = slate.join(games.select("game_id", "kickoff"), on="game_id", how="left")
     return slate.with_columns(
         pred_win_prob=margin_to_win_prob(slate["pred_margin"], sigma=sigma),
         model_version=pl.lit(model_version),
@@ -52,7 +58,16 @@ def predict_week(
     )
 
 
-def check_slate(preds: pl.DataFrame) -> None:
+def check_slate(preds: pl.DataFrame, *, now: datetime | None = None) -> None:
+    """Refuse a slate that should not reach the permanent log.
+
+    ``now`` is injectable for tests; it must be timezone-aware because
+    ``kickoff`` is stored in UTC.
+    """
+    if now is None:
+        now = datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        raise ValueError("`now` must be timezone-aware; kickoff is stored in UTC")
 
     fail = []
     if preds.height == 0:
@@ -72,6 +87,16 @@ def check_slate(preds: pl.DataFrame) -> None:
     ratings = pl.concat([preds["pre_home_elo"], preds["pre_away_elo"]])
     if preds.height and not ratings.is_between(rlo, rhi).all():
         fail.append(f"rating outside [{rlo}, {rhi}]: {ratings.min():.1f}-{ratings.max():.1f}")
+
+    # A prediction logged after kickoff is not a prediction. A null kickoff is
+    # "unknown", which is not the same as "not started" -- refuse that too.
+    if "kickoff" in preds.columns and preds.height:
+        unknown = preds.filter(pl.col("kickoff").is_null())["game_id"].to_list()
+        if unknown:
+            fail.append(f"kickoff unknown for {unknown}")
+        started = preds.filter(pl.col("kickoff") <= now)["game_id"].to_list()
+        if started:
+            fail.append(f"already kicked off: {started}")
 
     if fail:
         raise SanityCheckFailed("; ".join(fail))
@@ -104,7 +129,10 @@ def log_week(preds: pl.DataFrame) -> pl.DataFrame:
             f"logged_at per game."
         )
 
-    stamped_at = datetime.now()
+    # Naive UTC, so it compares cleanly against `kickoff` once localised.
+    # Rows logged before 2026-09-09 carry naive *local* machine time instead;
+    # treat their `logged_at` as approximate when scoring.
+    stamped_at = datetime.now(timezone.utc).replace(tzinfo=None)
     rows = (
         preds.rename({"spread_line": "market_spread", "total_line": "market_total"})
         .with_columns(logged_at=stamped_at)
@@ -122,8 +150,22 @@ def log_week(preds: pl.DataFrame) -> pl.DataFrame:
         raise SanityCheckFailed(
             f"columns written entirely null (a rename typo?): {blank}"
         )
-    print(f"[ok] logged {written.height} predictions at {stamped_at:%Y-%m-%d %H:%M:%S}")
+    print(f"[ok] logged {written.height} predictions at {stamped_at:%Y-%m-%d %H:%M:%S} UTC")
+    csv = export_track_record()
+    print(f"[ok] track record re-exported to {csv}; commit it before kickoff")
     return written
+
+
+def export_track_record(src: Path = PRED_PATH, dst: Path = TRACK_CSV) -> Path:
+    """Write the whole prediction log as a git-tracked CSV.
+
+    Full re-export every time, so the file is always the complete record and a
+    commit diff shows exactly the rows that were appended.
+    """
+    log = pl.read_parquet(src).sort("logged_at", "game_id")
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    log.write_csv(dst)
+    return dst
 
 
 def slate_view(preds: pl.DataFrame) -> pl.DataFrame:
@@ -148,7 +190,13 @@ if __name__ == "__main__":
     ap.add_argument("--model-version", default="elo-v1")
     ap.add_argument("--log", action="store_true",
                     help="write to the prediction log; without it, print only")
+    ap.add_argument("--export", action="store_true",
+                    help="only re-export the log to track_record/predictions.csv")
     args = ap.parse_args()
+
+    if args.export:
+        print(f"[ok] exported to {export_track_record()}")
+        raise SystemExit(0)
 
     preds = predict_week(args.season, args.week, model_version=args.model_version)
     with pl.Config(tbl_rows=-1, tbl_width_chars=160, fmt_str_lengths=24, float_precision=2):
