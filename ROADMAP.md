@@ -1,10 +1,289 @@
 # Roadmap
 
-Written 2026-09-06. Season opener is **2026-09-09** (Wednesday), full Week 1 slate 2026-09-13.
+Written 2026-09-06. Revised **2026-09-08 (Tuesday night)** against commit
+`e05db9c`. Season opener is **2026-09-09** (Wednesday), full Week 1 slate
+2026-09-13.
+
+The original document is kept below, with each item marked. The two new
+sections are **Status** (what changed in 48 hours, and what I would challenge)
+and **Wednesday** (the plan for tomorrow, expanded to the level of "what
+function, what test, what trap").
 
 ---
 
-## 1. Where you actually are
+## 0. Status, measured 2026-09-08
+
+### Done since 2026-09-06
+
+| roadmap item | evidence | verdict |
+|---|---|---|
+| 0.1 installable | `pyproject.toml` finds `model*`, dev extra, pytest config | done |
+| 0.2 `run_elo` as a pure function | `model/elo.py`: `EloParams` frozen dataclass, dict rows keyed on `game_id`, unplayed games predicted but never learned from | done, and the loop is still correct |
+| 0.2 delete `qb_elo_predict` | gone | done |
+| 0.3 carry into 2026, predict Week 1 | `model/predict.py::predict_week`, sigma fitted from 2020+ residuals rather than inherited | done |
+| 0.4 log before kickoff | `log_week` with sanity bounds, duplicate warning, read-back verification; commit says Week 1 was logged | done on your laptop, **not in git** |
+| 0.5 publish | nothing | not started |
+| Clock 2: odds snapshots | nothing | not started |
+| 1.3 bias guard, 1.4 model tests | zero tests import `model` | not started |
+
+Test suite: 111 pass, 1 fails on a fresh clone because
+`test_unsafe_union_can_be_opted_out_of` reads the parquet cache without the
+`needs_data` marker. Two-line fix.
+
+### Things I would challenge
+
+These are not bugs. They are places where the code makes a claim the repo
+cannot back up.
+
+**1. The track record exists only on one disk.** `data/` is gitignored, so
+`predictions.parquet` is not in the repository. A pre-kickoff prediction that
+lives on your laptop is indistinguishable, to anyone but you, from one you
+backfilled. Git is the cheapest independent timestamp you have: commit the log
+before kickoff and the hash in a public repo is evidence a stranger can check.
+This is the single most important gap and it is fifteen minutes of work.
+
+**2. Three parameters changed without a written reason.** The 2026-09-06
+measurement used `k=16, hfa=45, mov_mult=0.45`. The code now ships
+`k=15, hfa=32.5, carryover=0.45`, the FiveThirtyEight margin multiplier is
+hard-coded with its `2.2` constants, and `mov_mult` no longer exists. Two
+questions:
+
+- Where did `hfa=32.5` come from? At 20 points per Elo that is 1.6 points of
+  home field, against a 2023-25 mean margin of +2.41. It may well be right for
+  2026, but the roadmap's rule was "every number you quote from here is
+  walk-forward or it does not get quoted", and the repo contains no
+  walk-forward run.
+- `carryover=0.45` is the exact value the old `mov_mult` had. Carrying 45% of
+  last season's rating means regressing 55% to the mean, which is far heavier
+  than the usual one-third. Either you measured that and it is a genuine
+  finding worth writing down, or the number survived a rename. The Wednesday
+  plan includes the grid run that settles it.
+
+The `notes` column in the log records the parameters, so whatever they are,
+Week 1 is attributable. That is good. But the next `model_version` needs to be
+chosen by the harness, not by hand.
+
+**3. The scoring rule is a print statement.** `log_week` says "score on the
+earliest `logged_at` per game" and nothing implements it. There is no
+`score_week`. Monday is five days away and this is the function you will need.
+
+**4. Kickoff time is not in the spine.** `build_game_spine` keeps `gameday`
+but drops `gametime`, so nothing can assert `logged_at < kickoff`. A track
+record needs that assertion, and you cannot add it after the fact for the
+games you have already logged unless the raw schedules keep the time, which
+they do.
+
+**5. The frontend.** You built one for other stats, it is not committed, and
+the `.gitignore` has `package.json` exceptions and an
+`explorer/cache` entry pointing at something that is not in the repo.
+Uncommitted work is not work anyone can see, including you in six months.
+The original rule stands: no web app for the predictor in Week 1. The
+amendment: since a frontend now exists, the cheapest publish surface (0.5) may
+be a static JSON export it renders, *if and only if* that is faster than a
+README table. It probably is not, tomorrow. Do the README first and wire the
+frontend on the weekend. And commit it tonight, in its own top-level
+directory, so it stops being invisible.
+
+---
+
+## Wednesday 2026-09-09: the plan, expanded
+
+Ordered by "what is lost if it slips", not by interest. Roughly nine hours
+of work; the first three tiers are the day, tier D is if you are still going.
+
+### Tier A: before the opener kicks off. Nothing else matters until these are done.
+
+**A1. Put the track record in git.** (15 min)
+
+Un-ignore the log or move it. Two defensible layouts:
+
+- Add `!/data/predictions.parquet` under `/data` in `.gitignore`. Simplest,
+  keeps `PRED_PATH` unchanged.
+- Add a tracked `track_record/` directory and have `log_week` also write a
+  CSV there. A CSV diffs in a pull request; a parquet does not. This matters
+  because a reviewable diff *is* the audit trail.
+
+Take the second. Then commit with the message "Week 1 predictions, logged
+<timestamp>" and push. Definition of done: the commit is visible on GitHub
+before the first kickoff.
+
+*Trap:* do not regenerate and re-log Week 1 to "clean it up". A second row
+per game is exactly what the earliest-`logged_at` rule exists to handle, and
+re-logging after the line has moved is how you accidentally launder a better
+number into the record.
+
+**A2. Carry `gametime` through the spine and assert on it.** (30 min)
+
+Add `gametime` to `_PASSTHROUGH` in `nfl/games.py` and derive
+`kickoff = gameday + gametime` as a datetime in `build_game_spine`. nflverse
+stores `gametime` as `"HH:MM"` in Eastern time; decide how you store the log's
+`logged_at` (it is currently naive local time from `datetime.now()`) and make
+the two comparable. The honest fix is to log in UTC from now on and note the
+Week 1 rows were local time in the commit.
+
+Then `check_slate` gains one more rule: every game's kickoff must be in the
+future. This turns "I logged before kickoff" from a claim into an invariant.
+
+**A3. Odds snapshots.** (90 min, the roadmap's Clock 2, unchanged in
+priority)
+
+Write `data_handling/odds.py`. What it does:
+
+1. One GET against a free odds API for the NFL spreads, totals and moneyline
+   markets across US books.
+2. Map the API's full team names to franchise ids. `team_info()` has
+   `team_name`; the API uses names like "Kansas City Chiefs". Build the
+   mapping once, assert it covers all 32, fail loudly on a miss.
+3. Match each event to a `game_id` on `(home, away, kickoff date)`. Never on
+   name strings alone.
+4. Append `(pulled_at, game_id, book, spread_home, total, ml_home, ml_away)`
+   to `data/odds_snapshots.parquet`, and keep the raw JSON response next to
+   it. Disk is free; a field you did not think to parse today is recoverable
+   from raw JSON and gone otherwise.
+5. Cron it twice a day. Tuesday morning and Saturday night are the two
+   snapshots that matter.
+
+*Trap, and it is a real one:* the API reports the spread from the named
+team's perspective, so a home team at `-3.5` is favoured by 3.5. Your
+convention is `spread_line = expected home margin = +3.5`. That is a sign
+flip on the way in. Write the test that pins it: build a fake response for a
+game whose nflverse `spread_line` you know, run it through the parser, assert
+equality with the right sign.
+
+The roadmap deliberately left this client to you. That has not changed. The
+above is the shape, not the code.
+
+**A4. Fix the failing test and merge the sigma commit.** (20 min)
+
+- Mark `test_unsafe_union_can_be_opted_out_of` with `needs_data`, or give it
+  an in-memory frame. A fresh clone must go green.
+- `origin/groundwork` carries one unmerged commit, `7373cdc`: sigma becomes
+  a required argument to `margin_to_win_prob`, `fit_sigma()` is added, and
+  `brier_decomposition` reports the binning residual so `decomposed` equals
+  `brier` exactly. It cherry-picks onto `main` cleanly (checked). `predict.py`
+  already passes `sigma=` explicitly, so nothing breaks. Then replace the
+  `margin_summary(...)["residual_sd"]` call in `predict_week` with
+  `fit_sigma`, which is the function that was written for that purpose.
+
+### Tier B: makes the record scoreable. Do before Monday, ideally tomorrow.
+
+**B1. `score_week` and the running table.** (2 hr)
+
+The function that does not exist yet and that every Monday needs. In
+`model/score.py`:
+
+    score_week(season, week, model_version) -> DataFrame
+
+1. Read the log, filter to `(season, week, model_version)`.
+2. Keep the **earliest** `logged_at` per `game_id`. This is the rule the warning
+   in `log_week` promises. Implement it once, here, and the warning becomes a
+   pointer to a real thing.
+3. Join to the spine on `game_id`. Require `logged_at < kickoff` (from A2)
+   and drop, with a loud print, anything that fails.
+4. Compute MAE, bias, Brier, log loss and ATS against `market_spread` **as
+   logged**, not against nflverse's current `spread_line`, which will have
+   become the closing line by Monday. This is the point of logging the line:
+   your Week 1 spread is the only copy of the Tuesday number you will ever
+   have.
+5. Append one row per `(season, week, model_version)` to
+   `track_record/weekly.csv`, and regenerate the cumulative reliability table.
+
+Tests, on a synthetic log: earliest row wins; a row logged after kickoff is
+excluded; a game with no result yet is excluded, not scored as zero.
+
+**B2. Model tests.** (1 hr, roadmap 1.4 expanded)
+
+`run_elo` currently returns only pre-game ratings per game, so rating
+conservation cannot be tested from its output. The roadmap asked you to
+decide whether it also returns rating history. Decide yes: return a second
+frame, one row per `(season, week, team, elo)` after the week's updates.
+Phase 1 (HFA per season) and Phase 2 (QB validation) both need it and so do
+these tests. Build the synthetic spine in `conftest.py` with the nine columns
+`run_elo` reads: `game_id, season, week, home, away, margin, neutral,
+spread_line, total_line`.
+
+- *Conservation.* Within a season the sum of all ratings is constant across
+  weeks. Across a season boundary it changes only by the regression, which
+  is computable.
+- *Dominance.* A team that wins every game by 20 finishes the season with the
+  top rating, and its rating rises monotonically.
+- *Symmetry.* Swap `home` and `away` on a neutral game and `pred_margin`
+  negates exactly.
+- *No leak from the future.* Predictions for week W are identical whether the
+  games of weeks W and later have null margins or are absent entirely. This
+  one guards the property that makes Tuesday predictions honest.
+- *Expansion seeding.* A franchise with `first_season == season` starts at
+  `EXPANSION_ELO`, not at the regressed mean.
+
+**B3. The bias guard.** (15 min, roadmap 1.3)
+
+`needs_data` test: `|bias| < 0.3` on the 2020+ backtest. Cheap, and it is the
+test that catches a wrong HFA before it reaches the log.
+
+### Tier C: turns the parameter question into a number. Tomorrow afternoon if A and B are done.
+
+**C1. Walk-forward grid, done the efficient way.** (2 hr including runtime,
+roadmap 1.1 expanded)
+
+The field notes below explain why Elo cannot be cross-validated by discarding
+seasons: the ratings are state. The consequence is a cheaper design than the
+naive one:
+
+1. Grid `k` in {8, 12, 16, 20, 24, 32}, `hfa` in {25, 30, 35, 40, 45, 50},
+   `carryover` in {0.45, 0.55, 0.67, 0.75}. That is 144 vectors.
+2. Run `run_elo` **once** per vector over all seasons and record MAE per
+   season. 144 runs at about two seconds each is five minutes. Cache the
+   result table to parquet; you will re-read it many times.
+3. Walk-forward selection is then a table operation, not a loop: for each
+   test season S from 2010 to 2025, pick the vector with the lowest mean MAE
+   over seasons before S, and record that vector's MAE on S. The mean of
+   those held-out MAEs is your honest number.
+4. Report it next to the in-sample optimum on 2020-2025. The roadmap predicted
+   the out-of-sample number will be slightly worse. Write both down.
+
+This run answers the `carryover` question. If 0.45 wins walk-forward, keep it
+and say so in the docstring. If 0.67 wins, the number survived a rename and
+you have found it before it cost you a season.
+
+*Trap:* the selection in step 3 must not use season S or anything after it.
+Assert it in code, not in your head.
+
+**C2. Per-season HFA.** (1 hr, roadmap 1.2)
+
+One group-by on non-neutral regular-season games gives mean margin per
+season. Multiply by `points_per_elo` to get Elo units. Plot it. Then feed a
+trailing three-season mean, shifted by one, into the loop instead of the
+constant. `EloParams.hfa` becomes an optional per-season mapping with the
+constant as fallback. Ship it as `elo-v2` when it beats `elo-v1` walk-forward,
+and not before.
+
+### Tier D: only if you are still going.
+
+**D1. Publish (0.5).** A `track_record/README.md` generated by a script: the
+Week 1 table from `slate_view`, the honest header paragraph with the 0.408
+gap, and, from Monday, the weekly scores table. A script that regenerates a
+markdown file is a frontend you can maintain in ten minutes a week.
+
+**D2. Commit the frontend.** Own directory, own README stating what it reads
+and how to run it. If it can render a JSON file, have D1's script also write
+`track_record/predictions.json`, and the frontend gets the predictor for the
+cost of one fetch.
+
+### What "better than planned" means, concretely
+
+The original Wednesday target was: 16 logged rows, an odds cron, a URL. You
+have the rows. Better than planned by tomorrow night is: the rows in git
+(A1), kickoff enforced (A2), the odds cron (A3), a green test suite with the
+model under test (A4, B2), and a `score_week` that exists before there is
+anything to score (B1). The grid (C1) is the stretch. If you get to C1, the
+parameter question stops being a question.
+
+Do not touch Phase 2 tomorrow. The QB layer is the most interesting thing on
+this page and it is worth nothing without B1.
+
+---
+
+## 1. Where you actually are (original, 2026-09-06)
 
 Measured, not assumed. Full pass of `model/elo.py` over 1999-2025, hand-set
 `k=16, hfa=45, mov_mult=0.45, points_per_elo=20`:
@@ -15,6 +294,11 @@ Measured, not assumed. Full pass of `model/elo.py` over 1999-2025, hand-set
 | 2007-2013 | 1869 | 10.924 | 10.704 | +0.220 | 51.3% |
 | 2014-2019 | 1602 | 10.360 | 10.096 | +0.264 | 51.5% |
 | 2020-2025 | 1693 | 10.175 | 9.767  | **+0.408** | **50.1%** |
+
+> **2026-09-08:** these numbers were produced by the parameters above, not
+> the ones now in `EloParams`. Until C1 runs, the table describes a model
+> that no longer exists in the code. Re-run `python -m model.elo` and paste
+> the new table here before quoting either.
 
 Three things follow, and the whole roadmap hangs off them.
 
@@ -35,8 +319,8 @@ rejected.
 **c. Two of your constants are already right, so do not spend time there.**
 Regressing margin on pre-game Elo diff gives an optimal `points_per_elo` of
 19.5 on 2020+; you have 20.0, and the MAE difference is 0.003. Residual sd is
-13.09, so the `sigma=13.0` default in `nfl/evaluate.py` is nearly exact for
-this model. Phase 0 is unblocked. The wins are elsewhere.
+13.09, so a sigma near 13 is nearly exact for this model, and `predict_week`
+now fits it rather than assuming it. The wins are elsewhere.
 
 ### What is solid
 
@@ -44,23 +328,29 @@ this model. Phase 0 is unblocked. The wins are elsewhere.
 handling is the exact class of bug that silently corrupts a rating system, and
 you found it before it bit you. `nfl/evaluate.py` already has walk-forward
 splits, a reliability table and a Brier decomposition. `nfl/games.py` fixes the
-sign conventions in one place. 25 nflverse tables are cached locally.
+sign conventions in one place. `nfl/depth.py` reads across the 2025 schema
+break with the era detected from content. 25 nflverse tables are cached
+locally.
+
+Added 2026-09-08: `model/elo.py` is now a module with a pure `run_elo`, and
+`model/predict.py` refuses to write a slate that fails its own sanity checks
+and verifies what it wrote by reading it back. That second habit is rarer than
+it should be.
 
 The data and evaluation layers are ahead of the model layer. That is the right
 way round and it is why the next four weeks can move fast.
 
-### What is broken or missing
+### What is broken or missing (revised)
 
-- `model/elo.py` is a script, not a module. No `pip install -e .`, so it needs
-  `PYTHONPATH=.` to import, and running it prints nothing because nothing calls
-  `elo_predict`.
-- Hyperparameters are module globals, hand-tuned, and evaluated in-sample. The
-  walk-forward harness you wrote is not used by the model you wrote.
-- `qb_elo_predict()` is dead code that ends mid-thought, and **its join is a
-  leak**: it pulls `passing_epa` for `(qb_id, season, week)`, which is the QB's
-  performance *in the game being predicted*. Do not let that reach a feature.
-- `data/predictions.parquet` has a schema and zero rows. No track record exists.
-- Zero tests cover the model.
+- ~~`model/elo.py` is a script, not a module.~~ Fixed.
+- Hyperparameters are still hand-set and unevaluated (C1).
+- ~~`qb_elo_predict()` is dead code with a leaking join.~~ Deleted. The leak
+  rule is restated in Phase 2 and must be the first line of the file that
+  brings it back.
+- `data/predictions.parquet` has 16 rows and is not in git (A1).
+- No `score_week` (B1). No kickoff time in the spine (A2).
+- Zero tests cover the model (B2, B3).
+- No odds snapshots (A3).
 
 ---
 
@@ -89,7 +379,7 @@ Everything else can be built in October and is just as good. These two cannot.
 kickoff is a week of evidence that is permanently gone. Backfilled predictions
 are worthless as evidence and everyone knows it. Eighteen honest logged weeks
 by January is a real asset; eighteen weeks reconstructed in January is nothing.
-`log_predictions()` in `data_handling/ingest.py` already exists. Use it Tuesday.
+*Status: Week 1 logged locally. Not yet in git. See A1.*
 
 **Clock 2: live odds snapshots.** `spread_line` in nflverse is the *closing*
 line, backfilled. That is the toughest possible benchmark and it is also not the
@@ -97,12 +387,9 @@ number you could ever have bet. Beating the **opening** line, or the line
 available Tuesday morning, is a genuinely achievable target and a more honest
 one. But nflverse does not archive line movement, so you can only get this by
 snapshotting it yourself, starting now.
-
-Write a 30-line script that hits a free odds API (The Odds API's free tier is
-enough for one pull a day) and appends `(pulled_at, game_id, book, spread,
-total, moneyline)` to a parquet. Run it on a cron twice a day. It is the least
-interesting code in this project and in three months it will be the most
-valuable data you own, because nobody else bothered.
+*Status: not started. Note that `log_week` does capture nflverse's
+`spread_line` at logging time, which is one snapshot per week of one book's
+number. That is better than nothing and much less than A3.*
 
 Total cost: about 90 minutes. Do both before Wednesday.
 
@@ -111,43 +398,23 @@ Total cost: about 90 minutes. Do both before Wednesday.
 ## Phase 0: ship by Wed 2026-09-09
 
 Target: a `predict.py` that produces Week 1 numbers and logs them before the
-opener. Roughly one focused day.
+opener.
 
-**0.1 Make the repo importable** (10 min)
-`pip install -e .` into the venv, add `pytest` to a dev extra. `model/` is not
-in the `packages.find` include list in `pyproject.toml`; either add it or move
-the model under `nfl/`. Confirm `pytest` runs green.
+- **0.1 Make the repo importable.** Done.
+- **0.2 Turn `elo.py` into a function with no side effects at import.** Done.
+  The loop reads all pre-game ratings for a week before updating any of them,
+  which is the bug most people ship and you did not.
+- **0.3 Carry ratings into 2026 and predict Week 1.** Done. `check_slate`
+  enforces win probabilities in [0.05, 0.95] and ratings in [1200, 1800].
+  Those bounds are looser than the 1350-1700 the roadmap suggested; fine for a
+  guard, but print the actual min and max on every run so you see drift
+  before the guard does.
+- **0.4 Log it, before kickoff.** Done locally. **A1 makes it real.**
+- **0.5 Publish it.** Not done. D1.
 
-**0.2 Turn `elo.py` into a function with no side effects at import** (1-2 hr)
-Extract a `run_elo(games, params) -> DataFrame` returning one row per game with
-`game_id, season, week, pre_home_elo, pre_away_elo, pred_margin`. Put
-`k, hfa, mov_mult, points_per_elo, regress, expansion_elo` in a frozen
-dataclass with your current values as defaults. Keep the loop exactly as it is,
-it is correct: it reads all pre-game ratings for a week before updating any of
-them, which is the bug most people ship.
-
-Delete `qb_elo_predict()` for now. It is coming back in Phase 2, properly.
-
-**0.3 Carry ratings into 2026 and predict Week 1** (30 min)
-Run through the end of 2025, apply the season regression, then predict the 16
-Week 1 games. Convert to win probability with `margin_to_win_prob(m, sigma=13.1)`.
-Sanity check: no team should sit outside roughly 1350-1700 after regression, and
-the 16 win probabilities should mostly land in 0.35-0.75. If something is at
-0.95, you have a bug.
-
-**0.4 Log it, before kickoff** (30 min)
-Write all 16 rows through `log_predictions()` with the real `logged_at`,
-`model_version="elo-v1"`, and the market spread as of that moment. This is the
-deliverable. Everything above it is scaffolding for this.
-
-**0.5 Publish it** (1-2 hr)
-Markdown table to a GitHub README or a static page: game, your margin, your win
-probability, the market line, and the delta. Include a one-paragraph honest
-header saying it does not beat the closing line, with the 2020-2025 gap of
-0.408 stated plainly. That paragraph is the most credible thing on the page.
-
-**Definition of done:** by Tuesday night, 16 rows in `predictions.parquet` with
-a `logged_at` earlier than the first kickoff, and a URL a stranger can read.
+**Definition of done (revised):** by Wednesday's kickoff, the Week 1 rows are
+in a pushed commit, `check_slate` rejects any game whose kickoff has passed,
+and the odds cron has made its first pull.
 
 > **Learning objective:** accuracy and calibration are different skills. Run
 > `brier_decomposition` on your 2020-2025 backtest before you ship. Watch
@@ -160,30 +427,28 @@ a `logged_at` earlier than the first kickoff, and a URL a stranger can read.
 
 The model does not change here. Only your ability to trust it does. This is the
 single highest-value phase for learning and the one most people skip.
+Expanded above as B1, B2, B3, C1, C2. The original text follows for the
+reasoning.
 
-**1.1 Tune with walk-forward, not by eye.**
-Grid over `k` (8-32), `hfa` (30-60), `mov_mult` (0.25-0.75). Use
-`walk_forward_splits` with `min_train=5`. For each split, fit on train seasons
-only, score on the held-out season, average.
+**1.1 Tune with walk-forward, not by eye.** See C1 for the efficient design.
 
 Expect an uncomfortable result: your walk-forward optimum will likely be close
 to what you already hand-picked, and out-of-sample MAE will be slightly *worse*
-than the in-sample 10.175. That discomfort is the lesson. Write down both
+than the in-sample number. That discomfort is the lesson. Write down both
 numbers side by side.
 
 **1.2 Make HFA time-varying.** League-wide home field advantage has fallen
 substantially since 2019 (COVID empty stadiums, and it never fully came back).
-A single `hfa=45` fitted across 1999-2025 is too high for 2026. Fit HFA per
-season, plot it, and use a trailing 3-season estimate going forward. This is
-plausibly your largest single MAE win for the least code.
+A single HFA fitted across 1999-2025 is wrong for 2026 in one direction or the
+other. Fit HFA per season, plot it, and use a trailing 3-season estimate going
+forward. See C2.
 
-**1.3 Add a `bias` guard to the test suite.** A persistent non-zero `bias()`
-means a mis-set HFA. Assert `|bias| < 0.3` on the 2020+ backtest so a future
-refactor cannot silently reintroduce a lean.
+**1.3 Add a `bias` guard to the test suite.** See B3.
 
-**1.4 Add model tests.** Two synthetic-data tests: (a) ratings are conserved,
-total rating change across a game sums to zero; (b) a team that wins every game
-by 20 ends the season with the top rating. Cheap, and they catch sign flips.
+**1.4 Add model tests.** See B2.
+
+**1.5 (new) `score_week` and the Monday cadence.** See B1. Without it Phase 1
+has no output.
 
 > **Learning objectives:** in-sample versus out-of-sample fit, felt rather than
 > read about; non-stationarity, a parameter fitted on 2005 football is wrong for
@@ -197,10 +462,10 @@ The largest known upgrade to a vanilla NFL Elo. Team ratings implicitly assume
 continuity of personnel; the starting QB is the one position where that
 assumption breaks hard enough to move a line by a touchdown.
 
-**2.1 Fix the leak first, in writing.** Your current draft joins the QB's stats
-for the game being predicted. Before writing any code, write the rule at the top
-of the file: *every feature for game G must be computable from data available
-before G kicks off.* Then build a rolling value: EWMA of the QB's
+**2.1 Fix the leak first, in writing.** The deleted draft joined the QB's
+stats for the game being predicted. Before writing any code, write the rule at
+the top of the file: *every feature for game G must be computable from data
+available before G kicks off.* Then build a rolling value: EWMA of the QB's
 `(passing_epa + rushing_epa) / dropbacks` over their prior games, **shifted by
 one game**, with a draft-capital-based prior for rookies (`draft_picks` is
 already cached for this).
@@ -216,12 +481,15 @@ most useful instinct in applied ML.
 `team_elo + qb_adjustment(starter) - qb_adjustment(season_baseline_starter)`,
 so a team with its normal starter gets roughly zero adjustment and a backup
 gets a penalty. Validate against known cases: 2023 Jets after the Rodgers
-injury, any 2020 Broncos game.
+injury, any 2020 Broncos game. The rating history frame from B2 is what makes
+this validation possible.
 
 **2.4 Handle the announcement problem.** Starters are confirmed late in the
 week. `schedules.home_qb_id` is backfilled after the fact, so using it is a
 mild leak for live prediction. For real Tuesday predictions you need
-`depth_charts` plus `injuries` (both cached), or a manual override file. Note
+`depth_charts` plus `injuries` (both cached), or a manual override file.
+`nfl/depth.py` already gives you the modern era as timestamped snapshots with
+an `asof` column; the `join_asof` in the field notes is the consumer. Note
 this honestly in the published output.
 
 > **Learning objectives:** temporal leakage and as-of-time joins, which is the
@@ -274,9 +542,9 @@ opinion in the world.
 - **Model the residual.** Predict `margin - spread_line` instead of `margin`.
   If you cannot beat zero, that is the honest and expected answer, and it is
   itself a publishable finding.
-- **Target the opening line.** With the Phase 0 odds snapshots accumulating,
-  ask whether your Tuesday number beats the Tuesday line. Genuinely more
-  achievable, and now you have the data.
+- **Target the opening line.** With the A3 snapshots accumulating, ask whether
+  your Tuesday number beats the Tuesday line. Genuinely more achievable, and
+  now you have the data.
 - **Look for subsets, not a universal edge.** Extreme weather, large
   underdogs, short-week road games, backup QB starts. Be extremely careful:
   hunting subsets across a 285-game season is how you find noise. Pre-register
@@ -293,15 +561,17 @@ opinion in the world.
 
 Non-negotiable, about 45 minutes:
 
-- **Tuesday:** refresh ingest, regenerate predictions, log them, publish.
-- **Wednesday:** odds snapshot cron confirmed running.
-- **Monday:** score last week. Append to a running MAE / Brier / ATS table.
-  Update the reliability table. Do not touch model parameters mid-season based
-  on one week; a 16-game sample tells you nothing and reacting to it is the
-  fastest way to overfit your own season.
+- **Tuesday:** refresh ingest, `python -m model.predict --log`, commit and
+  push the log, regenerate the README.
+- **Wednesday:** odds snapshot cron confirmed running (check the parquet grew).
+- **Monday:** `score_week` for last week. Commit the appended row in
+  `track_record/weekly.csv`. Update the reliability table. Do not touch model
+  parameters mid-season based on one week; a 16-game sample tells you nothing
+  and reacting to it is the fastest way to overfit your own season.
 
 Model changes ship as new `model_version` strings so the track record stays
-attributable.
+attributable. `elo-v1` is now frozen: the parameters it logged Week 1 with are
+the parameters it keeps.
 
 ---
 
@@ -311,23 +581,29 @@ attributable.
   Phase 4 and only against opening lines.
 - **Do not add datasets.** You have 25 tables and use two. `pbp` is 305 MB
   and you have not touched it. Breadth is not the constraint.
-- **Do not build a web app in week 1.** A markdown table in a README is a
-  perfectly good product. Build the app in November, if the track record
-  earns it.
+- **Do not build a web app for the predictor in week 1.** Amended: the stats
+  frontend exists, so commit it and feed it a JSON export when D1 is done.
+  It must never be on the critical path of Tuesday logging.
 - **Do not tune on the full sample again.** Every number you quote from here
-  is walk-forward or it does not get quoted.
+  is walk-forward or it does not get quoted. This now includes the three
+  parameters in `EloParams`.
 - **Do not skip Phase 1 to get to Phase 2.** Phase 2 without honest evaluation
   is a model you cannot tell is working.
+- **Do not re-log a week.** (New.) The earliest row is the record. A second
+  row is allowed only when the model version changes.
 
 ---
 
-## Sequenced summary
+## Sequenced summary (revised)
 
 | when | ship | you learn |
 |---|---|---|
-| by Wed 9/9 | logged Week 1 predictions, published | calibration vs accuracy |
-| by Wed 9/9 | odds snapshot cron | unbackfillable data |
-| weeks 1-2 | walk-forward tuning, time-varying HFA | in-sample vs out-of-sample, non-stationarity |
+| Tue 9/8 night | frontend committed, failing test fixed, sigma commit merged | a clean clone is the only clone that counts |
+| Wed 9/9, before kickoff | log in git, kickoff enforced, odds cron | unbackfillable evidence |
+| Wed 9/9 | model tests, bias guard, `score_week` | statistical invariants as tests |
+| Wed 9/9 stretch | walk-forward grid, the `carryover` answer | in-sample vs out-of-sample |
+| Mon 9/14 | first scored week, README | calibration vs accuracy, on your own numbers |
+| weeks 1-2 | per-season HFA as `elo-v2` | non-stationarity |
 | weeks 2-4 | QB adjustment, leaky version scored first | temporal leakage, shrinkage |
 | weeks 4-7 | feature table, ridge, then GBM | feature engineering, regularisation, small-data reality |
 | weeks 7+ | market residual model, subset hypotheses | market efficiency, multiple comparisons |
@@ -370,15 +646,13 @@ All 118 distinct `home_qb_id` values from 2020+ resolve in
 `player_stats_week`. The starter join works; the 13.8% null rate is the part
 to plan for.
 
-## Two bugs already sitting in your data layer
+## Two bugs that were sitting in your data layer (both now handled)
 
-**Loud: `scan("injuries")` raises today.** `season` and `week` are `Float64`
-in the 2009-2020 files and `Int32` in 2021+. `scan()` handles missing and
-extra columns but not dtype drift, so the union throws `SchemaError`. Fix it
-with `cast_options=pl.ScanCastOptions(integer_cast="allow-float")` in
-`nfl/data.py`, or normalise dtypes at ingest. Your call, but the first option
-silently leaves `season` as a float, so `2009.0` will not match an int filter
-and joins come back empty for no visible reason.
+**Loud: `scan("injuries")` used to raise.** `season` and `week` are `Float64`
+in the 2009-2020 files and `Int32` in 2021+. `nfl/data.py` now passes
+`integer_cast="allow-float"` and `normalize_keys` casts both back to `Int32`
+on the way out, so an integer filter matches. Keep `KEY_DTYPES` in mind when
+you add a third key column.
 
 **Silent: `depth_charts` changed schema entirely in 2025.** Row counts are
 37,327 (2023), 37,312 (2024), **554,215 (2025)**, 485,277 (2026).
@@ -388,15 +662,11 @@ and joins come back empty for no visible reason.
     2025+       season, dt, team, player_name, espn_id, gsis_id,
                 pos_grp, pos_abb, pos_slot, pos_rank
 
-There is no `week` column in the new format at all. Because `scan()` sets
-`missing_columns="insert"`, the union *succeeds* and every 2025/2026 row comes
-back with null week, null position and null depth_team. Nothing errors. Phase 2
-code filtering `depth_team == "1"` will simply see no modern rows.
-
-The new feed is 221 timestamped snapshots per season. `dt` is an ISO **string**,
-not a datetime. The starter is `pos_abb == "QB"` and `pos_rank == 1`. Better for
-your purpose (you can take the snapshot as of Tuesday rather than trusting a
-week label) but it needs its own reader and its own test.
+`scan("depth_charts")` now raises `SchemaBreak` by name, and
+`nfl.depth.load_depth_charts` reads file by file and projects both eras onto
+one schema with separate `week` and `asof` keys. The starter is
+`position == "QB"` and `rank == 1`. On the modern era that is one row per
+snapshot, and narrowing to "as of Tuesday" is the `join_asof` below.
 
 ## Phase 0
 
@@ -410,11 +680,24 @@ numpy is worth as much as knowing how.
 Getting Python-computed values back into a frame: parallel lists and positional
 alignment work until they don't. The contract that cannot drift is to
 accumulate dicts carrying `game_id`, build a frame, and join back on that key.
+(Done: `run_elo` does exactly this.)
 
 Decide now, not twice: does `run_elo` also return per-week rating history?
-Phase 1's HFA work and Phase 2's validation both want it.
+Phase 1's HFA work and Phase 2's validation both want it. **Decided above, B2:
+yes.**
 
-Params object: `@dataclass(frozen=True, slots=True)`.
+Params object: `@dataclass(frozen=True, slots=True)`. Done.
+
+**On the log's schema.** `log_predictions` builds the frame with
+`pl.DataFrame(rows, schema=PRED_SCHEMA)`, and the rows carry extra keys
+(`home`, `pre_home_elo`, ...) that the schema does not name. Polars drops
+them silently. That is convenient today and a trap tomorrow: a typo in a
+rename produces an all-null column, which is exactly what the read-back check
+in `log_week` exists to catch. Keep that check.
+
+**On time.** `datetime.now()` is naive local time. Kickoffs are Eastern.
+Your cron will run wherever the machine is. Pick UTC for everything you write,
+today, and convert only for display.
 
 ## Phase 1
 
@@ -425,7 +708,8 @@ ratings are cumulative state, not fitted coefficients. You must run the ratings
 train only" means something narrower here: the only thing being fitted is the
 hyperparameter vector, and it may only be chosen using scores from held-out
 seasons. The rating pass always runs forward over everything. Write that down
-before coding it.
+before coding it. (C1 turns this into a per-season MAE table computed once per
+vector, then a selection rule over that table.)
 
 Grid: `itertools.product`.
 
@@ -439,6 +723,11 @@ Two parameter names renamed in polars 1.0 that will cost you an afternoon: it is
 own HFA:
 
     pl.col("hfa_raw").rolling_mean(window_size=3, min_samples=1).shift(1)
+
+**Scoring against the logged line, not the current one.** By Monday nflverse's
+`spread_line` for Week 1 is the closing number. Your `market_spread` column is
+the Tuesday number. `score_week` must use the column from the log. If you find
+yourself joining the spine's `spread_line` back in for scoring, stop.
 
 ## Phase 2
 
@@ -492,14 +781,15 @@ is unusably slow.
 
     games.join_asof(
         snapshots,
-        left_on="kickoff", right_on="dt",   # both frames must be sorted on these
-        by="team",                          # match within team, take the latest dt
-        strategy="backward",                # never look forward. the leakage guard.
+        left_on="kickoff", right_on="asof",  # both frames must be sorted on these
+        by="team",                           # match within team, take the latest
+        strategy="backward",                 # never look forward. the leakage guard.
     )
 
 The single most useful function in polars for leakage-safe features, and how
 you will consume both the 2025+ depth chart feed and your own odds snapshots.
-Learn it in Phase 2 and Phase 3 gets much shorter.
+Learn it in Phase 2 and Phase 3 gets much shorter. `kickoff` is the column A2
+adds to the spine; this is the second reason it needs to exist.
 
 For ridge, use sklearn's `Ridge` inside a `Pipeline` with `StandardScaler`. Not
 stylistic: ridge penalises raw coefficient magnitude and your features span
@@ -511,9 +801,10 @@ and you will conclude EPA doesn't matter.
 
 - Every blanked expression body and the parameters that go in them.
 - Rolling vs EWMA and the half-life. A modelling judgement, not a lookup.
-- The structure of the walk-forward grid loop.
+- The structure of the walk-forward grid loop beyond the design in C1.
 - Which features earn their place in Phase 3, and the rookie-prior shrinkage.
 - What a null starting QB should mean. You hit it on 13.8% of games; there is
   no correct answer, only a decision you can defend.
 - The odds API client. Thirty lines, and writing them is how you notice what
-  the response actually contains.
+  the response actually contains. The sign flip in A3 is the one thing worth
+  knowing before you start.
