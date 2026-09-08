@@ -93,7 +93,9 @@ of work; the first three tiers are the day, tier D is if you are still going.
 
 ### Tier A: before the opener kicks off. Nothing else matters until these are done.
 
-**A1. Put the track record in git.** (15 min)
+**A1. Put the track record in git.** (15 min) *Plumbing done 2026-09-08:
+`log_week` re-exports `track_record/predictions.csv`; run
+`python -m model.predict --export` once for the Week 1 rows, then commit.*
 
 Un-ignore the log or move it. Two defensible layouts:
 
@@ -113,6 +115,8 @@ re-logging after the line has moved is how you accidentally launder a better
 number into the record.
 
 **A2. Carry `gametime` through the spine and assert on it.** (30 min)
+*Done 2026-09-08: `kickoff` is UTC in the spine, `check_slate` refuses started
+or unknown kickoffs, `logged_at` is UTC.*
 
 Add `gametime` to `_PASSTHROUGH` in `nfl/games.py` and derive
 `kickoff = gameday + gametime` as a datetime in `build_game_spine`. nflverse
@@ -153,7 +157,8 @@ equality with the right sign.
 The roadmap deliberately left this client to you. That has not changed. The
 above is the shape, not the code.
 
-**A4. Fix the failing test and merge the sigma commit.** (20 min)
+**A4. Fix the failing test and merge the sigma commit.** (20 min) *Done
+2026-09-08, plus a GitHub Actions workflow running pytest on every push.*
 
 - Mark `test_unsafe_union_can_be_opted_out_of` with `needs_data`, or give it
   an in-memory frame. A fresh clone must go green.
@@ -720,7 +725,7 @@ the parameters it keeps.
 
 | when | ship | you learn |
 |---|---|---|
-| Tue 9/8 night | frontend committed, failing test fixed, sigma commit merged | a clean clone is the only clone that counts |
+| Tue 9/8 night | ~~failing test fixed, sigma commit merged~~ done; CI added; frontend still to commit | a clean clone is the only clone that counts |
 | Wed 9/9, before kickoff | log in git, kickoff enforced, odds cron | unbackfillable evidence |
 | Wed 9/9 | model tests, bias guard, `score_week` | statistical invariants as tests |
 | Wed 9/9 stretch | walk-forward grid, the `carryover` answer | in-sample vs out-of-sample |
