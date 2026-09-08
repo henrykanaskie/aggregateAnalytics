@@ -450,9 +450,40 @@ forward. See C2.
 **1.5 (new) `score_week` and the Monday cadence.** See B1. Without it Phase 1
 has no output.
 
+**1.6 (new) The logistic check: is the probit calibrated?** (20 min)
+
+There is no fitted model in the repo yet. Win probability comes from a normal
+CDF of `pred_margin / sigma`, a probit link with a hand-set slope. This is the
+smallest possible regression and it exists to test that link, not to replace
+it.
+
+1. Fit a logistic regression of home win on Elo diff (with the HFA term
+   already inside the diff, as `run_elo` computes it), walk-forward on 2020+.
+   One feature, one coefficient, one intercept.
+2. Score both the logistic and the probit on the held-out seasons with Brier
+   and the reliability table. Report them side by side.
+3. Read the coefficient. Your probit implies a slope of
+   `1 / (sigma * points_per_elo)` in Elo units. If the fitted logistic slope
+   is far from the equivalent, the hand-set conversion is miscalibrated and
+   the reliability table will show it as a consistent lean in the middle
+   buckets. If the intercept is far from zero, HFA is wrong, which the bias
+   guard (1.3) should already have caught.
+
+Expect near-agreement. The point is that "near" becomes a number, and that
+you have fitted one coefficient and compared it to a constant before you fit
+ten of them in Phase 3.2.
+
+Also note that the update loop uses a *different* win function: the chess
+logistic with the 400 scale, for expected score only. At a 100-point edge it
+says about 64%; the probit says about 65%. They agree by coincidence of the
+current parameters, not by design. Only the probit reaches the log, so only
+the probit is what this check is about.
+
 > **Learning objectives:** in-sample versus out-of-sample fit, felt rather than
 > read about; non-stationarity, a parameter fitted on 2005 football is wrong for
 > 2026; regression tests as a guard on statistical properties, not just outputs.
+> Also: what a fitted coefficient is next to a hand-set constant, and why a
+> rating system is not a regression.
 
 ---
 
@@ -694,7 +725,7 @@ the parameters it keeps.
 | Wed 9/9 | model tests, bias guard, `score_week` | statistical invariants as tests |
 | Wed 9/9 stretch | walk-forward grid, the `carryover` answer | in-sample vs out-of-sample |
 | Mon 9/14 | first scored week, README | calibration vs accuracy, on your own numbers |
-| weeks 1-2 | per-season HFA as `elo-v2` | non-stationarity |
+| weeks 1-2 | per-season HFA as `elo-v2`, logistic calibration check | non-stationarity, fitted vs hand-set |
 | weeks 2-4 | QB adjustment, leaky version scored first | temporal leakage, shrinkage |
 | weeks 4-7 | feature table, ridge, then GBM | feature engineering, regularisation, small-data reality |
 | weeks 7+ | market residual model, subset hypotheses | market efficiency, multiple comparisons |
@@ -815,6 +846,14 @@ Two parameter names renamed in polars 1.0 that will cost you an afternoon: it is
 own HFA:
 
     pl.col("hfa_raw").rolling_mean(window_size=3, min_samples=1).shift(1)
+
+For 1.6, `LogisticRegression` from sklearn with `penalty=None` (one feature
+does not need regularising) is enough; add scikit-learn to `dependencies` in
+`pyproject.toml` at that point, since Phase 3 needs it anyway. The
+equivalent-slope comparison: a probit slope `b` corresponds roughly to a
+logistic slope `1.6 * b`, so compare the fitted logistic coefficient to
+`1.6 / (sigma * points_per_elo)`. The 1.6 is the usual logistic-to-probit
+scale factor, not something to tune.
 
 **Scoring against the logged line, not the current one.** By Monday nflverse's
 `spread_line` for Week 1 is the closing number. Your `market_spread` column is
