@@ -10,5 +10,6 @@ __pycache__/
 !.vscode/*.json
 
 # generated output
+*.egg-info/
 nfl_data_profile.html
 data_handling/explorer/cache/
