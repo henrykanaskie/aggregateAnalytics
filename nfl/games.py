@@ -33,6 +33,7 @@ _PASSTHROUGH = [
 
 SPINE_COLUMNS = [
     "game_id", "season", "week", "game_type", "is_regular", "gameday",
+    "gametime", "kickoff",
     "home", "away", "home_score", "away_score", "margin", "played",
     "spread_line", "neutral", "div_game", "overtime",
     "home_rest", "away_rest", "rest_diff",
@@ -51,10 +52,24 @@ def build_game_spine(schedules: pl.DataFrame | pl.LazyFrame) -> pl.DataFrame:
         else pl.col("gameday")
     )
 
+    # nflverse `gametime` is an Eastern wall-clock "HH:MM" string. Combine it
+    # with the date, pin the zone, and store UTC so `logged_at < kickoff` is a
+    # plain comparison. Null gametime (some pre-2000 rows) leaves kickoff null,
+    # which callers must treat as "unknown", never as "already started".
+    if "gametime" in have.names():
+        kickoff = (
+            gameday.dt.combine(pl.col("gametime").str.to_time("%H:%M", strict=False))
+            .dt.replace_time_zone("America/New_York", ambiguous="earliest")
+            .dt.convert_time_zone("UTC")
+        )
+    else:
+        kickoff = pl.lit(None, dtype=pl.Datetime("us", "UTC"))
+
     out = lf.with_columns(
         home=canonical_team_expr("home_team"),
         away=canonical_team_expr("away_team"),
         gameday=gameday,
+        kickoff=kickoff,
         # `result` is home - away, but recompute where it is null and the
         # scores are present so a partially-populated row still resolves.
         margin=pl.coalesce(

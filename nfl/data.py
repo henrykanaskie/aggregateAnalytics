@@ -24,6 +24,13 @@ RAW_DIR = DATA_ROOT / "raw"
 MANIFEST_PATH = DATA_ROOT / "manifest.json"
 PRED_PATH = DATA_ROOT / "predictions.parquet"
 
+# The human-readable, git-tracked copy of the prediction log. `data/` is
+# ignored, so the parquet above is one disk failure from gone and, to anyone
+# else, indistinguishable from a backfill. A CSV that is committed before
+# kickoff is evidence a stranger can check.
+TRACK_DIR = REPO_ROOT / "track_record"
+TRACK_CSV = TRACK_DIR / "predictions.csv"
+
 
 #: Columns whose dtype must be identical across a dataset's per-season files.
 #: nflverse ships these as Float64, Int32 or even String depending on the table
