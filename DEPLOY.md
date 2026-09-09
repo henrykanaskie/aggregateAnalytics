@@ -25,9 +25,12 @@ build minutes.
 1. **Seed the cache.** Actions tab, `stats`, Run workflow, tick `full`. It
    ingests 1999 to now (expect 20 to 40 minutes), uploads one tar per dataset
    to a Release tagged `data-cache`, and commits `data/derived/`.
-2. **Secrets in GitHub**: `ODDS_API_KEY` if you want The Odds API's
-   multi-book prices. With it set, `scripts/pull_lines.sh` pulls both
-   providers; without it, ESPN only. ESPN needs no key.
+2. **The Odds API key is optional and not for the schedule.** The free tier
+   is 500 credits a month and one default pull is about 115, so the scheduled
+   job pulls ESPN only. Set `ODDS_API_KEY` in Render's environment to enable
+   the Settings page button, which shows the credit cost before spending.
+   Only if you pay for a bigger tier: add `ODDS_API_KEY` and
+   `ODDS_API_SCHEDULED=1` as GitHub secrets/variables too.
 3. **Render**: New, Blueprint, pick the repo. It reads `render.yaml`. When
    prompted, set `SITE_PASSWORD`. Set `GH_TOKEN` (a fine-grained token with
    read access to contents and releases) only if the repo is private;
