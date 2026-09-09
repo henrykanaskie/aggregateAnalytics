@@ -58,7 +58,7 @@ h3 { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spa
 .axis-y-inner { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%) rotate(-90deg); transform-origin: center; white-space: nowrap; display: flex; align-items: baseline; gap: 12px; font-size: 12px; color: var(--text); }
 .axis-end { font-size: 10.5px; color: var(--muted); }
 .quad { position: absolute; max-width: 260px; font-size: 10px; line-height: 1.25; color: var(--muted); white-space: nowrap; pointer-events: none; }
-.quad.in { padding: 1px 4px; border-radius: 5px; background: color-mix(in srgb, var(--panel) 85%, transparent); border: 1px solid var(--border); color: var(--text); opacity: 0.8; }
+.quad.in { color: var(--muted); opacity: 0.9; letter-spacing: 0.01em; }
 .quad-legend { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; margin-top: 8px; }
 .quad-card { padding: 6px 8px; border-radius: 8px; background: var(--bg-2); border-left: 2px solid var(--border-2); min-width: 0; }
 .quad-head { font-size: 11px; font-weight: 600; color: var(--text); }
