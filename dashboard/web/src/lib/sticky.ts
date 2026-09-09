@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { freeSpace } from "./cache";
 
 // Page controls (week, filters, sort) are component state, so they reset every
 // time a tab is left and come back. These keep them across tab switches,
@@ -18,7 +19,13 @@ export function readSticky<T>(key: string, fallback: T): T {
 
 function write(key: string, v: unknown): void {
   mem.set(key, v);
-  try { window.localStorage.setItem(KEY + key, JSON.stringify(v)); } catch {}
+  const raw = JSON.stringify(v);
+  try { window.localStorage.setItem(KEY + key, raw); return; } catch {}
+  // Out of room, most likely: the same storage mirrors whole API responses,
+  // and a board is megabytes. Dropping one of those to keep a filter is the
+  // right trade, and swallowing the failure is not — it leaves the panel to
+  // come back on the next visit in a state nobody left it in.
+  try { freeSpace(raw.length * 2); window.localStorage.setItem(KEY + key, raw); } catch {}
 }
 
 export function writeSticky(key: string, v: unknown): void { write(key, v); }

@@ -53,7 +53,17 @@ export default function Research() {
   const [adjust, setAdjust] = useState(false);
   const [factors, setFactors] = useState<DvpFactors | null>(null);
 
-  useEffect(() => { setPicked(null); setGameFilter(null); }, [pid]);
+  // A custom line belongs to the stat it was typed against. It used to survive
+  // a change of player or market, so jumping from a lineman on a 0.5-tackle
+  // custom line to a quarterback with a posted 32.5 charted him against 0.5.
+  const bookLine = settings.preferredBook || "consensus";
+  useEffect(() => { setPicked(null); setGameFilter(null); setCustomLine(null); setLineSource(bookLine); }, [pid]);
+  useEffect(() => { if (market) { setCustomLine(null); setLineSource(bookLine); } }, [market]);
+  // Whether the custom line was suggested by the page rather than typed: a
+  // suggestion gives way to a book's line the moment one arrives, a typed one
+  // does not. The books load in parallel with the game log, so which came
+  // first used to decide whether the page opened on the posted line.
+  const suggested = useRef(false);
 
   // Columns, the mini charts and the default market are seeded once per player
   // from the three responses. The ref keeps a cached revisit from re-seeding
@@ -80,8 +90,10 @@ export default function Research() {
   const marketRow: BoardRow | null = useMemo(() => lines?.markets.find((m) => m.market === market) ?? null, [lines, market]);
   const rawRows = log?.rows ?? [];
   useEffect(() => {
-    if (adjust && player) api5.dvpFactors(player.position, statKey, settings.since).then(setFactors).catch(() => setFactors(null));
-    else setFactors(null);
+    if (!adjust || !player) { setFactors(null); return; }
+    let alive = true;
+    api5.dvpFactors(player.position, statKey, settings.since).then((f) => alive && setFactors(f)).catch(() => alive && setFactors(null));
+    return () => { alive = false; };
   }, [adjust, player, statKey, settings.since]);
   // Opponent-adjusted view: scale the charted stat by how generous each game's defense was to the position that season.
   const allRows = useMemo(() => {
@@ -114,8 +126,11 @@ export default function Research() {
 
   useEffect(() => {
     // When a stat has no market line, seed the custom line from recent games.
-    if (!marketRow && allRows.length) { setCustomLine(suggestLine(allRows, statKey)); setLineSource("custom"); }
-    else if (marketRow && lineSource === "custom" && customLine === null) setLineSource(settings.preferredBook || "consensus");
+    if (!marketRow && allRows.length && (lineSource !== "custom" || customLine === null || suggested.current)) {
+      setCustomLine(suggestLine(allRows, statKey)); setLineSource("custom"); suggested.current = true;
+    } else if (marketRow && lineSource === "custom" && (customLine === null || suggested.current)) {
+      setLineSource(bookLine); suggested.current = false;
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [marketRow, statKey, allRows]);
 
@@ -153,7 +168,7 @@ export default function Research() {
       {loading && !player && <div className="empty"><Spinner /> loading…</div>}
       {player && (
         <div className={settings.focus ? "focus-on" : ""}>
-          <div className="panel" style={{ marginBottom: 14, display: "flex", gap: 12, alignItems: "center" }} data-tour="research-player">
+          <div className="panel" style={{ marginBottom: 14, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }} data-tour="research-player">
             <div style={{ flex: 1 }}><PlayerHeader p={player} game={lines?.game ?? null} /></div>
             <button className={`btn focus-toggle ${settings.focus ? "on" : ""}`} title="Highlight the stats that matter for this player and prop; dim the rest" onClick={() => setSettings({ focus: !settings.focus })}>{settings.focus ? "★ Focus on" : "☆ Focus"}</button>
           </div>
@@ -180,13 +195,13 @@ export default function Research() {
             <div className="controls">
               <Field label="Stat"><StatPicker value={statKey} onChange={chooseStat} available={log?.available} position={player.position} important={important} /></Field>
               <Field label="Line source">
-                <select className="input" value={lineSource} onChange={(e) => setLineSource(e.target.value)}>
+                <select className="input" value={lineSource} onChange={(e) => { if (e.target.value === "custom") suggested.current = false; setLineSource(e.target.value); }}>
                   {marketRow && marketRow.kind === "ou" && <option value="consensus">Consensus (median of {marketRow.n_books})</option>}
                   {marketRow && marketRow.kind === "ou" && marketRow.books.map((b) => <option key={b.book} value={b.book}>{b.title}: {fmtLine(b.line)}</option>)}
                   <option value="custom">Custom line</option>
                 </select>
               </Field>
-              <Field label="Line"><input className="input num" type="number" step="0.5" value={line ?? ""} onChange={(e) => { setCustomLine(e.target.value === "" ? null : Number(e.target.value)); setLineSource("custom"); }} /></Field>
+              <Field label="Line"><input className="input num" type="number" step="0.5" value={line ?? ""} onChange={(e) => { suggested.current = false; setCustomLine(e.target.value === "" ? null : Number(e.target.value)); setLineSource("custom"); }} /></Field>
               <Field label="Last N games"><input className="input num" type="number" min={1} value={filters.n ?? ""} placeholder="all" onChange={(e) => setFilters({ ...filters, n: e.target.value === "" ? null : Number(e.target.value) })} /></Field>
               <Field label="Games"><Seg value={filters.seasonType} options={[{ v: "ALL", l: "All" }, { v: "REG", l: "Regular" }, { v: "POST", l: "Playoffs" }]} onChange={(v) => setFilters({ ...filters, seasonType: v })} /></Field>
               <Field label="Venue"><Seg value={filters.venue} options={[{ v: "ALL", l: "All" }, { v: "HOME", l: "Home" }, { v: "AWAY", l: "Away" }]} onChange={(v) => setFilters({ ...filters, venue: v })} /></Field>
@@ -267,7 +282,12 @@ export default function Research() {
 function PredictionSlot({ playerId, market, line, proj, statFmt }: { playerId: string; market: string | null; line: number | null; proj: import("../api").Proj | null; statFmt?: string }) {
   const { meta } = useMeta();
   const [rows, setRows] = useState<any[]>([]);
-  useEffect(() => { if (meta) api.predictions(meta.season, meta.week).then((d) => setRows(d.props.filter((p) => p.player_id === playerId))).catch(() => setRows([])); }, [meta, playerId]);
+  useEffect(() => {
+    if (!meta) return;
+    let alive = true;
+    api.predictions(meta.season, meta.week).then((d) => alive && setRows(d.props.filter((p) => p.player_id === playerId))).catch(() => alive && setRows([]));
+    return () => { alive = false; };
+  }, [meta, playerId]);
   const mine = rows.filter((p) => !market || p.market === market);
   return (
     <div className="panel">
@@ -299,7 +319,12 @@ function QuickPicks() {
   const nav = useNavigate();
   const [team, setTeam] = useState("");
   const [rows, setRows] = useState<{ player_id: string; name: string; position: string; games: number; ppr: number }[]>([]);
-  useEffect(() => { if (team && meta) api.teamPlayers(team, meta.season - 1).then(setRows); else setRows([]); }, [team, meta]);
+  useEffect(() => {
+    if (!team || !meta) { setRows([]); return; }
+    let alive = true;
+    api.teamPlayers(team, meta.season - 1).then((r) => alive && setRows(r)).catch(() => alive && setRows([]));
+    return () => { alive = false; };
+  }, [team, meta]);
   if (!meta) return null;
   return (
     <div style={{ marginTop: 16 }}>

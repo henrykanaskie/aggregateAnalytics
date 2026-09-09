@@ -143,7 +143,10 @@ def log_baseline(rows: list[dict], season: int, week: int) -> int:
             df = df.filter(~pl.struct(["player_id", "market"]).map_elements(lambda s: (s["player_id"], s["market"]) in have, return_dtype=pl.Boolean))
         if df.is_empty():
             return 0
+        added = df.height
         df = pl.concat([old, df], how="diagonal_relaxed")
+    else:
+        added = df.height
     PROP_PRED_PATH.parent.mkdir(parents=True, exist_ok=True)
     df.write_parquet(PROP_PRED_PATH)
-    return len(new)
+    return added

@@ -21,7 +21,7 @@ export default function PlayerHeader({ p, game }: { p: Player; game: ScheduleGam
         </div>
       </div>
       {game && (
-        <div className="panel" style={{ padding: "8px 12px", minWidth: 200 }}>
+        <div className="panel phead-game" style={{ padding: "8px 12px" }}>
           <div className="tiny muted">Week {game.week} · {game.gameday} {game.gametime}</div>
           <div style={{ fontWeight: 600, fontSize: 15 }}>{opp}</div>
           <div className="small muted">spread <span className="num">{spread === null ? "–" : spread > 0 ? `+${spread}` : spread}</span> · total <span className="num">{game.total_line ?? "–"}</span>{game.total_line !== null && spread !== null ? <> · implied <span className="num">{((game.total_line - spread) / 2).toFixed(1)}</span></> : null}</div>

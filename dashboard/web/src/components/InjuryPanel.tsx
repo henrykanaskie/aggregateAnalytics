@@ -10,11 +10,18 @@ export default function InjuryPanel({ playerId, team, opponent }: { playerId: st
   const { meta } = useMeta();
   const [mine, setMine] = useState<InjuryRow[]>([]);
   const [reports, setReports] = useState<{ team: string; week: number; latest: number | null; rows: InjuryRow[] }[]>([]);
-  useEffect(() => { api3.playerInjuries(playerId).then((d) => setMine(d.rows)).catch(() => setMine([])); }, [playerId]);
+  useEffect(() => {
+    let alive = true;
+    setMine([]);
+    api3.playerInjuries(playerId).then((d) => alive && setMine(d.rows)).catch(() => alive && setMine([]));
+    return () => { alive = false; };
+  }, [playerId]);
   useEffect(() => {
     if (!meta) return;
+    let alive = true;
     Promise.all([team, opponent].filter((t): t is string => !!t).map((t) => api3.teamInjuries(t).then((d) => ({ team: t, week: d.week, latest: d.latest_week_available, rows: d.rows }))))
-      .then(setReports).catch(() => setReports([]));
+      .then((r) => alive && setReports(r)).catch(() => alive && setReports([]));
+    return () => { alive = false; };
   }, [meta, team, opponent]);
   const flagged = mine.filter((r) => r.report_status && r.report_status !== "Note");
   return (

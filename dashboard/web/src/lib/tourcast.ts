@@ -32,7 +32,6 @@ export async function buildCast(meta: Meta, settings: Settings): Promise<Cast> {
   const boardUrl = api.board.url({
     week: readSticky<number | null>("board.week", null) ?? meta.week,
     include_sample: settings.includeSample,
-    scale: readSticky("board.scale", settings.thresholdScale),
   });
   const board = await apiGet<Board>(boardUrl).catch(() => null);
 

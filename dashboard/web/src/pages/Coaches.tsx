@@ -80,7 +80,7 @@ export default function Coaches() {
       </div>
       {err && <Banner kind="err">{err}</Banner>}
       {!roleReady && <Banner kind="warn">Coordinators are not in the cache yet. nflverse carries no OC or DC anywhere, so they are scraped separately: run <code>python -m data_handling.fetch_coordinators</code> and reload.</Banner>}
-      <div className="grid grid-main" style={{ gridTemplateColumns: "340px minmax(0,1fr)" }}>
+      <div className="grid grid-main grid-side-340">
         <div className="panel" style={{ alignSelf: "start" }}>
           <div className="controls" style={{ marginBottom: 8 }}>
             <input className="input" placeholder={`filter ${role === "HC" ? "coaches" : role + "s"}…`} value={q} onChange={(e) => setQ(e.target.value)} style={{ flex: 1 }} />

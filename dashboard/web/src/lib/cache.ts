@@ -120,6 +120,14 @@ function evict(s: Storage, need: number): void {
   }
 }
 
+/** Drop mirrored responses to make room for something else in this storage.
+ *  The page controls in lib/sticky.ts are a few dozen bytes each and matter
+ *  more than a cached payload the API can rebuild, so they get to evict this. */
+export function freeSpace(need: number): void {
+  const s = store();
+  if (s) evict(s, need);
+}
+
 // Keys carry the version, so a bump would otherwise leave the previous one's
 // entries sitting in a 5MB quota forever. This also clears the old
 // timestamp-keyed entries from before the version existed.

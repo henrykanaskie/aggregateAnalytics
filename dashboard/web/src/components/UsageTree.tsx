@@ -8,7 +8,12 @@ import { Seg } from "./common";
 export default function UsageTree({ team, season }: { team: string; season: number }) {
   const [rows, setRows] = useState<UsageRow[]>([]);
   const [mode, setMode] = useState<"targets" | "carries">("targets");
-  useEffect(() => { api3.usage(team, season).then((d) => setRows(d.rows)).catch(() => setRows([])); }, [team, season]);
+  useEffect(() => {
+    let alive = true;
+    setRows([]);
+    api3.usage(team, season).then((d) => alive && setRows(d.rows)).catch(() => alive && setRows([]));
+    return () => { alive = false; };
+  }, [team, season]);
   const shown = useMemo(() => {
     const key = mode === "targets" ? "targets" : "carries";
     return rows.filter((r) => r[key] > 0).sort((a, b) => b[key] - a[key]).slice(0, 14);
@@ -18,7 +23,7 @@ export default function UsageTree({ team, season }: { team: string; season: numb
   return (
     <div>
       <div className="panel-head"><h3>Usage tree · {team} {season}</h3><Seg value={mode} options={[{ v: "targets", l: "Targets" }, { v: "carries", l: "Carries" }]} onChange={setMode} /></div>
-      <table className="tbl">
+      <div className="tbl-wrap"><table className="tbl">
         <thead><tr><th className="left">Player</th><th className="left">Pos</th><th>G</th><th style={{ width: 160 }}>Share</th><th>{mode === "targets" ? "Tgt/g" : "Car/g"}</th><th>Air yds share</th><th>Touches/g</th><th>PPR/g</th></tr></thead>
         <tbody>
           {shown.map((r) => { const share = (mode === "targets" ? r.target_share : r.carry_share) ?? 0; return (
@@ -29,7 +34,7 @@ export default function UsageTree({ team, season }: { team: string; season: numb
             </tr>
           ); })}
         </tbody>
-      </table>
+      </table></div>
     </div>
   );
 }

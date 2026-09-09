@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, api4, Angle, DefPlayer, GameMatchup, MatchupSideFull, ScheduleGame, TeamMetric } from "../api";
 import { Banner, Field, Headshot, SampleBanner, Spinner, TeamTag } from "../components/common";
 import { fmtLine, fmtOdds, fmtPct, fmtSpread, fmtStat } from "../lib/format";
@@ -55,6 +55,7 @@ export default function Matchups() {
 
 function GameView({ d }: { d: GameMatchup }) {
   const { meta } = useMeta();
+  const nav = useNavigate();
   const g = d.game;
   const pred = d.predictions[0];
   const dk = d.lines.filter((l) => l.book === "draftkings");
@@ -90,7 +91,7 @@ function GameView({ d }: { d: GameMatchup }) {
             <div className="tbl-wrap" style={{ maxHeight: 520 }}><table className="tbl compact tight">
               <thead><tr><th className="left">Player</th><th className="left">Market</th><th>Line</th><th>L5</th><th>L10</th><th>Szn</th><th>Avg−line</th><th>Move</th></tr></thead>
               <tbody>{[...d.props].sort((a, b) => (a.team ?? "").localeCompare(b.team ?? "") || a.player_name.localeCompare(b.player_name)).map((r) => (
-                <tr key={r.market + r.player_name} className="clickable" onClick={() => r.player_id && (window.location.href = `/research?player=${r.player_id}&market=${r.market}`)}>
+                <tr key={r.market + r.player_name} className="clickable" onClick={() => r.player_id && nav(`/research?player=${r.player_id}&market=${r.market}`)}>
                   <td className="left"><b>{r.team}</b> {r.player_name} <span className="muted">{r.position}</span></td><td className="left">{r.market_label}</td>
                   <td className="num"><b>{r.kind === "ou" ? fmtLine(r.consensus) : fmtPct(r.consensus)}</b></td>
                   <td className="num">{rate(r.form?.l5?.rate)}</td><td className="num">{rate(r.form?.l10?.rate)}</td><td className="num">{rate(r.form?.season?.rate)}</td>
@@ -191,27 +192,27 @@ function SideView({ s, metrics, labels }: { s: MatchupSideFull; metrics: TeamMet
       <div className="grid grid-3">
         <div>
           <h3 style={{ marginBottom: 6 }}>{s.offense} offense · {os?.season}</h3>
-          <table className="tbl compact"><thead><tr><th className="left">Tendency</th><th>Value</th><th>Rk</th><th>L4</th></tr></thead><tbody>{OFF_KEYS.map((k) => <Row key={k} k={k} block={s.offense_block} />)}</tbody></table>
+          <div className="tbl-wrap"><table className="tbl compact"><thead><tr><th className="left">Tendency</th><th>Value</th><th>Rk</th><th>L4</th></tr></thead><tbody>{OFF_KEYS.map((k) => <Row key={k} k={k} block={s.offense_block} />)}</tbody></table></div>
         </div>
         <div>
           <h3 style={{ marginBottom: 6 }}>{s.defense} defense · {ds?.season}</h3>
-          <table className="tbl compact"><thead><tr><th className="left">Tendency</th><th>Value</th><th>Rk</th><th>L4</th></tr></thead><tbody>{DEF_KEYS.map((k) => <Row key={k} k={k} block={s.defense_block} />)}</tbody></table>
+          <div className="tbl-wrap"><table className="tbl compact"><thead><tr><th className="left">Tendency</th><th>Value</th><th>Rk</th><th>L4</th></tr></thead><tbody>{DEF_KEYS.map((k) => <Row key={k} k={k} block={s.defense_block} />)}</tbody></table></div>
           <h3 style={{ margin: "10px 0 6px" }}>{s.defense} allows per game</h3>
-          <table className="tbl compact"><thead><tr><th className="left">To</th>{["QB", "RB", "WR", "TE"].map((p) => <th key={p}>{p}</th>)}</tr></thead>
+          <div className="tbl-wrap"><table className="tbl compact"><thead><tr><th className="left">To</th>{["QB", "RB", "WR", "TE"].map((p) => <th key={p}>{p}</th>)}</tr></thead>
             <tbody>{["passing_yards", "rushing_yards", "receptions", "receiving_yards", "fantasy_points_ppr"].map((k) => (
               <tr key={k}><td className="left">{labels[k]}</td>{["QB", "RB", "WR", "TE"].map((p) => { const row = s.dvp[p]?.season_row; const v = row?.[k] as number | undefined; const r = row?.[`${k}_rank`] as number | undefined; const n = (row?.n_teams as number) ?? 32; const show = v !== undefined && v !== null && (s.dvp[p].stats.includes(k)); const pct = r ? 1 - (r - 1) / (n - 1) : 0.5; return <td key={p} className={`num ${show && pct >= 0.75 ? "over" : show && pct <= 0.25 ? "under" : ""}`}>{show ? <>{v!.toFixed(1)} <span className="faint tiny">{r}</span></> : <span className="faint">–</span>}</td>; })}</tr>
-            ))}</tbody></table>
+            ))}</tbody></table></div>
           <div className="hint">rank 1 = most allowed</div>
         </div>
         <div>
           <h3 style={{ marginBottom: 6 }}>Who gets the ball · {s.offense}</h3>
-          <table className="tbl compact tight"><thead><tr><th className="left">Player</th><th>G</th><th>Tgt%</th><th>Car%</th><th>Tch/g</th><th>PPR/g</th></tr></thead>
-            <tbody>{s.offense_personnel.map((p) => <tr key={p.player_id}><td className="left"><Link to={`/research?player=${p.player_id}`}>{p.player_display_name}</Link> <span className="muted">{p.position}{p.depth_rank ? p.depth_rank : ""}</span>{p.new_to_team && p.stats_team ? <span className="pill warn" title={`New to ${s.offense}. The numbers here are his ${os?.season} season with ${p.stats_team}.`}>{p.stats_team}</span> : null}{!p.stats_team && p.games === 0 ? <span className="pill" title="No prior season on record">rookie</span> : null}</td><td className="num muted">{p.games}</td><td className="num">{p.position === "QB" ? "–" : fmtPct(p.target_share)}</td><td className="num">{p.position === "RB" || p.position === "QB" ? fmtPct(p.carry_share) : "–"}</td><td className="num">{(p.touches_pg ?? 0).toFixed(1)}</td><td className="num">{(p.ppr_pg ?? 0).toFixed(1)}</td></tr>)}</tbody></table>
+          <div className="tbl-wrap"><table className="tbl compact tight"><thead><tr><th className="left">Player</th><th>G</th><th>Tgt%</th><th>Car%</th><th>Tch/g</th><th>PPR/g</th></tr></thead>
+            <tbody>{s.offense_personnel.map((p) => <tr key={p.player_id}><td className="left"><Link to={`/research?player=${p.player_id}`}>{p.player_display_name}</Link> <span className="muted">{p.position}{p.depth_rank ? p.depth_rank : ""}</span>{p.new_to_team && p.stats_team ? <span className="pill warn" title={`New to ${s.offense}. The numbers here are his ${os?.season} season with ${p.stats_team}.`}>{p.stats_team}</span> : null}{!p.stats_team && p.games === 0 ? <span className="pill" title="No prior season on record">rookie</span> : null}</td><td className="num muted">{p.games}</td><td className="num">{p.position === "QB" ? "–" : fmtPct(p.target_share)}</td><td className="num">{p.position === "RB" || p.position === "QB" ? fmtPct(p.carry_share) : "–"}</td><td className="num">{(p.touches_pg ?? 0).toFixed(1)}</td><td className="num">{(p.ppr_pg ?? 0).toFixed(1)}</td></tr>)}</tbody></table></div>
           <h3 style={{ margin: "10px 0 6px" }}>Who covers · {s.defense}</h3>
-          <table className="tbl compact tight"><thead><tr><th className="left">Defender</th><th>Snap%</th><th>Tgt/g</th><th>Y/tgt</th><th>Catch%</th><th>TD</th><th>Prs</th></tr></thead>
+          <div className="tbl-wrap"><table className="tbl compact tight"><thead><tr><th className="left">Defender</th><th>Snap%</th><th>Tgt/g</th><th>Y/tgt</th><th>Catch%</th><th>TD</th><th>Prs</th></tr></thead>
             <tbody>{(["CB", "S", "LB", "DL"] as const).flatMap((grp) => groups[grp].slice(0, grp === "DL" ? 4 : grp === "LB" ? 3 : 4).map((p) => (
               <tr key={p.name + p.position}><td className="left">{p.player_id ? <Link to={`/research?player=${p.player_id}`}>{p.name}</Link> : p.name} <span className="muted">{p.position}</span></td><td className="num">{fmtPct(p.snap_pct)}</td><td className="num">{p.group === "DL" || p.targets_pg === null ? "–" : p.targets_pg.toFixed(1)}</td><td className={`num ${p.group !== "DL" && p.yards_per_target !== null && p.targets >= 20 ? (p.yards_per_target >= 9 ? "under" : p.yards_per_target <= 6 ? "over" : "") : ""}`}>{p.group === "DL" || p.yards_per_target === null ? "–" : p.yards_per_target.toFixed(1)}</td><td className="num">{p.group === "DL" ? "–" : fmtPct(p.catch_rate)}</td><td className="num">{p.group === "DL" ? "–" : p.td_allowed ?? "–"}</td><td className="num muted">{p.pressures ?? "–"}</td></tr>
-            )))}</tbody></table>
+            )))}</tbody></table></div>
           <div className="hint">Coverage stats from PFR (targets when nearest defender). Red yards-per-target = a defender receivers have beaten; green = one they have not.</div>
         </div>
       </div>

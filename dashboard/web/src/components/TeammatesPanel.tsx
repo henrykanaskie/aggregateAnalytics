@@ -7,7 +7,12 @@ import { summarize } from "../lib/stats";
 /** With / without each key teammate, for the current stat and line. */
 export default function TeammatesPanel({ playerId, rows, statKey, stat, line, onFilter, active }: { playerId: string; rows: GameRow[]; statKey: string; stat?: StatDef; line: number | null; onFilter: (ids: string[] | null, label: string | null, key?: string | null) => void; active: string | null }) {
   const [data, setData] = useState<TeammatePresence | null>(null);
-  useEffect(() => { setData(null); api5.teammates(playerId).then(setData).catch(() => setData({ teammates: [], presence: {} })); }, [playerId]);
+  useEffect(() => {
+    let alive = true;
+    setData(null);
+    api5.teammates(playerId).then((d) => alive && setData(d)).catch(() => alive && setData({ teammates: [], presence: {} }));
+    return () => { alive = false; };
+  }, [playerId]);
   const table = useMemo(() => {
     if (!data) return [];
     return data.teammates.map((t) => {

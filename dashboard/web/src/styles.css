@@ -79,11 +79,13 @@ h3 { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spa
 .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 14px; flex-wrap: wrap; }
 .page-head h1 { font-size: 20px; }
 .grid { display: grid; gap: 14px; }
+.grid > * { min-width: 0; }
 .grid-2 { grid-template-columns: 1fr 1fr; }
 .grid-3 { grid-template-columns: repeat(3, 1fr); }
 .grid-main { grid-template-columns: minmax(0, 1fr) 390px; align-items: start; }
 .grid-main > .grid { align-content: start; }
-@media (max-width: 1100px) { .grid-main, .grid-2, .grid-3 { grid-template-columns: 1fr; } }
+.grid-side-340 { grid-template-columns: 340px minmax(0, 1fr); }
+@media (max-width: 1100px) { .grid-main, .grid-side-340, .grid-2, .grid-3 { grid-template-columns: 1fr; } }
 
 /* panels */
 .panel { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; min-width: 0; }
@@ -110,7 +112,8 @@ h3 { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spa
 .input, select.input { background: var(--bg-2); border: 1px solid var(--border-2); border-radius: 7px; padding: 5px 9px; color: var(--text); font-size: 12.5px; min-width: 0; }
 .input:focus { outline: none; border-color: var(--accent); }
 .input.num { font-family: var(--mono); width: 90px; }
-label.field { display: inline-flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+label.field { display: inline-flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; max-width: 100%; }
+label.field > select, label.field > input { max-width: 100%; }
 label.field > * { text-transform: none; letter-spacing: normal; }
 .controls { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
 .chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border-2); background: var(--bg-2); font-size: 12px; color: var(--muted); }
@@ -128,7 +131,7 @@ label.field > * { text-transform: none; letter-spacing: normal; }
 .bar > div { height: 100%; background: var(--over); }
 
 /* tables */
-.tbl-wrap { overflow: auto; max-width: 100%; }
+.tbl-wrap { overflow: auto; max-width: 100%; -webkit-overflow-scrolling: touch; }
 table.tbl { border-collapse: collapse; width: 100%; font-size: 13px; white-space: nowrap; }
 .tbl th, .tbl td { padding: 7px 9px; border-bottom: 1px solid var(--border); text-align: right; }
 .tbl th:first-child, .tbl td:first-child { text-align: left; }
@@ -158,6 +161,7 @@ table.tbl { border-collapse: collapse; width: 100%; font-size: 13px; white-space
 .phead { display: flex; gap: 16px; align-items: center; }
 .phead img { width: 84px; height: 62px; object-fit: cover; border-radius: 8px; background: var(--bg-2); }
 .phead .name { font-size: 20px; font-weight: 700; }
+.phead-game { min-width: 200px; }
 .phead .sub { color: var(--muted); font-size: 12.5px; display: flex; gap: 10px; flex-wrap: wrap; }
 .teamtag { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 6px; font-weight: 600; font-size: 12px; background: var(--panel-2); }
 .teamtag .sw { width: 10px; height: 10px; border-radius: 3px; }
@@ -183,7 +187,7 @@ table.tbl { border-collapse: collapse; width: 100%; font-size: 13px; white-space
 .tooltip .t { font-weight: 600; margin-bottom: 4px; }
 .tooltip .r { display: flex; justify-content: space-between; gap: 14px; }
 .hint { font-size: 12px; color: var(--muted); }
-code { font-family: var(--mono); font-size: 12px; background: var(--bg-2); padding: 1px 5px; border-radius: 4px; }
+code { font-family: var(--mono); font-size: 12px; background: var(--bg-2); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
 pre { font-family: var(--mono); font-size: 12px; background: var(--bg-2); padding: 10px 12px; border-radius: 8px; overflow: auto; border: 1px solid var(--border); }
 .spin { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border-2); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: middle; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -261,3 +265,52 @@ pre { font-family: var(--mono); font-size: 12px; background: var(--bg-2); paddin
 }
 .tour-wait { display: flex; align-items: center; gap: 7px; margin-top: 10px; font-size: 12px; color: var(--faint); }
 .tour-empty { margin-top: 10px; padding: 8px 10px; border-radius: 8px; font-size: 12px; background: rgba(230,170,60,0.10); border: 1px solid rgba(230,170,60,0.45); color: var(--push); }
+
+/* Phones. Nothing here changes what a page shows, only how it is laid out on a
+   screen a third as wide: the header takes two rows, side-by-side becomes
+   stacked, and anything wider than the screen scrolls inside its own box
+   rather than dragging the page with it. */
+@media (max-width: 760px) {
+  .topbar { flex-wrap: wrap; height: auto; min-height: 52px; padding: 8px 12px 6px; gap: 8px; }
+  .topbar .spacer { display: none; }   /* the search takes the slack instead */
+  /* The tabs take a row of their own and scroll sideways; the search shares
+     the first row with the brand and the buttons, and gets what is left. */
+  .topbar > .nav { order: 10; margin: 0 -12px; padding: 0 12px; width: calc(100% + 24px); }
+  .topbar .brand .muted { display: none; }   /* season and week: every page says it */
+  .topbar > [data-tour="search"] { flex: 1 1 40px; min-width: 0; }
+  .topbar .search { width: 100%; position: static; }
+  /* The results list drops below the whole header at full width, since the
+     input it belongs to is too narrow to read a name in. */
+  .topbar .search .results { left: 8px; right: 8px; top: 100%; max-height: 60vh; }
+  .main { padding: 12px 10px 60px; }
+  .page-head { margin-bottom: 10px; }
+  .page-head h1 { font-size: 18px; }
+  .panel { padding: 12px 10px; }
+  .grid { gap: 10px; }
+  .grid-main, .grid-side-340, .grid-2, .grid-3 { grid-template-columns: 1fr; }
+  .controls { gap: 10px; }
+  .phead { flex-wrap: wrap; }
+  .phead-game { min-width: 0; flex: 1 1 100%; }
+  .search { width: 100%; }
+  .modal-veil { padding: 10px; align-items: flex-start; }
+  .welcome { width: 100%; padding: 18px 16px 16px; }
+  .welcome-head h1 { font-size: 19px; }
+  .empty { padding: 20px 10px; }
+  .tbl th, .tbl td { padding: 6px 7px; }
+  /* iOS zooms the page into any field whose type is under 16px, and then
+     leaves it zoomed. */
+  .input, select.input, input, select, textarea { font-size: 16px; }
+  .input.num { width: 96px; }
+}
+/* Fingers, not pointers: the same controls with a little more to press. */
+@media (hover: none) and (pointer: coarse) {
+  .nav a { padding: 8px 10px; }
+  .btn { padding: 7px 12px; }
+  .btn.sm { padding: 5px 10px; }
+  .seg button { padding: 7px 11px; }
+  .chip { padding: 5px 11px; }
+  .chip button { padding: 2px 4px; margin: -2px -4px; }
+  .theme-btn { padding: 6px 10px; }
+  .tbl tr:hover td { background: transparent; }
+  .search .row { padding: 9px 10px; }
+}

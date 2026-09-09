@@ -121,8 +121,13 @@ def _latest(lf: pl.LazyFrame, keys: list[str], season: int | None, week: int | N
     df = lf.collect()
     if df.is_empty():
         return df
-    if not include_sample and (df["source"] != "sample").any():
-        # Real data wins: never mix generated lines with live ones.
+    # Generated lines are a stand-in for an empty week, never a peer of real
+    # ones: with ``include_sample`` they stay only while nothing real exists
+    # for the window, and without it they are dropped outright. The old test
+    # had this backwards (it kept them whenever no real rows were present,
+    # whatever the flag said), so "Sample lines: Never" in Settings changed
+    # nothing.
+    if not include_sample or (df["source"] != "sample").any():
         df = df.filter(pl.col("source") != "sample")
     return (
         df.sort("pulled_at")

@@ -32,7 +32,16 @@ export default function PlayerScatter({ playerId, position, statKey, season, nam
   // filtered call and one cached response serves every player at the position,
   // where asking the server to keep him would mean a copy of the field per
   // player. Moving the cut here also makes the games control instant.
-  useEffect(() => { if (pos) api6.scatterPlayers(yr, pos, 1).then((d) => setRows(d.rows)).catch(() => setRows([])); }, [pos, yr]);
+  useEffect(() => {
+    if (!pos) return;
+    // Cleared first, and only the latest request may fill it: switching the
+    // season twice used to leave the slower response on screen under the
+    // faster one's heading.
+    let alive = true;
+    setRows(null);
+    api6.scatterPlayers(yr, pos, 1).then((d) => alive && setRows(d.rows)).catch(() => alive && setRows([]));
+    return () => { alive = false; };
+  }, [pos, yr]);
   const sx = statByKey.get(x), sy = statByKey.get(y);
   const perGame = (k: string) => statByKey.get(k)?.fmt === "int" || ["passing_epa", "rushing_epa", "receiving_epa", "fantasy_points", "fantasy_points_ppr"].includes(k);
   const PEERS = 50;    // the field drawn, and what the average lines are read against

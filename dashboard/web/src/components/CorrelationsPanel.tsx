@@ -5,7 +5,12 @@ import { api5, CorrRow } from "../api";
 /** Same-game correlations for parlay building. */
 export default function CorrelationsPanel({ playerId, statKey, statLabel }: { playerId: string; statKey: string; statLabel: string }) {
   const [rows, setRows] = useState<CorrRow[] | null>(null);
-  useEffect(() => { setRows(null); api5.correlations(playerId, statKey).then((d) => setRows(d.rows)).catch(() => setRows([])); }, [playerId, statKey]);
+  useEffect(() => {
+    let alive = true;
+    setRows(null);
+    api5.correlations(playerId, statKey).then((d) => alive && setRows(d.rows)).catch(() => alive && setRows([]));
+    return () => { alive = false; };
+  }, [playerId, statKey]);
   if (!rows) return <div className="hint">loading…</div>;
   if (!rows.length) return <div className="hint">Not enough shared games to correlate (needs 8+).</div>;
   return (

@@ -42,7 +42,7 @@ const STEPS: Step[] = [
     where: () => "/board",
     sel: '[data-tour="board-filters"]',
     title: "Narrowing down the board",
-    body: say("Filter by week, player, position, team or sportsbook, and pick the kinds of props you care about. Sensitivity decides how far off a book has to be before it gets flagged."),
+    body: say("Filter by week, player, position or sportsbook, add as many teams or matchups as you want, and pick the kinds of props you care about. Sensitivity decides how far off a book has to be before it gets flagged."),
   },
   {
     where: () => "/board",
@@ -275,14 +275,16 @@ export default function Tour({ onDone }: { onDone: () => void }) {
 
   const shown = box ? clip(box) : null;
   const target = lit ? shown : null;
+  // The card is as wide as it can be on a phone, never wider than the screen.
+  const cardW = Math.min(CARD_W, window.innerWidth - 24);
   let top: number, left: number;
   if (target) {
     const below = target.top + target.height + GAP + cardH < window.innerHeight - 12;
     top = clamp(below ? target.top + target.height + GAP : target.top - GAP - cardH, 12, window.innerHeight - cardH - 12);
-    left = clamp(target.left + target.width / 2 - CARD_W / 2, 12, window.innerWidth - CARD_W - 12);
+    left = clamp(target.left + target.width / 2 - cardW / 2, 12, window.innerWidth - cardW - 12);
   } else {
     top = Math.max(12, (window.innerHeight - cardH) / 2);
-    left = Math.max(12, (window.innerWidth - CARD_W) / 2);
+    left = Math.max(12, (window.innerWidth - cardW) / 2);
   }
 
   const waiting = !!step.sel && !lit;
@@ -294,7 +296,7 @@ export default function Tour({ onDone }: { onDone: () => void }) {
         className={`tour-ring ${target ? "" : "off"}`}
         style={shown ? { top: shown.top - pad, left: shown.left - pad, width: shown.width + pad * 2, height: shown.height + pad * 2 } : undefined}
       />
-      <div ref={cardRef} className="tour-card" style={{ top, left, width: CARD_W }}>
+      <div ref={cardRef} className="tour-card" style={{ top, left, width: cardW }}>
         <div key={i} className="tour-body">
           <div className="tour-step">Step {i + 1} of {STEPS.length}</div>
           <h2>{step.title}</h2>

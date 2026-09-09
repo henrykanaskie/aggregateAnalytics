@@ -66,7 +66,7 @@ export function warmAll(meta: Meta, settings: Settings): void {
   const urls: (string | null)[] = [];
   const week = (key: string) => readSticky<number | null>(key, null) ?? meta.week;
 
-  urls.push(api.board.url({ week: week("board.week"), include_sample: settings.includeSample, scale: readSticky("board.scale", settings.thresholdScale) }));
+  urls.push(api.board.url({ week: week("board.week"), include_sample: settings.includeSample }));
   // The schedule the tab will render, plus this week's if it was left on an
   // earlier one. Both are cheap; it is the games behind them that are not.
   urls.push(api.schedule.url(meta.season, week("matchups.week")));

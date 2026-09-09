@@ -34,6 +34,9 @@ function Tabs() {
     const full = loc.pathname + loc.search;
     setLast((prev) => (prev[hit[0]] === full ? prev : { ...prev, [hit[0]]: full }));
   }, [loc.pathname, loc.search]);
+  // On a phone the tabs scroll sideways, so the lit one is brought into view
+  // rather than left somewhere past the edge.
+  useEffect(() => { document.querySelector<HTMLElement>(".nav a.active")?.scrollIntoView({ inline: "nearest", block: "nearest" }); }, [loc.pathname]);
   return (
     <nav className="nav" data-tour="nav">
       {SECTIONS.map(([path, label]) => <NavLink key={path} to={last[path] ?? path} data-tour={`nav:${path}`}>{label}</NavLink>)}
@@ -60,7 +63,7 @@ function Shell() {
   }, [meta]);
   // Load every tab in the background as soon as meta lands, so opening one is
   // a render rather than a round trip.
-  useEffect(() => { if (meta) warmAll(meta, settings); }, [meta, settings.includeSample, settings.since, settings.thresholdScale]);
+  useEffect(() => { if (meta) warmAll(meta, settings); }, [meta, settings.includeSample, settings.since]);
   return (
     <div className="app">
       <header className="topbar">

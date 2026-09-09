@@ -15,7 +15,12 @@ export default function Splits({ playerId, statKey, position, since }: { playerI
   const { meta } = useMeta();
   const T = chartTheme();
   const COLORS = [T.accent, T.over, T.push, ...EXTRA];
-  const [role, setRole] = useState<string | null>(null);
+  // The role a reader has picked by hand, or null to follow the charted stat:
+  // a receiving-yards prop wants receiving splits, a rushing one rushing. It
+  // used to be pinned by the first response, so a page opened on rushing
+  // yards kept showing rushing splits after the reader moved to passing
+  // yards, and that same write-back fired a second identical fetch on load.
+  const [want, setWant] = useState<string | null>(null);
   const [data, setData] = useState<SplitsT | null>(null);
   const [dim, setDim] = useState("formation");
   const [metric, setMetric] = useState<string | null>(null);
@@ -24,19 +29,33 @@ export default function Splits({ playerId, statKey, position, since }: { playerI
   const [loading, setLoading] = useState(false);
   const [seasonType, setSeasonType] = useState<"ALL" | "REG" | "POST">("ALL");
 
-  useEffect(() => { setRole(null); }, [playerId]);
+  useEffect(() => { setWant(null); }, [playerId, statKey]);
   useEffect(() => {
+    let alive = true;
     setLoading(true);
-    api2.splits(playerId, { role: role ?? undefined, since: from, stat: role ? undefined : statKey, season_type: seasonType === "ALL" ? undefined : seasonType })
-      .then((d) => { setData(d); if (role !== d.role) setRole(d.role); })
-      .finally(() => setLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playerId, role, from, seasonType, statKey]);
-  useEffect(() => { if (data) api2.splitGames(playerId, data.role, dim, from).then(setGames); }, [playerId, data, dim, from]);
+    api2.splits(playerId, { role: want ?? undefined, since: from, stat: want ? undefined : statKey, season_type: seasonType === "ALL" ? undefined : seasonType })
+      .then((d) => { if (alive) setData(d); })
+      .catch(() => { if (alive) setData(null); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [playerId, want, from, seasonType, statKey]);
+  useEffect(() => {
+    if (!data) return;
+    let alive = true;
+    const key = data.dims.find((d) => d.key === dim)?.key ?? data.dims[0]?.key;
+    if (!key) { setGames(null); return; }
+    api2.splitGames(playerId, data.role, key, from).then((g) => alive && setGames(g)).catch(() => alive && setGames(null));
+    return () => { alive = false; };
+  }, [playerId, data, dim, from]);
 
   const dims = useMemo(() => (meta?.split_dims ?? []).filter((d) => data && d.roles.includes(data.role)), [meta, data]);
-  const chosen = data?.dims.find((d) => d.key === dim) ?? null;
-  const mkey = metric ?? (data ? PRIMARY[data.role] : "ypc");
+  // A split picked for one role can be meaningless for the next (run gap has
+  // no passing version), and a metric column likewise. Fall back to the first
+  // split the role does have, and to the role's headline metric.
+  const chosen = data?.dims.find((d) => d.key === dim) ?? data?.dims[0] ?? null;
+  const dimKey = chosen?.key ?? dim;
+  useEffect(() => { setMetric(null); }, [data?.role]);
+  const mkey = (metric && data?.metrics.some((m) => m[0] === metric) ? metric : null) ?? (data ? PRIMARY[data.role] : "ypc");
   const metricDef = data?.metrics.find((m) => m[0] === mkey);
   const chartData = useMemo(() => (games?.games ?? []).slice(-20).map((g) => ({ label: `${g.season_type === "POST" ? "P" : "W"}${g.week} ${g.opponent}`, ...Object.fromEntries(Object.entries(g.levels).map(([lvl, v]) => [lvl, v[mkey]])) })), [games, mkey]);
   const levels = chosen?.levels.map((l) => l.level) ?? [];
@@ -46,14 +65,14 @@ export default function Splits({ playerId, statKey, position, since }: { playerI
       <div className="panel-head">
         <div><h3>Situational splits · play by play</h3><div className="hint">Every play the player touched, grouped by situation. Charting-based splits are limited to the seasons the data covers.</div></div>
         <div className="actions">
-          <Field label="Role"><Seg value={data?.role ?? "rush"} options={Object.entries(data?.roles ?? {}).filter(([, n]) => n > 0).map(([r, n]) => ({ v: r, l: `${ROLE_LABEL[r]} (${n})` }))} onChange={(v) => setRole(v)} /></Field>
+          <Field label="Role"><Seg value={data?.role ?? "rush"} options={Object.entries(data?.roles ?? {}).filter(([, n]) => n > 0).map(([r, n]) => ({ v: r, l: `${ROLE_LABEL[r]} (${n})` }))} onChange={(v) => setWant(v)} /></Field>
           <Field label="Games"><Seg value={seasonType} options={[{ v: "ALL", l: "All" }, { v: "REG", l: "Reg" }, { v: "POST", l: "Post" }]} onChange={setSeasonType} /></Field>
           <Field label="Since"><input className="input num" type="number" min={1999} max={2026} value={from} onChange={(e) => setFrom(Number(e.target.value))} /></Field>
           {loading && <Spinner />}
         </div>
       </div>
       <div className="chips" style={{ marginBottom: 10 }}>
-        {dims.map((d) => { const has = data?.dims.some((x) => x.key === d.key); return <button key={d.key} className={`chip ${dim === d.key ? "on" : ""}`} disabled={!has} style={{ opacity: has ? 1 : 0.4 }} title={d.note || undefined} onClick={() => setDim(d.key)}>{d.label}{d.since > 1999 ? <span className="faint tiny"> {d.since}+</span> : null}</button>; })}
+        {dims.map((d) => { const has = data?.dims.some((x) => x.key === d.key); return <button key={d.key} className={`chip ${dimKey === d.key ? "on" : ""}`} disabled={!has} style={{ opacity: has ? 1 : 0.4 }} title={d.note || undefined} onClick={() => setDim(d.key)}>{d.label}{d.since > 1999 ? <span className="faint tiny"> {d.since}+</span> : null}</button>; })}
       </div>
       {chosen && data && (
         <div className="grid grid-2">
