@@ -3,7 +3,9 @@
  * The rule everywhere: colour means *percentile*, and one scale serves every
  * percentile on the dashboard, from a coach's career bar to a single cell in a
  * team table. Under 30 is red, 30 to 49 orange, 50 to 69 yellow, 70 to 89
- * blue, 90 and up green. The number is what is coloured: a 91st-percentile
+ * purple, 90 and up green. Purple rather than blue: blue is the accent that
+ * marks the selected chip, the focused row and every link, and a rank that
+ * shared it looked selected. The number is what is coloured: a 91st-percentile
  * pass rate is green because it is a 91, whether or not passing that much is
  * a virtue. Direction, where a metric has one, is left to the label and the
  * note, so the same shade always means the same place in the league.
@@ -15,17 +17,17 @@ export function pctile(rank: number | null | undefined, n: number | null | undef
   return 1 - (rank - 1) / (n - 1);
 }
 
-export type Band = "red" | "orange" | "yellow" | "blue" | "green";
+export type Band = "red" | "orange" | "yellow" | "purple" | "green";
 
 /** The band a percentile (0 to 1) falls in, on the number as it is displayed. */
 export function band(pct: number | null | undefined): Band | null {
   if (pct === null || pct === undefined || Number.isNaN(pct)) return null;
   const p = Math.round(pct * 100);
-  return p < 30 ? "red" : p < 50 ? "orange" : p < 70 ? "yellow" : p < 90 ? "blue" : "green";
+  return p < 30 ? "red" : p < 50 ? "orange" : p < 70 ? "yellow" : p < 90 ? "purple" : "green";
 }
 
 /** How to say the scale in a hint, so every page describes it the same way. */
-export const PCT_LEGEND = "red under 30, orange to 49, yellow to 69, blue to 89, green from 90";
+export const PCT_LEGEND = "red under 30, orange to 49, yellow to 69, purple to 89, green from 90";
 
 const token = (b: Band) => `var(--pct-${b})`;
 const mix = (t: string, alpha: number) => `color-mix(in srgb, ${t} ${Math.round(alpha * 100)}%, transparent)`;

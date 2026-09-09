@@ -16,7 +16,7 @@
   --push: #e6aa3c;
   --warn: #e6aa3c;
   /* One percentile scale for the whole dashboard; see lib/rank.ts. */
-  --pct-red: #ef5f5f; --pct-orange: #f28c3a; --pct-yellow: #e8c547; --pct-blue: #5a9cf5; --pct-green: #3fc07f;
+  --pct-red: #ef5f5f; --pct-orange: #f28c3a; --pct-yellow: #e8c547; --pct-purple: #a982f0; --pct-green: #3fc07f;
   --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   --sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --radius: 10px;
@@ -38,7 +38,7 @@
   --under: #d43d3d;
   --push: #b57a10;
   --warn: #b57a10;
-  --pct-red: #d43d3d; --pct-orange: #d9731a; --pct-yellow: #c9a00c; --pct-blue: #2b6fd4; --pct-green: #1f9a58;
+  --pct-red: #d43d3d; --pct-orange: #d9731a; --pct-yellow: #c9a00c; --pct-purple: #6f42c1; --pct-green: #1f9a58;
   color-scheme: light;
 }
 * { box-sizing: border-box; }
