@@ -172,3 +172,18 @@ def test_dashboard_browser_visit_is_redirected(dashboard_client):
     assert r.status_code in (303, 404)
     if r.status_code == 303:
         assert r.headers["location"] == "/password"
+
+
+def test_dashboard_starts_and_warms_without_a_cache(monkeypatch, capsys):
+    """The warm-up must never keep the app from serving: with no parquet
+    cache on disk every step is skipped and logged, and health still answers."""
+    import time
+    monkeypatch.setenv("SITE_PASSWORD", PW)
+    monkeypatch.setenv("NFL_DATA_DIR", "/nonexistent-cache")
+    monkeypatch.delenv("ODDS_REPO", raising=False)
+    from dashboard.api import app as m
+    with TestClient(m.app) as c:
+        assert c.get("/api/health").json() == {"ok": True}
+        m._warm()                      # run it synchronously too, for the log
+    out = capsys.readouterr().out
+    assert "[warm]" in out
