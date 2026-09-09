@@ -269,6 +269,42 @@ def test_head_coach_profile_still_spans_both_sides():
     assert {f["side"] for f in prof["fingerprint"]} == {"off", "def"}
 
 
+@pytest.mark.needs_data
+def test_an_nflverse_misspelling_does_not_split_a_career():
+    """Klint Kubiak arrived as a head coach with three years of coordinating
+    behind him, and the page called him a first-year hire: nflverse types him
+    "Kubliak" and the staff source types him "Kubiak"."""
+    assert coaches_mod.COACH_ALIASES["Klint Kubliak"] == "Klint Kubiak"
+    names = set(coaches_mod.staff_list("HC") and
+                [r["coach"] for r in coaches_mod.staff_list("HC")])
+    assert "Klint Kubliak" not in names, "the misspelling must not survive as a person"
+    row = next(r for r in coaches_mod.staff_list("HC") if r["coach"] == "Klint Kubiak")
+    assert row["has_history"] and row["seasons"] >= 3
+
+
+@pytest.mark.needs_data
+def test_every_current_head_coach_has_the_record_he_actually_has():
+    """Nobody in the job today should read as having never coached: they all
+    arrive from coordinating, and that history is on file."""
+    if not coaches_mod.have_coordinators():
+        pytest.skip("coordinator table not fetched")
+    blank = [r["coach"] for r in coaches_mod.staff_list("HC")
+             if r["current_team"] and not r["has_history"]]
+    assert not blank, f"current head coaches with no record: {blank}"
+
+
+@pytest.mark.needs_data
+def test_lookalike_coaches_are_left_alone():
+    """The reason the alias map is curated and not fuzzy. Two of the three
+    near-misses in this data are different men, and merging them would credit
+    one with the other's defenses."""
+    pairs = dict(coaches_mod.unmatched_coach_names())
+    assert pairs.get("Jimmy Johnson") == "Jim Johnson"
+    assert pairs.get("Marty Schottenheimer") == "Kurt Schottenheimer"
+    for wrong in ("Jimmy Johnson", "Marty Schottenheimer"):
+        assert wrong not in coaches_mod.COACH_ALIASES
+
+
 def test_which_job_answers_for_which_side():
     assert coaches_mod.accountable_for("HC", "off") and coaches_mod.accountable_for("HC", "def")
     assert coaches_mod.accountable_for("OC", "off") and not coaches_mod.accountable_for("OC", "def")

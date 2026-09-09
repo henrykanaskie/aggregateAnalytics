@@ -48,6 +48,29 @@ ROLE_LABEL: dict[str, str] = {"HC": "Head coach", "OC": "Offensive coordinator",
 ROLE_ATTRIBUTION: dict[str, str] = {"HC": "game", "OC": "season", "DC": "season"}
 
 
+#: nflverse misspellings, mapped to the spelling everything else uses.
+#:
+#: The coach column in ``schedules`` is typed by hand and occasionally wrong,
+#: and a wrong letter is a different person: Klint Kubiak arrived as Las Vegas'
+#: head coach with three years of coordinating behind him and the page called
+#: him a first-year hire, because nflverse spells him "Kubliak" and the staff
+#: source spells him "Kubiak".
+#:
+#: Curated rather than fuzzy-matched, and that is the point. Across 177
+#: nflverse names and 402 staff names there are exactly three near-misses, and
+#: string similarity gets two of them wrong: Jim Johnson (Philadelphia's
+#: defensive coordinator) is not Jimmy Johnson (Miami's head coach), and Kurt
+#: Schottenheimer is not his brother Marty. Merging two real coaches would
+#: credit one man with the other's defenses, which is far worse than the gap it
+#: would close. :func:`unmatched_coach_names` lists new candidates for a human
+#: to judge rather than resolving them here.
+COACH_ALIASES: dict[str, str] = {"Klint Kubliak": "Klint Kubiak"}
+
+
+def canonical_coach(expr: pl.Expr) -> pl.Expr:
+    return expr.replace(COACH_ALIASES)
+
+
 @lru_cache(maxsize=1)
 def game_coaches() -> pl.DataFrame:
     """One row per (game_id, team) with the head coach and the result."""
@@ -58,6 +81,8 @@ def game_coaches() -> pl.DataFrame:
     away = s.select("game_id", "season", "week", "game_type", pl.col("away_team").alias("team"), pl.col("home_team").alias("opponent"),
                     pl.col("away_coach").alias("coach"), pl.col("away_score").alias("pts"), pl.col("home_score").alias("opp_pts"))
     return pl.concat([home, away]).filter(pl.col("coach").is_not_null()).with_columns(
+        coach=canonical_coach(pl.col("coach")),
+    ).with_columns(
         win=(pl.col("pts") > pl.col("opp_pts")).cast(pl.Int32),
         loss=(pl.col("pts") < pl.col("opp_pts")).cast(pl.Int32),
         tie=((pl.col("pts") == pl.col("opp_pts")) & pl.col("pts").is_not_null()).cast(pl.Int32),
@@ -116,9 +141,26 @@ def current_coaches(season: int = CURRENT_SEASON) -> dict[str, str]:
     out: dict[str, str] = {}
     for r in s.to_dicts():
         if r["home_coach"]:
-            out.setdefault(r["home_team"], r["home_coach"])
+            out.setdefault(r["home_team"], COACH_ALIASES.get(r["home_coach"], r["home_coach"]))
         if r["away_coach"]:
-            out.setdefault(r["away_team"], r["away_coach"])
+            out.setdefault(r["away_team"], COACH_ALIASES.get(r["away_coach"], r["away_coach"]))
+    return out
+
+
+def unmatched_coach_names(cutoff: float = 0.86) -> list[tuple[str, str]]:
+    """Names that look like one another across the two sources but match
+    neither exactly: candidates for :data:`COACH_ALIASES`, for a person to
+    accept or reject. Never applied automatically."""
+    import difflib
+    sch = scan("schedules").select("home_coach", "away_coach").collect()
+    nfl = {n for c in ("home_coach", "away_coach") for n in sch[c].drop_nulls().to_list()}
+    nfl = {COACH_ALIASES.get(n, n) for n in nfl}
+    staff = set(coordinators()["coach"].to_list())
+    shared = nfl & staff
+    out = []
+    for n in sorted(nfl - shared):
+        for m in difflib.get_close_matches(n, sorted(staff - shared), n=1, cutoff=cutoff):
+            out.append((n, m))
     return out
 
 
