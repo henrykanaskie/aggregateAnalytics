@@ -92,8 +92,11 @@ def test_page_titles_follow_the_franchise_of_the_day(team, season, expected):
 
 # --- what a run actually covers --------------------------------------------
 
-def test_a_named_season_is_a_refresh_when_there_is_an_archive():
-    assert seasons_to_fetch([2026], 2026, cached=True) == [2026]
+FULL = set(range(1999, 2027))
+
+
+def test_a_named_season_is_a_refresh_when_the_archive_is_complete():
+    assert seasons_to_fetch([2026], 2026, FULL) == [2026]
 
 
 def test_the_first_run_backfills_instead_of_shipping_one_season():
@@ -102,13 +105,24 @@ def test_the_first_run_backfills_instead_of_shipping_one_season():
     merge into, and honouring the argument would publish a single season: no
     history, no fingerprints, every coordinator a first-year hire.
     """
-    got = seasons_to_fetch([2026], 2026, cached=False)
-    assert got[0] == 1999 and got[-1] == 2026
-    assert len(got) == 28
+    got = seasons_to_fetch([2026], 2026, set())
+    assert got[0] == 1999 and got[-1] == 2026 and len(got) == 28
+
+
+def test_a_one_season_archive_heals_rather_than_staying_broken():
+    """This is the case that actually shipped. A run like the one above leaves
+    a file behind, so a check for "is there a file" says yes and refreshes 2026
+    into a 2026-only archive -- for good. Compare the seasons instead.
+    """
+    assert len(seasons_to_fetch([2026], 2026, {2026})) == 28
+
+
+def test_a_gap_in_the_middle_is_filled_too():
+    assert seasons_to_fetch([2026], 2026, FULL - {2011, 2012}) == [2011, 2012, 2026]
 
 
 def test_no_argument_means_the_whole_archive():
-    assert seasons_to_fetch([], 2026, cached=True) == list(range(1999, 2027))
+    assert seasons_to_fetch([], 2026, FULL) == list(range(1999, 2027))
 
 
 # --- the profiles built on top ---------------------------------------------

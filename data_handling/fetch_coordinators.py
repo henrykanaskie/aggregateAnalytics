@@ -304,22 +304,37 @@ def save(df: pl.DataFrame, log=print) -> Path:
     return CACHE
 
 
-def seasons_to_fetch(asked: list[int], end: int, cached: bool) -> list[int]:
-    """Which seasons a run should actually cover.
+def cached_seasons() -> set[int]:
+    """Seasons already in the archive on disk. Empty if there is none."""
+    if not CACHE.exists():
+        return set()
+    try:
+        return set(pl.read_parquet(CACHE, columns=["season"])["season"].unique().to_list())
+    except Exception:  # noqa: BLE001 - an unreadable archive is a missing one
+        return set()
 
-    A named season is a *refresh*: :func:`save` merges it into the archive and
-    leaves the rest alone. That only works if there is an archive. The weekly
-    job asks for the current season on a CI runner whose cache came from the
-    release, which will not carry this table until the first run has uploaded
-    one -- so the first run has nothing to merge into, and taking the argument
-    at face value would leave one season on disk and ship exactly that: no
-    history, no fingerprints, every coordinator a rookie. Backfill instead.
+
+def seasons_to_fetch(asked: list[int], end: int, have: set[int]) -> list[int]:
+    """Which seasons a run should actually cover: the ones asked for, plus any
+    the archive is missing.
+
+    A named season is a *refresh*: :func:`save` merges it in and leaves the
+    rest alone, which is only meaningful if the rest is there. The weekly job
+    asks for the current season on a CI runner whose cache came from the
+    release, so on the first run there is nothing to merge into and the result
+    would be a single season published as the whole history: no fingerprints,
+    since those need two seasons, and every coordinator a first-year hire.
+
+    Keying on "is a file there" is not enough, and this is the part that bit.
+    Once such a run has uploaded its one season, a file *does* exist, so a
+    naive check refreshes 2026 into a 2026-only archive and the damage is
+    permanent. Comparing against the seasons actually present heals it on the
+    next run instead.
     """
+    full = range(FIRST_SEASON, end + 1)
     if not asked:
-        return list(range(FIRST_SEASON, end + 1))
-    if cached:
-        return sorted(set(asked))
-    return list(range(FIRST_SEASON, max(max(asked), end) + 1))
+        return list(full)
+    return sorted(set(asked) | {s for s in full if s not in have})
 
 
 def main() -> None:
@@ -329,10 +344,12 @@ def main() -> None:
     a = ap.parse_args()
     from dashboard.config import CURRENT_SEASON
     end = a.end or CURRENT_SEASON
-    seasons = seasons_to_fetch(a.seasons, end, CACHE.exists())
+    have = cached_seasons()
+    seasons = seasons_to_fetch(a.seasons, end, have)
     if a.seasons and seasons != sorted(set(a.seasons)):
-        print(f"no archive at {CACHE}, so there is nothing to merge {a.seasons} into: "
-              f"backfilling {seasons[0]}-{seasons[-1]} instead")
+        gap = sorted(set(seasons) - set(a.seasons))
+        print(f"archive at {CACHE} is missing {len(gap)} season(s) ({gap[0]}-{gap[-1]}): "
+              f"backfilling those alongside {sorted(set(a.seasons))}")
     print(f"fetching coordinators for {len(seasons)} season(s)")
     save(build(seasons))
 
