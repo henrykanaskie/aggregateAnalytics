@@ -55,7 +55,11 @@ jobs:
         run: |
           git config user.name "stats-bot"
           git config user.email "stats-bot@users.noreply.github.com"
-          git add data/derived data/odds/graded || true
+          # Separate adds on purpose: one `git add` over both paths stages
+          # neither when data/odds/graded is absent, which it is until the
+          # first week grades.
+          git add data/derived || true
+          git add data/odds/graded || true
           if git diff --cached --quiet; then
             echo "derived tables and grades unchanged"; exit 0
           fi
