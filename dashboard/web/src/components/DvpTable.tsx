@@ -1,13 +1,14 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { api3, DvpLeague } from "../api";
 import { Seg, TeamTag } from "./common";
+import { useSticky } from "../lib/sticky";
+import { useQuery } from "../lib/useQuery";
 
 /** League table of what each defense allows to a position, per game. */
 export default function DvpTable({ season, highlight, onPick }: { season: number; highlight?: string; onPick?: (team: string) => void }) {
-  const [pos, setPos] = useState("RB");
-  const [data, setData] = useState<DvpLeague | null>(null);
+  const [pos, setPos] = useSticky("dvp.pos", "RB");
   const [sortKey, setSortKey] = useState<string | null>(null);
-  useEffect(() => { api3.dvp("ALL", pos, season).then(setData).catch(() => setData(null)); }, [pos, season]);
+  const { data } = useQuery<DvpLeague>(api3.dvp.url("ALL", pos, season));
   if (!data) return null;
   const key = sortKey ?? data.stats[0];
   const rows = [...data.league].sort((a, b) => ((b[key] as number) ?? 0) - ((a[key] as number) ?? 0));

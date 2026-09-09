@@ -1,14 +1,14 @@
-import { useEffect, useState } from "react";
 import { api, PredictionsResponse } from "../api";
 import { Field, TeamTag } from "../components/common";
 import { fmtPct, fmtSpread } from "../lib/format";
+import { useSticky } from "../lib/sticky";
+import { useQuery } from "../lib/useQuery";
 import { useMeta } from "../state";
 
 export default function Predictions() {
   const { meta } = useMeta();
-  const [week, setWeek] = useState<number | null>(null);
-  const [data, setData] = useState<PredictionsResponse | null>(null);
-  useEffect(() => { if (meta) api.predictions(undefined, week ?? meta.week).then(setData); }, [meta, week]);
+  const [week, setWeek] = useSticky<number | null>("predictions.week", null);
+  const { data } = useQuery<PredictionsResponse>(meta ? api.predictions.url(undefined, week ?? meta.week) : null);
   const weeks = Array.from({ length: 22 }, (_, i) => i + 1);
   return (
     <div>

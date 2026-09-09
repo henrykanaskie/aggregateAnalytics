@@ -1,21 +1,20 @@
-import { useEffect, useState } from "react";
 import { api, GamesResponse } from "../api";
 import { Field, SampleBanner, SourceNote, Spinner, TeamTag } from "../components/common";
 import { fmtLine, fmtOdds, fmtPct, fmtSpread } from "../lib/format";
+import { useSticky } from "../lib/sticky";
+import { useQuery } from "../lib/useQuery";
 import { useMeta } from "../state";
 
 export default function Games() {
   const { meta, settings } = useMeta();
-  const [week, setWeek] = useState<number | null>(null);
-  const [data, setData] = useState<GamesResponse | null>(null);
-  const [loading, setLoading] = useState(false);
-  useEffect(() => { if (!meta) return; setLoading(true); api.games(undefined, week ?? meta.week, settings.includeSample).then(setData).finally(() => setLoading(false)); }, [meta, week, settings.includeSample]);
+  const [week, setWeek] = useSticky<number | null>("games.week", null);
+  const { data, loading, stale } = useQuery<GamesResponse>(meta ? api.games.url(undefined, week ?? meta.week, settings.includeSample) : null);
   const weeks = Array.from({ length: 22 }, (_, i) => i + 1);
   return (
     <div>
       <div className="page-head">
         <div><h1>Games</h1><div className="muted small">Spreads, totals and moneylines per book with opening numbers, next to the model's logged call.</div></div>
-        <SourceNote sources={data?.sources ?? []} />
+        <SourceNote sources={data?.sources ?? []} />{stale && <span className="hint"> <Spinner /> refreshing</span>}
       </div>
       {data && <SampleBanner sources={data.sources} />}
       <div className="panel" style={{ marginBottom: 12 }}><div className="controls"><Field label="Week"><select className="input" value={week ?? meta?.week ?? 1} onChange={(e) => setWeek(Number(e.target.value))}>{weeks.map((w) => <option key={w} value={w}>Week {w}</option>)}</select></Field></div></div>
