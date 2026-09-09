@@ -34,7 +34,7 @@ function Shell() {
       <main className="main">
         {error && <div className="banner err">API unreachable: {error}. Start it with <code>uvicorn dashboard.api.app:app --port 8017</code>.</div>}
         <Routes>
-          <Route path="/" element={<Research />} />
+          <Route path="/" element={<Board />} />
           <Route path="/research" element={<Research />} />
           <Route path="/board" element={<Board />} />
           <Route path="/games" element={<Games />} />

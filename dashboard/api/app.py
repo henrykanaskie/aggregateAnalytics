@@ -48,6 +48,39 @@ app.include_router(auth_router)
 sync_odds.install(app)
 
 
+def _warm() -> None:
+    """Build the process-lifetime caches right after boot, off the event loop.
+
+    On a small host the first request after a wake otherwise pays for the
+    player index (a scan of every season of player_stats_week), the team
+    metric catalogue and the coach lookup, one after another. Warming them
+    here moves that cost to the seconds after startup, where nobody is
+    waiting on it. Each step is independent; a failure (no cache on disk,
+    say) is logged and the app serves anyway.
+    """
+    import time
+    steps = (
+        ("player index", players_mod.player_index),
+        ("teams", players_mod.teams),
+        ("team metrics", team_mod.metric_json),
+        ("current coaches", coaches_mod.current_coaches),
+        ("odds status", store.status),
+    )
+    for name, fn in steps:
+        t0 = time.perf_counter()
+        try:
+            fn()
+            print(f"[warm] {name}: {time.perf_counter() - t0:.2f}s")
+        except Exception as exc:  # noqa: BLE001
+            print(f"[warm] {name} skipped: {type(exc).__name__}: {exc}")
+
+
+@app.on_event("startup")
+async def _warm_on_startup() -> None:
+    import asyncio
+    asyncio.get_running_loop().run_in_executor(None, _warm)
+
+
 # --- helpers ---------------------------------------------------------------
 
 def _clean(v: Any) -> Any:
