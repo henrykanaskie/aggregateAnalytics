@@ -16,6 +16,7 @@ import StatTiles from "../components/StatTiles";
 import { fmtLine, fmtOdds } from "../lib/format";
 import { applyFilters, DEFAULT_FILTERS, Filters, DEFAULT_MARKET_FOR, presetFor, suggestLine } from "../lib/stats";
 import { useQuery } from "../lib/useQuery";
+import Defer from "../components/Defer";
 import { useMeta } from "../state";
 import Splits from "../components/PbpSplits";
 import MatchupPanel from "../components/MatchupPanel";
@@ -219,17 +220,17 @@ export default function Research() {
               <div className="panel"><GameLogTable rows={filtered} columns={columns} setColumns={setColumns} statKey={statKey} line={line} available={log?.available} position={player.position} picked={picked} onPick={(id) => setPicked((p) => (p === id ? null : id))} important={important} /></div>
               <div className="panel">
                 <div className="panel-head" data-tour="research-peers"><h3>Among {player.position}s · {stat?.label ?? statKey} vs the volume behind it</h3><span className="hint">the highlighted face is {player.name}; dashed lines average the position's most-used players, not its whole roster</span></div>
-                <PlayerScatter playerId={pid} position={player.position} statKey={statKey} season={(meta?.season ?? 2026) - 1} name={player.name} />
+                <Defer minHeight={300}><PlayerScatter playerId={pid} position={player.position} statKey={statKey} season={(meta?.season ?? 2026) - 1} name={player.name} /></Defer>
               </div>
               <div className="panel"><MiniCharts rows={filtered} keys={miniKeys} setKeys={setMiniKeys} available={log?.available} position={player.position} onFocus={chooseStat} /></div>
               <div className="panel">
                 <div className="panel-head"><h3>With / without teammates · {stat?.label ?? statKey}{line !== null ? ` vs ${line}` : ""}</h3></div>
-                <TeammatesPanel playerId={pid} rows={rawRows} statKey={statKey} stat={stat} line={line} active={gameFilter?.key ?? null} onFilter={(ids, label, key) => setGameFilter(ids && label ? { ids: new Set(ids), label, key: key ?? label } : null)} />
+                <Defer minHeight={200}><TeammatesPanel playerId={pid} rows={rawRows} statKey={statKey} stat={stat} line={line} active={gameFilter?.key ?? null} onFilter={(ids, label, key) => setGameFilter(ids && label ? { ids: new Set(ids), label, key: key ?? label } : null)} /></Defer>
               </div>
-              <div className="panel"><Splits playerId={pid} statKey={statKey} position={player.position} since={settings.since} /></div>
+              <div className="panel"><Defer minHeight={220}><Splits playerId={pid} statKey={statKey} position={player.position} since={settings.since} /></Defer></div>
               <div className="panel">
                 <div className="panel-head"><h3>Same-game correlations · {stat?.label ?? statKey}</h3></div>
-                <CorrelationsPanel playerId={pid} statKey={statKey} statLabel={stat?.label ?? statKey} />
+                <Defer minHeight={160}><CorrelationsPanel playerId={pid} statKey={statKey} statLabel={stat?.label ?? statKey} /></Defer>
               </div>
             </div>
             <div className="grid" style={{ gap: 14, alignContent: "start" }}>
@@ -248,11 +249,11 @@ export default function Research() {
               </div>
               <div className="panel">
                 <div className="panel-head"><h3>Matchup · team tendencies</h3></div>
-                <MatchupPanel team={player.team} opponent={lines?.game ? (lines.game.home_team === player.team ? lines.game.away_team : lines.game.home_team) : null} position={player.position} focus={settings.focus} />
+                <Defer minHeight={240}><MatchupPanel team={player.team} opponent={lines?.game ? (lines.game.home_team === player.team ? lines.game.away_team : lines.game.home_team) : null} position={player.position} focus={settings.focus} /></Defer>
               </div>
               <div className="panel">
                 <div className="panel-head"><h3>Injuries</h3></div>
-                <InjuryPanel playerId={pid} team={player.team} opponent={lines?.game ? (lines.game.home_team === player.team ? lines.game.away_team : lines.game.home_team) : null} />
+                <Defer minHeight={160}><InjuryPanel playerId={pid} team={player.team} opponent={lines?.game ? (lines.game.home_team === player.team ? lines.game.away_team : lines.game.home_team) : null} /></Defer>
               </div>
               <PredictionSlot playerId={pid} market={market} line={line} proj={marketRow?.proj ?? null} statFmt={stat?.fmt} />
             </div>
