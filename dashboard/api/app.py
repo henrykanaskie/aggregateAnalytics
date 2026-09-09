@@ -389,7 +389,9 @@ def game_matchup(game_id: str, include_sample: bool = False):
     venue_info = mu_mod.venue(game)
     for off_t, def_t in ((away, home), (home, away)):
         dvp = dvp_for(def_t)
-        off_pers = mu_mod.offense_personnel(off_t, use)
+        # `use` is the season the numbers come from; `season` is the roster they
+        # are read against. In September those are different years.
+        off_pers = mu_mod.offense_personnel(off_t, use, roster_season=season)
         # betting spread from the offense's side: negative = favoured
         sl = game.get("spread_line")
         off_spread = None if sl is None else (-sl if off_t == home else sl)
@@ -405,7 +407,7 @@ def game_matchup(game_id: str, include_sample: bool = False):
             "angles": team_angles,
             "player_angles": mu_mod.player_angles(key_players, blocks[def_t]["season"], def_t, since=max(use - 2, 2016)),
             "offense_personnel": records(pl.DataFrame(off_pers)) if off_pers else [],
-            "defense_personnel": mu_mod.defense_personnel(def_t, use),
+            "defense_personnel": mu_mod.defense_personnel(def_t, use, roster_season=season),
         })
     latest = store.latest_props(season, game["week"], include_sample)
     props = build_board(latest.filter(pl.col("game_id") == game_id)) if not latest.is_empty() else []

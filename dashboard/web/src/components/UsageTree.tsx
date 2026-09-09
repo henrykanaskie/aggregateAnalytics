@@ -13,7 +13,7 @@ export default function UsageTree({ team, season }: { team: string; season: numb
     const key = mode === "targets" ? "targets" : "carries";
     return rows.filter((r) => r[key] > 0).sort((a, b) => b[key] - a[key]).slice(0, 14);
   }, [rows, mode]);
-  const max = shown.length ? (mode === "targets" ? shown[0].target_share : shown[0].carry_share) : 1;
+  const max = (shown.length ? (mode === "targets" ? shown[0].target_share : shown[0].carry_share) : 1) || 1;
   if (!rows.length) return <div className="hint">No stat lines for {team} in {season}.</div>;
   return (
     <div>
@@ -21,7 +21,7 @@ export default function UsageTree({ team, season }: { team: string; season: numb
       <table className="tbl">
         <thead><tr><th className="left">Player</th><th className="left">Pos</th><th>G</th><th style={{ width: 160 }}>Share</th><th>{mode === "targets" ? "Tgt/g" : "Car/g"}</th><th>Air yds share</th><th>Touches/g</th><th>PPR/g</th></tr></thead>
         <tbody>
-          {shown.map((r) => { const share = mode === "targets" ? r.target_share : r.carry_share; return (
+          {shown.map((r) => { const share = (mode === "targets" ? r.target_share : r.carry_share) ?? 0; return (
             <tr key={r.player_id}>
               <td className="left"><Link to={`/research?player=${r.player_id}`}>{r.player_display_name}</Link></td><td className="left muted">{r.position}</td><td className="num muted">{r.games}</td>
               <td><div style={{ display: "flex", alignItems: "center", gap: 6 }}><div className="bar" style={{ flex: 1, marginTop: 0 }}><div style={{ width: `${(share / max) * 100}%`, background: "var(--accent)" }} /></div><span className="num tiny" style={{ width: 34 }}>{fmtPct(share)}</span></div></td>

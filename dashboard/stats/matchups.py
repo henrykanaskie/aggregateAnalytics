@@ -22,9 +22,10 @@ from functools import lru_cache
 import polars as pl
 
 from nfl.data import scan
+from nfl.depth import load_depth_charts
 
 from ..config import CURRENT_SEASON
-from .context import DVP_BY_POS, DVP_LABELS, POS_GROUPS, dvp_recent, dvp_table, team_usage
+from .context import DVP_BY_POS, DVP_LABELS, POS_GROUPS, USAGE_COLS, dvp_recent, dvp_table, league_usage, team_usage
 from .gamelog import players_master
 from .players import player_index
 from .team import METRIC_BY_KEY
@@ -96,34 +97,66 @@ _PFR_SUM = ["def_targets", "def_completions_allowed", "def_yards_allowed", "def_
             "def_tackles_combined", "def_missed_tackles"]
 
 
-@lru_cache(maxsize=64)
-def defense_personnel(team: str, season: int) -> list[dict]:
-    """Defenders by snap share with season coverage / pass-rush totals."""
+@lru_cache(maxsize=8)
+def _defense_season(season: int) -> pl.DataFrame:
+    """Every defender's snaps and coverage totals for a season, league-wide.
+
+    League-wide rather than per team so a defender who moved in the off-season
+    still brings last season's numbers with him, the way the offensive table
+    does. Where he earned them is kept in ``stats_team``.
+    """
     try:
         snaps = (
             scan("snap_counts")
-            .filter((pl.col("team") == team) & (pl.col("season") == season) & (pl.col("game_type") == "REG") & (pl.col("defense_snaps") > 0))
-            .group_by(["pfr_player_id", "player", "position"])
+            .filter((pl.col("season") == season) & (pl.col("game_type") == "REG") & (pl.col("defense_snaps") > 0))
+            .group_by(["pfr_player_id", "player", "position", "team"])
             .agg(pl.len().alias("games"), pl.col("defense_pct").mean().alias("snap_pct"), pl.col("defense_snaps").sum().alias("snaps"))
             .collect()
         )
     except FileNotFoundError:
-        return []
+        return pl.DataFrame()
     if snaps.is_empty():
-        return []
+        return snaps
     try:
         pfr = (
-            scan("pfr_def").filter((pl.col("team") == team) & (pl.col("season") == season))
-            .group_by("pfr_player_id").agg([pl.col(c).sum() for c in _PFR_SUM] + [pl.len().alias("pfr_games")])
+            scan("pfr_def").filter(pl.col("season") == season)
+            .group_by(["pfr_player_id", "team"]).agg([pl.col(c).sum() for c in _PFR_SUM] + [pl.len().alias("pfr_games")])
             .collect()
         )
-        snaps = snaps.join(pfr, on="pfr_player_id", how="left")
+        snaps = snaps.join(pfr, on=["pfr_player_id", "team"], how="left")
     except FileNotFoundError:
         pass
     ids = players_master().select(pl.col("pfr_id").alias("pfr_player_id"), pl.col("gsis_id").alias("player_id"), pl.col("headshot"))
-    snaps = snaps.join(ids, on="pfr_player_id", how="left")
-    out = []
-    for r in snaps.sort("snap_pct", descending=True).to_dicts():
+    return snaps.join(ids, on="pfr_player_id", how="left").rename({"team": "stats_team"})
+
+
+@lru_cache(maxsize=64)
+def defense_personnel(team: str, season: int, roster_season: int | None = None) -> list[dict]:
+    """Defenders by snap share with season coverage / pass-rush totals.
+
+    Restricted to whoever is on this year's depth chart, for the same reason
+    the offensive table is: last season's snap counts still list players who
+    have since left. See :func:`offense_personnel`.
+    """
+    snaps = _defense_season(season)
+    if snaps.is_empty():
+        return []
+    chart = depth_chart(roster_season) if roster_season else pl.DataFrame()
+    mine = chart.filter(pl.col("team") == team) if not chart.is_empty() else chart
+    if mine.is_empty():
+        snaps = snaps.filter(pl.col("stats_team") == team)      # no chart: the team as it played
+    else:
+        roster = mine.filter(pl.col("gsis_id").is_not_null())["gsis_id"].unique().to_list()
+        snaps = snaps.filter(pl.col("player_id").is_in(roster))
+    out, seen = [], set()
+    for r in snaps.sort("snaps", descending=True).to_dicts():
+        # A defender traded mid-season has a row per team. The longer stint is
+        # the one that describes him; the other would read as a second player.
+        pid = r.get("player_id")
+        if pid is not None:
+            if pid in seen:
+                continue
+            seen.add(pid)
         grp = DEF_GROUP.get(r["position"])
         if grp is None:
             continue
@@ -133,6 +166,7 @@ def defense_personnel(team: str, season: int) -> list[dict]:
         out.append({
             "player_id": r.get("player_id"), "name": r["player"], "position": r["position"], "group": grp,
             "games": r["games"], "snap_pct": r["snap_pct"], "headshot": r.get("headshot"),
+            "stats_team": r.get("stats_team"), "new_to_team": r.get("stats_team") != team,
             "targets": tg, "targets_pg": tg / r["games"] if r["games"] else None,
             "catch_rate": cmp_ / tg if tg else None, "yards_allowed": yds, "yards_per_target": yds / tg if tg else None,
             "td_allowed": r.get("def_receiving_td_allowed"), "ints": r.get("def_ints"),
@@ -140,20 +174,106 @@ def defense_personnel(team: str, season: int) -> list[dict]:
             "pressures": r.get("def_pressures"), "sacks": r.get("def_sacks"),
             "tackles": r.get("def_tackles_combined"), "missed_tackle_pct": (r.get("def_missed_tackles") or 0) / ((r.get("def_tackles_combined") or 0) + (r.get("def_missed_tackles") or 0)) if (r.get("def_tackles_combined") or 0) + (r.get("def_missed_tackles") or 0) else None,
         })
+    out.sort(key=lambda x: -(x["snap_pct"] or 0))
     return out
 
 
-def offense_personnel(team: str, season: int) -> list[dict]:
+#: How many of each position the personnel table carries.
+_OFF_SLOTS = (("QB", 1), ("RB", 3), ("WR", 4), ("TE", 2))
+
+
+@lru_cache(maxsize=8)
+def depth_chart(season: int) -> pl.DataFrame:
+    """Each team's most recently published chart for a season.
+
+    nflverse publishes a snapshot at a time rather than a week at a time, so
+    "the roster now" is the newest ``asof`` per team, not the newest overall:
+    a team that has not filed since August must not be emptied out by one that
+    filed yesterday.
+    """
+    try:
+        d = load_depth_charts(seasons=[season])
+    except (FileNotFoundError, ValueError):
+        return pl.DataFrame()
+    if d.is_empty():
+        return d
+    return d.filter(pl.col("asof") == pl.col("asof").max().over("team"))
+
+
+def _usage_by_player(season: int) -> dict[str, dict]:
+    """Last season's line for each player, wherever he played it.
+
+    A player traded mid-season has a row per team; the one he played most of
+    is the one that describes him.
+    """
+    u = league_usage(season)
+    if u.is_empty():
+        return {}
+    out: dict[str, dict] = {}
+    for r in u.sort("games", descending=True).to_dicts():
+        out.setdefault(r["player_id"], r)
+    return out
+
+
+def offense_personnel(team: str, season: int, roster_season: int | None = None) -> list[dict]:
+    """Who is on the team now, next to what they did in ``season``.
+
+    The roster and the production deliberately come from different years. In
+    September the only stats worth reading are last season's, but last season's
+    team sheet is full of players who have since left, and the ones who arrived
+    are missing from it entirely. So the names come from this year's depth
+    chart and the numbers are whatever that player did last year, wherever he
+    did it: ``stats_team`` says where, and the shares are against that team's
+    totals, which is the only way a share means anything.
+
+    Falls back to last season's team sheet when no chart is published, which is
+    the older behaviour and still right for a season already under way.
+    """
+    chart = depth_chart(roster_season) if roster_season else pl.DataFrame()
+    mine = chart.filter(pl.col("team") == team) if not chart.is_empty() else chart
+    if mine.is_empty():
+        return _personnel_by_volume(team, season)
+
+    usage = _usage_by_player(season)
+    heads = {r["player_id"]: r["headshot"] for r in player_index().select("player_id", "headshot").to_dicts()}
+    blank = {c: 0 for c in USAGE_COLS + ["receiving_air_yards", "games", "team_games"]}
+    keep = []
+    for pos, n in _OFF_SLOTS:
+        sub = mine.filter(pl.col("position") == pos).sort("rank").head(n)
+        for d in sub.to_dicts():
+            pid = d["gsis_id"]
+            u = usage.get(pid)
+            row = dict(u) if u else dict(blank, target_share=None, carry_share=None, air_share=None,
+                                         targets_pg=0.0, carries_pg=0.0, ppr_pg=0.0, touches_pg=0.0)
+            row.update({
+                "player_id": pid,
+                "player_display_name": (u or {}).get("player_display_name") or d["player_name"],
+                "position": pos,                       # the chart's slot, not last year's
+                "depth_rank": d["rank"],
+                "stats_team": (u or {}).get("team"),
+                "new_to_team": bool(u) and u.get("team") != team,
+                "headshot": heads.get(pid),
+            })
+            row.pop("team", None)
+            keep.append(row)
+    return keep
+
+
+def _personnel_by_volume(team: str, season: int) -> list[dict]:
+    """The team sheet as it actually played, for when no chart is published."""
     u = team_usage(team, season)
     if u.is_empty():
         return []
     idx = player_index().select("player_id", "headshot")
     u = u.join(idx, on="player_id", how="left")
     keep = []
-    for pos, n in (("QB", 1), ("RB", 3), ("WR", 4), ("TE", 2)):
+    for pos, n in _OFF_SLOTS:
         sub = u.filter(pl.col("position") == pos)
         sub = sub.sort("attempts" if pos == "QB" else "carries" if pos == "RB" else "targets", descending=True).head(n)
-        keep.extend(sub.to_dicts())
+        for r in sub.to_dicts():
+            r.update({"depth_rank": None, "stats_team": r.get("team"), "new_to_team": False})
+            r.pop("team", None)
+            keep.append(r)
     return keep
 
 

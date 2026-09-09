@@ -85,32 +85,50 @@ USAGE_COLS = ["targets", "receptions", "receiving_yards", "receiving_tds", "carr
               "attempts", "passing_yards", "passing_tds", "fantasy_points_ppr"]
 
 
-def team_usage(team: str, season: int, season_type: str = "REG") -> pl.DataFrame:
-    """Every player on a team-season with shares of targets, carries and
-    air yards, so 'who gets the touches' is one table."""
-    lf = scan("player_stats_week").filter((pl.col("team") == team) & (pl.col("season") == season))
+@lru_cache(maxsize=4)
+def league_usage(season: int, season_type: str = "REG") -> pl.DataFrame:
+    """Every player in a season with shares of their own team's targets,
+    carries and air yards.
+
+    League-wide in one pass because the shares are only meaningful against the
+    team the touches came from, and a player who moved in the off-season has to
+    be read against the team he played for, not the one he is on now. A player
+    traded mid-season gets one row per team.
+    """
+    lf = scan("player_stats_week").filter(pl.col("season") == season)
     if season_type in ("REG", "POST"):
         lf = lf.filter(pl.col("season_type") == season_type)
-    df = lf.select(["player_id", "player_display_name", "position", "week", "receiving_air_yards"] + USAGE_COLS).collect()
+    df = lf.select(["player_id", "player_display_name", "position", "team", "week", "receiving_air_yards"] + USAGE_COLS).collect()
     if df.is_empty():
         return df
-    team_games = df["week"].n_unique()
-    tot_t, tot_c, tot_ay = df["targets"].sum(), df["carries"].sum(), df["receiving_air_yards"].sum()
-    out = (
-        df.group_by(["player_id", "player_display_name", "position"])
+    totals = df.group_by("team").agg(
+        pl.col("week").n_unique().alias("team_games"),
+        pl.col("targets").sum().alias("_t"),
+        pl.col("carries").sum().alias("_c"),
+        pl.col("receiving_air_yards").sum().alias("_ay"),
+    )
+    return (
+        df.group_by(["player_id", "player_display_name", "position", "team"])
         .agg([pl.len().alias("games")] + [pl.col(c).sum() for c in USAGE_COLS] + [pl.col("receiving_air_yards").sum()])
+        .join(totals, on="team", how="left")
         .with_columns(
-            target_share=pl.col("targets") / max(tot_t, 1), carry_share=pl.col("carries") / max(tot_c, 1),
-            air_share=pl.col("receiving_air_yards") / max(tot_ay, 1),
+            target_share=pl.col("targets") / pl.max_horizontal(pl.col("_t"), pl.lit(1)),
+            carry_share=pl.col("carries") / pl.max_horizontal(pl.col("_c"), pl.lit(1)),
+            air_share=pl.col("receiving_air_yards") / pl.max_horizontal(pl.col("_ay"), pl.lit(1)),
             targets_pg=pl.col("targets") / pl.col("games"), carries_pg=pl.col("carries") / pl.col("games"),
             ppr_pg=pl.col("fantasy_points_ppr") / pl.col("games"),
             touches_pg=(pl.col("carries") + pl.col("receptions")) / pl.col("games"),
         )
-        .with_columns(team_games=pl.lit(team_games))
+        .drop("_t", "_c", "_ay")
         .filter((pl.col("targets") + pl.col("carries") + pl.col("attempts")) > 0)
         .sort("fantasy_points_ppr", descending=True)
     )
-    return out
+
+
+def team_usage(team: str, season: int, season_type: str = "REG") -> pl.DataFrame:
+    """Every player on a team-season with shares of targets, carries and
+    air yards, so 'who gets the touches' is one table."""
+    return league_usage(season, season_type).filter(pl.col("team") == team)
 
 
 def coach_usage(team_seasons: list[tuple[str, int]]) -> list[dict]:
