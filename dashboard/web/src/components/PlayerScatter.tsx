@@ -17,7 +17,7 @@ const RELATED: Record<string, string> = {
 };
 
 /** The player among position peers for a season: Y = the current stat, X = the volume behind it. */
-export default function PlayerScatter({ playerId, position, statKey, season }: { playerId: string; position: string; statKey: string; season: number }) {
+export default function PlayerScatter({ playerId, position, statKey, season, name }: { playerId: string; position: string; statKey: string; season: number; name?: string }) {
   const { statByKey } = useMeta();
   const nav = useNavigate();
   const pos = ["FB", "HB"].includes(position) ? "RB" : ["QB", "RB", "WR", "TE"].includes(position) ? position : null;
@@ -27,7 +27,12 @@ export default function PlayerScatter({ playerId, position, statKey, season }: {
   const [y, setY] = useState<string>(statKey);
   const [minG, setMinG] = useState(6);
   useEffect(() => { setY(statKey); setX(RELATED[statKey] ?? PAIR[pos ?? "WR"]?.[0] ?? "targets"); }, [statKey, pos]);
-  useEffect(() => { if (pos) api6.scatterPlayers(yr, pos, minG).then((d) => setRows(d.rows)).catch(() => setRows([])); }, [pos, yr, minG]);
+  // Fetched unfiltered and cut by games below, because this player has to be on
+  // the chart whether or not he clears the bar. It is 87KB more than the
+  // filtered call and one cached response serves every player at the position,
+  // where asking the server to keep him would mean a copy of the field per
+  // player. Moving the cut here also makes the games control instant.
+  useEffect(() => { if (pos) api6.scatterPlayers(yr, pos, 1).then((d) => setRows(d.rows)).catch(() => setRows([])); }, [pos, yr]);
   const sx = statByKey.get(x), sy = statByKey.get(y);
   const perGame = (k: string) => statByKey.get(k)?.fmt === "int" || ["passing_epa", "rushing_epa", "receiving_epa", "fantasy_points", "fantasy_points_ppr"].includes(k);
   const TOP = 32;     // dots drawn
@@ -41,23 +46,36 @@ export default function PlayerScatter({ playerId, position, statKey, season }: {
   // when the axes do. The dots are the top of that field by the charted stat,
   // plus this player wherever he lands, and every dot is named: only he keeps
   // a face, since finding him is what the chart is for.
-  const { dots, avg } = useMemo(() => {
-    const all = (rows ?? []).filter((r) => r[x] !== null && r[y] !== null);
-    const used = [...all].sort((a, b) => ((b.fantasy_points_ppr as number) ?? -Infinity) - ((a.fantasy_points_ppr as number) ?? -Infinity));
+  const { dots, avg, me, missing, gaps } = useMemo(() => {
+    const plottable = (r: ScatterRow) => r[x] !== null && r[y] !== null;
+    const all = rows ?? [];
+    const eligible = all.filter((r) => (r.games as number) >= minG && plottable(r));
+    const used = [...eligible].sort((a, b) => ((b.fantasy_points_ppr as number) ?? -Infinity) - ((a.fantasy_points_ppr as number) ?? -Infinity));
     const field = used.slice(0, PEERS);
     const mean = (k: string) => (field.length ? field.reduce((a, r) => a + (r[k] as number), 0) / field.length : null);
     const top = [...field].sort((a, b) => ((b[y] as number) ?? -Infinity) - ((a[y] as number) ?? -Infinity)).slice(0, TOP);
-    const me = all.find((r) => r.player_id === playerId);
-    if (me && !top.includes(me)) top.push(me);
+    // Whoever the page is about is on the chart, top of the field or not, over
+    // the games bar or not. Searching a player and not finding him is the one
+    // outcome this chart must never produce.
+    const mine = all.find((r) => r.player_id === playerId);
+    const shown = !!mine && plottable(mine);
+    if (mine && shown && !top.includes(mine)) top.push(mine);
     return {
-      avg: { x: mean(x), y: mean(y), n: field.length, pool: all.length },
+      avg: { x: mean(x), y: mean(y), n: field.length },
+      me: shown ? mine : null,
+      // The two cases no amount of including can fix: he did not play that
+      // season, or one of the chosen axes has nothing for him. Say so rather
+      // than leaving a hole where the reader expects him.
+      missing: rows === null ? null : !mine ? "season" : !shown ? "stat" : null,
+      // Which axis actually has nothing for him, so the note names the one to change.
+      gaps: mine && !shown ? [x, y].filter((k) => mine[k] === null) : [],
       dots: top.map((r) => ({
         id: r.player_id, label: r.name.split(" ").slice(-1)[0], x: r[x] as number | null, y: r[y] as number | null,
         image: r.player_id === playerId ? r.headshot : null,
         sub: `${r.team} · ${r.games} g`, highlight: r.player_id === playerId,
       })),
     };
-  }, [rows, x, y, playerId]);
+  }, [rows, x, y, playerId, minG]);
   if (!pos) return <div className="hint">Peer scatter is available for QB, RB, WR and TE.</div>;
   const fx = (v: number) => fmtStat(v, sx?.fmt), fy = (v: number) => fmtStat(v, sy?.fmt);
   const axis = (k: string, s?: { label: string }) => `${s?.label ?? k}${perGame(k) ? " per game" : ""}`;
@@ -70,6 +88,9 @@ export default function PlayerScatter({ playerId, position, statKey, season }: {
         <Field label="Min games"><input className="input num" type="number" min={1} max={20} value={minG} onChange={(e) => setMinG(Number(e.target.value))} /></Field>
         <span className="hint" style={{ alignSelf: "center" }}>top {TOP} by this stat among the {avg.n} most-used {pos}s{dots.length > TOP ? ", plus this one" : ""} · dashed lines average those {avg.n} · counting stats are per game, rates from season totals · click a dot to open that player</span>
       </div>
+      {missing === "season" && <div className="banner info">{name ?? "This player"} has no {yr} season on record, so there is nothing to place on this chart. Pick another season.</div>}
+      {missing === "stat" && <div className="banner info">{name ?? "This player"} has no {gaps.map((k) => statByKey.get(k)?.label ?? k).join(" and no ")} recorded for {yr}, so there is no point to place. Change that axis to see him.</div>}
+      {me && (me.games as number) < minG && <div className="hint" style={{ marginBottom: 6 }}>Shown despite {me.games as number} games, under the {minG}-game minimum: the minimum trims the field, never the player you are looking at.</div>}
       {rows === null ? <div className="hint">loading…</div> : <ScatterPlot dots={dots} xLabel={axis(x, sx)} yLabel={axis(y, sy)} xFmt={fx} yFmt={fy} xAvg={avg.x} yAvg={avg.y} onPick={(id) => nav(`/research?player=${id}`)} showLabels="all" imageSize={24} height={400} />}
     </div>
   );
