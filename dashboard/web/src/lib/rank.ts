@@ -1,16 +1,12 @@
 /** Turning a league rank into the colour it should carry.
  *
- * The rule everywhere: colour means *percentile*, not the size of the number.
- * A 65% pass rate tells you nothing on its own -- it is the rank against the
- * other 31 teams that says whether that is a lot -- so the shading is driven
- * by the rank and the raw value is left to the text.
- *
- * Two thirds of the metric catalogue (44 of 68) is marked ``good: "none"``:
- * pass rate, shotgun rate, personnel, target shares. Those are tendencies, not
- * achievements, and colouring them green would claim a fast offense is a good
- * one. They shade by intensity instead, so an extreme rank still reads as
- * extreme without being called a credit. Only where the direction genuinely
- * means better or worse does the hue become green or red.
+ * The rule everywhere: colour means *percentile*, and one scale serves every
+ * percentile on the dashboard, from a coach's career bar to a single cell in a
+ * team table. Under 30 is red, 30 to 49 orange, 50 to 69 yellow, 70 to 89
+ * blue, 90 and up green. The number is what is coloured: a 91st-percentile
+ * pass rate is green because it is a 91, whether or not passing that much is
+ * a virtue. Direction, where a metric has one, is left to the label and the
+ * note, so the same shade always means the same place in the league.
  */
 
 /** 1 = the highest value in the league that season, 0 = the lowest. */
@@ -19,44 +15,38 @@ export function pctile(rank: number | null | undefined, n: number | null | undef
   return 1 - (rank - 1) / (n - 1);
 }
 
-/** How much of a credit this rank is: 1 = as good as it gets, 0 = as bad. */
-function goodness(pct: number, good: string): number {
-  return good === "high" ? pct : 1 - pct;
+export type Band = "red" | "orange" | "yellow" | "blue" | "green";
+
+/** The band a percentile (0 to 1) falls in, on the number as it is displayed. */
+export function band(pct: number | null | undefined): Band | null {
+  if (pct === null || pct === undefined || Number.isNaN(pct)) return null;
+  const p = Math.round(pct * 100);
+  return p < 30 ? "red" : p < 50 ? "orange" : p < 70 ? "yellow" : p < 90 ? "blue" : "green";
 }
 
-const mix = (token: string, alpha: number) =>
-  `color-mix(in srgb, ${token} ${Math.round(alpha * 100)}%, transparent)`;
+/** How to say the scale in a hint, so every page describes it the same way. */
+export const PCT_LEGEND = "red under 30, orange to 49, yellow to 69, blue to 89, green from 90";
 
-/** The token a metric's rank should be drawn in, before any alpha. */
-function hue(pct: number, good: string): string {
-  if (good === "none") return "var(--accent)";
-  return goodness(pct, good) >= 0.5 ? "var(--over)" : "var(--under)";
-}
+const token = (b: Band) => `var(--pct-${b})`;
+const mix = (t: string, alpha: number) => `color-mix(in srgb, ${t} ${Math.round(alpha * 100)}%, transparent)`;
 
-/** How far from the middle this rank sits, 0 at the median and 1 at either end. */
-function extremity(pct: number, good: string): number {
-  return good === "none" ? pct : Math.abs(goodness(pct, good) - 0.5) * 2;
+/** The solid colour for a percentile: bars, swatches, anything not carrying text. */
+export function pctColor(pct: number | null | undefined): string | undefined {
+  const b = band(pct);
+  return b ? token(b) : undefined;
 }
 
 /** Background tint for a table cell showing a ranked value.
  *
- * A tint rather than coloured text: these tables are dense and wide, and text
- * that fades with the rank is text you cannot read at the faint end.
+ * A tint rather than coloured text: these tables are dense and wide, and a
+ * fixed alpha keeps the number readable in every band and both themes.
  */
-export function rankTint(rank: number | null | undefined, n: number | null | undefined,
-                         good: string): string | undefined {
-  const pct = pctile(rank, n);
-  if (pct === null) return undefined;
-  return mix(hue(pct, good), 0.04 + extremity(pct, good) * 0.34);
+export function rankTint(rank: number | null | undefined, n: number | null | undefined): string | undefined {
+  const b = band(pctile(rank, n));
+  return b ? mix(token(b), 0.3) : undefined;
 }
 
-/** Fill for a percentile bar.
- *
- * The bar's *length* is already the percentile, so the alpha here keeps a
- * floor: at the bottom of the league the bar is four pixels wide, and a faint
- * four pixels is an empty cell.
- */
-export function barFill(pct: number | null | undefined, good: string): string {
-  if (pct === null || pct === undefined) return "var(--border-2)";
-  return mix(hue(pct, good), 0.5 + extremity(pct, good) * 0.5);
+/** Fill for a percentile bar. The bar's length is the percentile; the colour is its band. */
+export function barFill(pct: number | null | undefined): string {
+  return pctColor(pct) ?? "var(--border-2)";
 }

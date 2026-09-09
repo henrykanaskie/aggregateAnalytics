@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api3, DvpLeague } from "../api";
 import { Seg, TeamTag } from "./common";
+import { PCT_LEGEND, rankTint } from "../lib/rank";
 import { useSticky } from "../lib/sticky";
 import { useQuery } from "../lib/useQuery";
 
@@ -15,7 +16,7 @@ export default function DvpTable({ season, highlight, onPick }: { season: number
   return (
     <div>
       <div className="panel-head"><h3>Defense vs position · {season}</h3><Seg value={pos} options={["QB", "RB", "WR", "TE"].map((p) => ({ v: p, l: p }))} onChange={setPos} /></div>
-      <div className="hint" style={{ marginBottom: 6 }}>Per-game totals allowed to {pos}s, regular season. Rank 1 = most allowed (the friendliest matchup). Click a column to sort.</div>
+      <div className="hint" style={{ marginBottom: 6 }}>Per-game totals allowed to {pos}s, regular season. Rank 1 = most allowed (the friendliest matchup); shading is the percentile, {PCT_LEGEND}. Click a column to sort.</div>
       <div className="tbl-wrap" style={{ maxHeight: 520 }}>
         <table className="tbl">
           <thead><tr><th className="left">Defense</th><th>G</th>{data.stats.map((k) => <th key={k} className={k === key ? "over" : ""} onClick={() => setSortKey(k)}>{data.labels[k]}</th>)}</tr></thead>
@@ -23,7 +24,7 @@ export default function DvpTable({ season, highlight, onPick }: { season: number
             {rows.map((r) => (
               <tr key={r.defense} className={`clickable ${r.defense === highlight ? "hl" : ""}`} onClick={() => onPick?.(r.defense)}>
                 <td className="left"><TeamTag abbr={r.defense} /></td><td className="num muted">{r.games}</td>
-                {data.stats.map((k) => { const rank = r[`${k}_rank`] as number; const pct = 1 - (rank - 1) / (r.n_teams - 1); return <td key={k} className={`num ${pct >= 0.75 ? "over" : pct <= 0.25 ? "under" : ""}`} title={`rank ${rank}`}>{(r[k] as number).toFixed(1)} <span className="faint tiny">{rank}</span></td>; })}
+                {data.stats.map((k) => { const rank = r[`${k}_rank`] as number; return <td key={k} className="num" style={{ background: rankTint(rank, r.n_teams) }} title={`rank ${rank}`}>{(r[k] as number).toFixed(1)} <span className="faint tiny">{rank}</span></td>; })}
               </tr>
             ))}
           </tbody>

@@ -177,7 +177,7 @@ function SideView({ s, metrics, labels }: { s: MatchupSideFull; metrics: TeamMet
     const m = mdefs.get(k); const row = block.season; if (!m || !row) return null;
     const v = row[k] as number | null; const r = row[`${k}_rank`] as number | null; const l4 = block.last4?.[k] ?? null;
     if (v === null || v === undefined) return null;
-    return <tr><td className="left" title={m.note || undefined}>{m.label}</td><td className="num">{fmtStat(v, m.fmt as any)}</td><td className="num" style={{ background: rankTint(r, row.n_teams, m.good) }}>{r}</td><td className="num muted">{fmtStat(l4, m.fmt as any)}</td></tr>;
+    return <tr><td className="left" title={m.note || undefined}>{m.label}</td><td className="num">{fmtStat(v, m.fmt as any)}</td><td className="num" style={{ background: rankTint(r, row.n_teams) }}>{r}</td><td className="num muted">{fmtStat(l4, m.fmt as any)}</td></tr>;
   };
   const groups: Record<string, DefPlayer[]> = { CB: [], S: [], LB: [], DL: [] };
   for (const p of s.defense_personnel) groups[p.group]?.push(p);
@@ -200,7 +200,7 @@ function SideView({ s, metrics, labels }: { s: MatchupSideFull; metrics: TeamMet
           <h3 style={{ margin: "10px 0 6px" }}>{s.defense} allows per game</h3>
           <div className="tbl-wrap"><table className="tbl compact"><thead><tr><th className="left">To</th>{["QB", "RB", "WR", "TE"].map((p) => <th key={p}>{p}</th>)}</tr></thead>
             <tbody>{["passing_yards", "rushing_yards", "receptions", "receiving_yards", "fantasy_points_ppr"].map((k) => (
-              <tr key={k}><td className="left">{labels[k]}</td>{["QB", "RB", "WR", "TE"].map((p) => { const row = s.dvp[p]?.season_row; const v = row?.[k] as number | undefined; const r = row?.[`${k}_rank`] as number | undefined; const n = (row?.n_teams as number) ?? 32; const show = v !== undefined && v !== null && (s.dvp[p].stats.includes(k)); const pct = r ? 1 - (r - 1) / (n - 1) : 0.5; return <td key={p} className={`num ${show && pct >= 0.75 ? "over" : show && pct <= 0.25 ? "under" : ""}`}>{show ? <>{v!.toFixed(1)} <span className="faint tiny">{r}</span></> : <span className="faint">–</span>}</td>; })}</tr>
+              <tr key={k}><td className="left">{labels[k]}</td>{["QB", "RB", "WR", "TE"].map((p) => { const row = s.dvp[p]?.season_row; const v = row?.[k] as number | undefined; const r = row?.[`${k}_rank`] as number | undefined; const n = (row?.n_teams as number) ?? 32; const show = v !== undefined && v !== null && (s.dvp[p].stats.includes(k)); return <td key={p} className="num" style={{ background: show ? rankTint(r, n) : undefined }}>{show ? <>{v!.toFixed(1)} <span className="faint tiny">{r}</span></> : <span className="faint">–</span>}</td>; })}</tr>
             ))}</tbody></table></div>
           <div className="hint">rank 1 = most allowed</div>
         </div>

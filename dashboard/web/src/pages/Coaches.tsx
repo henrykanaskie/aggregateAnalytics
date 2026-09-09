@@ -8,7 +8,7 @@ import { fmtStat } from "../lib/format";
 import { useSticky } from "../lib/sticky";
 import { useQuery } from "../lib/useQuery";
 import { useMeta } from "../state";
-import { barFill, rankTint } from "../lib/rank";
+import { barFill, PCT_LEGEND, rankTint } from "../lib/rank";
 import ScatterPlot from "../components/ScatterPlot";
 import { fmtStat as fmtS } from "../lib/format";
 
@@ -128,13 +128,13 @@ export default function Coaches() {
                   </div>
                 )}
                 <h3 style={{ marginBottom: 6 }}>Tendency fingerprint</h3>
-                <div className="hint" style={{ marginBottom: 8 }}>Average league percentile of each tendency across his seasons (regular season). Far from the middle = a consistent identity. Colour follows the percentile, not the raw number: green or red where one direction is better, blue where the metric is only a tendency and "a lot" is not a compliment. "Top ⅓" counts the seasons ranked in the top third of the league.</div>
+                <div className="hint" style={{ marginBottom: 8 }}>Average league percentile of each tendency across his seasons (regular season). Far from the middle = a consistent identity. Colour is the percentile itself: {PCT_LEGEND}. "Top ⅓" counts the seasons ranked in the top third of the league.</div>
                 <div className="tbl-wrap">
                   <table className="tbl">
                     <thead><tr><th className="left">Tendency</th><th>Career</th><th style={{ width: 180 }}>Percentile</th><th>Seasons</th><th>Top ⅓</th><th>Bottom ⅓</th></tr></thead>
                     <tbody>{fp.map((f) => (
                       <tr key={f.key}><td className="left">{f.label}</td><td className="num">{fmtStat(f.career, f.fmt as any)}</td>
-                        <td><div style={{ display: "flex", alignItems: "center", gap: 6 }}><div className="bar" style={{ flex: 1, marginTop: 0 }}><div style={{ width: `${f.mean_pct * 100}%`, background: barFill(f.mean_pct, f.good) }} /></div><span className="num tiny" style={{ width: 30 }}>{Math.round(f.mean_pct * 100)}</span></div></td>
+                        <td><div style={{ display: "flex", alignItems: "center", gap: 6 }}><div className="bar" style={{ flex: 1, marginTop: 0 }}><div style={{ width: `${f.mean_pct * 100}%`, background: barFill(f.mean_pct) }} /></div><span className="num tiny" style={{ width: 30 }}>{Math.round(f.mean_pct * 100)}</span></div></td>
                         <td className="num muted">{f.seasons}</td><td className={`num ${f.top_third >= f.seasons / 2 ? "over" : ""}`}>{f.top_third}</td><td className={`num ${f.bottom_third >= f.seasons / 2 ? "under" : ""}`}>{f.bottom_third}</td></tr>
                     ))}</tbody>
                   </table>
@@ -166,7 +166,7 @@ export default function Coaches() {
                 <div className="hint">Each dot is one of his seasons; the dashed lines are his own career averages. A tight cluster is an identity, a drift is a coach who changed.</div>
               </div>
               <div className="panel">
-                <div className="panel-head"><h3>Season by season · {side === "off" ? "offense" : "defense"}{mixed ? ` · ${seasonsThisSide.length} of ${prof.seasons.length} seasons answer for it` : ""}</h3><span className="hint">shaded by league percentile, deeper = further from the middle; green/red where a direction is better, blue where it is only a tendency · <span className="scroll-hint">scroll sideways for all {metrics.length} metrics</span></span></div>
+                <div className="panel-head"><h3>Season by season · {side === "off" ? "offense" : "defense"}{mixed ? ` · ${seasonsThisSide.length} of ${prof.seasons.length} seasons answer for it` : ""}</h3><span className="hint">shaded by league percentile: {PCT_LEGEND} · <span className="scroll-hint">scroll sideways for all {metrics.length} metrics</span></span></div>
                 <div className="tbl-wrap">
                   <table className="tbl wide">
                     <thead><tr><th className="left">Season</th><th className="left">Team</th>{mixed && <th className="left">Job</th>}<th>W-L</th><th>PPG</th>{metrics.map((m) => <th key={m.key} title={m.note || undefined}>{m.label}</th>)}</tr></thead>
@@ -174,7 +174,7 @@ export default function Coaches() {
                       <tr key={`${s.season}-${s.team}`}><td className="left">{s.season}</td><td className="left"><TeamTag abbr={s.team} /></td>
                         {mixed && <td className="left"><span className={`chip tiny ${s.held === role ? "" : "on"}`}>{s.held}</span></td>}
                         <td className="num muted">{s.win}-{s.loss}</td><td className="num muted">{fmtStat(s.ppg, "dec1")}</td>
-                        {metrics.map((m) => { const v = s[m.key] as number | null; const r = s[`${m.key}_rank`] as number | null; return <td key={m.key} className="num" style={{ background: rankTint(r, s.n_teams, m.good) }} title={r ? `rank ${r} of ${s.n_teams}` : ""}>{v === null || v === undefined ? "–" : <>{fmtStat(v, m.fmt as any)} <span className="faint tiny">{r}</span></>}</td>; })}
+                        {metrics.map((m) => { const v = s[m.key] as number | null; const r = s[`${m.key}_rank`] as number | null; return <td key={m.key} className="num" style={{ background: rankTint(r, s.n_teams) }} title={r ? `rank ${r} of ${s.n_teams}` : ""}>{v === null || v === undefined ? "–" : <>{fmtStat(v, m.fmt as any)} <span className="faint tiny">{r}</span></>}</td>; })}
                       </tr>
                     ))}</tbody>
                   </table>
