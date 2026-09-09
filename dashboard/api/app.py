@@ -34,6 +34,9 @@ from ..stats.catalog import GROUPS, catalog_json
 from ..stats import coaches as coaches_mod
 from ..stats import context as ctx_mod
 from ..stats import matchups as mu_mod
+from ..stats import extras as ex_mod
+from ..stats import projection as proj_mod
+from ..odds import grading
 from ..stats import pbp as pbp_mod
 from ..stats import team as team_mod
 from ..stats.gamelog import availability, game_log
@@ -184,6 +187,7 @@ def player_lines(player_id: str, season: int = CURRENT_SEASON, week: int | None 
     mine = latest.filter(pl.col("player_id") == player_id) if not latest.is_empty() else latest
     rows = build_board(mine)
     attach_form(rows, [season - 1, season])
+    proj_mod.project_rows(rows, season, week, dvp_season=_season_used(prof.get("team") or "", season) if prof.get("team") else None)
     hist = store.prop_history(player_id, season=season, week=week)
     team = prof.get("team")
     game = None
@@ -221,6 +225,55 @@ def player_splits_games(player_id: str, role: str, dim: str, since: int = Query(
     if dim not in pbp_mod.DIM_BY_KEY:
         raise HTTPException(400, "unknown dim")
     return pbp_mod.splits_by_game(player_id, role, dim, since=since)
+
+
+@app.get("/api/players/{player_id}/teammates")
+def teammates(player_id: str, since: int | None = None):
+    return ex_mod.teammate_presence(player_id, since)
+
+
+@app.get("/api/players/{player_id}/correlations")
+def player_correlations(player_id: str, stat: str, since: int | None = None):
+    return {"stat": stat, "rows": ex_mod.correlations(player_id, stat, since)}
+
+
+@app.get("/api/dvp/factors")
+def dvp_factors_api(position: str, stat: str, since: int = 2016):
+    return ex_mod.dvp_factors(position.upper(), stat, since)
+
+
+@app.get("/api/grading/summary")
+def grading_summary(season: int | None = None):
+    return grading.summary(season)
+
+
+class GradeRequest(BaseModel):
+    season: int
+    week: int
+    include_sample: bool = False
+
+
+@app.post("/api/grading/run")
+def grading_run(req: GradeRequest):
+    g = grading.grade_week(req.season, req.week, include_sample=req.include_sample)
+    return {"season": req.season, "week": req.week, "graded": g.height}
+
+
+class LogBaselineRequest(BaseModel):
+    season: int | None = None
+    week: int | None = None
+    include_sample: bool = False
+
+
+@app.post("/api/projections/log")
+def log_baseline(req: LogBaselineRequest):
+    season = req.season or CURRENT_SEASON
+    week = _week_default(season, req.week)
+    latest = store.latest_props(season, week, req.include_sample)
+    rows = build_board(latest)
+    proj_mod.project_rows(rows, season, week, dvp_season=_season_used(rows[0]["home_team"], season) if rows else None)
+    n = proj_mod.log_baseline(rows, season, week)
+    return {"season": season, "week": week, "logged": n}
 
 
 @app.get("/api/teams/{team}/players")
@@ -442,10 +495,11 @@ def odds_board(season: int = CURRENT_SEASON, week: int | None = None,
         rows = [r for r in rows if any(b["book"] == book for b in r["books"])]
     if form:
         attach_form(rows, [season - 1, season])
+    proj_mod.project_rows(rows, season, week, dvp_season=_season_used(rows[0]["home_team"], season) if rows else None)
     sources = sorted(set(latest["source"].to_list())) if not latest.is_empty() else []
     pulled = latest["pulled_at"].max() if not latest.is_empty() else None
     return {"season": season, "week": week, "sources": sources, "pulled_at": _clean(pulled),
-            "n": len(rows), "rows": rows}
+            "n": len(rows), "rows": rows, "alerts": ex_mod.alerts(rows, season, week, scale)}
 
 
 @app.get("/api/odds/games")

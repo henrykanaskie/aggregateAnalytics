@@ -5,7 +5,38 @@ import { Field, SampleBanner, Seg, SourceNote, Spinner } from "../components/com
 import { fmtDelta, fmtLine, fmtOdds, fmtPct } from "../lib/format";
 import { useMeta } from "../state";
 
-type SortKey = "spread" | "consensus" | "l5" | "l10" | "season" | "avg" | "player" | "moved";
+type SortKey = "spread" | "consensus" | "l5" | "l10" | "season" | "avg" | "player" | "moved" | "edge" | "pover";
+
+function AlertsPanel({ alerts, onPick }: { alerts: import("../api").Alert[]; onPick: (a: import("../api").Alert) => void }) {
+  const [open, setOpen] = useState(true);
+  const [kind, setKind] = useState<"all" | "move" | "outlier" | "injury">("all");
+  const shown = alerts.filter((a) => kind === "all" || a.kind === kind);
+  const counts = { move: alerts.filter((a) => a.kind === "move").length, outlier: alerts.filter((a) => a.kind === "outlier").length, injury: alerts.filter((a) => a.kind === "injury").length };
+  return (
+    <div className="panel" style={{ marginBottom: 12 }}>
+      <div className="panel-head">
+        <h3 className="clickable" onClick={() => setOpen(!open)}>{open ? "▾" : "▸"} Alerts · {alerts.length}</h3>
+        <div className="chips">
+          <button className={`chip ${kind === "all" ? "on" : ""}`} onClick={() => setKind("all")}>all</button>
+          <button className={`chip ${kind === "move" ? "on" : ""}`} onClick={() => setKind("move")}>line moves {counts.move}</button>
+          <button className={`chip ${kind === "outlier" ? "on" : ""}`} onClick={() => setKind("outlier")}>book outliers {counts.outlier}</button>
+          <button className={`chip ${kind === "injury" ? "on" : ""}`} onClick={() => setKind("injury")}>injuries {counts.injury}</button>
+        </div>
+      </div>
+      {open && (
+        <div className="grid grid-3" style={{ maxHeight: 260, overflow: "auto" }}>
+          {shown.slice(0, 60).map((a, i) => (
+            <div key={i} className="tile clickable" onClick={() => onPick(a)} style={{ borderLeft: `3px solid var(--${a.kind === "injury" ? "under" : a.kind === "move" ? "push" : "accent"})` }}>
+              <div className="k">{a.kind}{a.severity >= 2 ? " · big" : ""}{a.team ? ` · ${a.team}` : ""}</div>
+              <div className="small" style={{ fontWeight: 600 }}>{a.title}</div>
+              <div className="tiny muted">{a.detail}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function Board() {
   const { meta, settings } = useMeta();
@@ -59,6 +90,8 @@ export default function Board() {
         case "l10": return x.form?.l10?.rate ?? -1;
         case "season": return x.form?.season?.rate ?? -1;
         case "avg": return x.form?.avg !== undefined && x.form?.avg !== null && x.kind === "ou" ? x.form.avg - x.consensus : -999;
+        case "edge": return x.proj?.edge !== null && x.proj?.edge !== undefined ? Math.abs(x.proj.edge) : -1;
+        case "pover": return x.proj?.p_over ?? -1;
         case "moved": return Math.max(...x.books.map((b) => Math.abs(b.moved ?? 0)), 0) + (x.form?.l10?.rate !== null && x.form?.l10?.rate !== undefined ? Math.abs(x.form.l10.rate - 0.5) / 100 : 0);
         default: return x.player_name;
       }
@@ -77,6 +110,7 @@ export default function Board() {
         <SourceNote sources={data?.sources ?? []} pulled={data?.pulled_at} />
       </div>
       {data && <SampleBanner sources={data.sources} />}
+      {data && data.alerts && data.alerts.length > 0 && <AlertsPanel alerts={data.alerts} onPick={(a) => a.player_id && nav(`/research?player=${a.player_id}${a.market ? `&market=${a.market}` : ""}`)} />}
       <div className="panel" style={{ marginBottom: 12 }}>
         <div className="controls">
           <Field label="Week"><select className="input" value={week ?? meta?.week ?? 1} onChange={(e) => setWeek(Number(e.target.value))}>{weeks.map((w) => <option key={w} value={w}>Week {w}</option>)}</select></Field>
@@ -103,6 +137,7 @@ export default function Board() {
                 {th("player", "Player")}<th className="left">Game</th><th className="left">Market</th>
                 {th("consensus", "Cons.")}
                 {th("l5", "L5")}{th("l10", "L10")}{th("season", "Szn")}{th("avg", "Avg−line")}
+                {th("edge", "Proj")}{th("pover", "P(over)")}
                 {books.map((b) => <th key={b}>{meta?.books[b] ?? b}</th>)}
                 {th("spread", "Spread")}{th("moved", "Move")}
                 <th>Best O</th><th>Best U</th>
@@ -122,6 +157,8 @@ export default function Board() {
                     <td className="num">{rate(r.form?.l10)}</td>
                     <td className="num">{rate(r.form?.season)}</td>
                     <td className={`num ${r.form && r.kind === "ou" ? (r.form.avg - r.consensus > 0 ? "over" : "under") : "muted"}`}>{r.form && r.kind === "ou" ? fmtDelta(r.form.avg - r.consensus) : r.form ? `${r.form.avg.toFixed(2)} td/g` : "–"}</td>
+                    <td className={`num ${r.proj?.edge ? (r.proj.edge > 0 ? "over" : "under") : "muted"}`} title={r.proj ? `baseline ${r.proj.value} (last ${r.proj.n}, ×${r.proj.factor} opp)` : ""}>{r.proj ? <>{r.kind === "ou" ? r.proj.value.toFixed(1) : r.proj.value.toFixed(2)}{r.proj.edge !== null ? <span className="tiny"> {fmtDelta(r.proj.edge)}</span> : null}</> : "–"}</td>
+                    <td className={`num ${r.proj?.p_over !== null && r.proj?.p_over !== undefined ? (r.proj.p_over >= 0.6 ? "over" : r.proj.p_over <= 0.4 ? "under" : "") : "muted"}`}>{r.proj?.p_over !== null && r.proj?.p_over !== undefined ? fmtPct(r.proj.p_over) : "–"}</td>
                     {books.map((b) => { const x = byBook.get(b); if (!x) return <td key={b} className="muted">–</td>; return <td key={b} className={`num ${x.flag ? `cell-${x.flag}` : ""}`} title={r.kind === "ou" ? `O ${fmtOdds(x.over)} / U ${fmtOdds(x.under)}${x.open_line !== null ? ` · open ${x.open_line}` : ""}` : `Yes ${fmtOdds(x.yes)}`}>{r.kind === "ou" ? fmtLine(x.line) : fmtOdds(x.yes)}</td>; })}
                     <td className={`num ${r.line_spread > 0 ? "push" : "muted"}`}>{r.kind === "ou" ? r.line_spread : fmtPct(r.line_spread)}</td>
                     <td className={`num ${maxMove > 0 ? "over" : maxMove < 0 ? "under" : "muted"}`}>{maxMove ? fmtDelta(maxMove) : "–"}</td>
