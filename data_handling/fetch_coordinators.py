@@ -263,6 +263,33 @@ def build(seasons: list[int], log=print) -> pl.DataFrame:
                                       "page": pl.Utf8})
 
 
+def report_changes(df: pl.DataFrame, log=print) -> list[str]:
+    """Name the coordinators who changed into the newest season.
+
+    Worth a look every time, because the newest season is the one read off the
+    living ``Template:X staff`` rather than a finished article. That template
+    is undated -- it means *now*, whenever now is -- so it is the row most
+    likely to be either ahead of the season pages or quietly behind them.
+    Turnover is normal and most of these lines will be real hires; the point is
+    that the handful worth eyeballing are named rather than buried.
+    """
+    seasons = sorted(df["season"].unique().to_list())
+    if len(seasons) < 2:
+        return []
+    latest, prior = seasons[-1], seasons[-2]
+    def held(season: int) -> dict[tuple[str, str], str]:
+        rows = df.filter((pl.col("season") == season) & (pl.col("slot") == 0)).to_dicts()
+        return {(r["team"], r["role"]): r["coach"] for r in rows}
+    now, before = held(latest), held(prior)
+    lines = [f"{team} {role}: {before.get((team, role)) or '(none)'} -> {who or '(none)'}"
+             for (team, role), who in sorted(now.items()) if before.get((team, role)) != who]
+    if lines:
+        log(f"  {len(lines)} coordinator change(s) into {latest}, from the live staff templates:")
+        for line in lines:
+            log(f"    {line}")
+    return lines
+
+
 def save(df: pl.DataFrame, log=print) -> Path:
     """Merge into the cache, replacing only the seasons just fetched, so a
     single-season refresh cannot drop the archive."""
@@ -273,6 +300,7 @@ def save(df: pl.DataFrame, log=print) -> Path:
     CACHE.parent.mkdir(parents=True, exist_ok=True)
     df.write_parquet(CACHE)
     log(f"wrote {CACHE} ({df.height} rows, {df['season'].min()}-{df['season'].max()})")
+    report_changes(df, log)
     return CACHE
 
 
