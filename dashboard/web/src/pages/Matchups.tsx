@@ -20,9 +20,15 @@ export default function Matchups() {
   const [week, setWeek] = useSticky<number | null>("matchups.week", null);
   const { data: schedule } = useQuery<ScheduleGame[]>(meta ? api.schedule.url(meta.season, week ?? meta.week) : null);
   const games = schedule ?? [];
-  // Warming the whole slate here as well as at startup, so changing the week
-  // loads that week's games rather than only the one that gets clicked.
-  useEffect(() => { if (schedule) warm(schedule.map((g) => api4.gameMatchup.url(g.game_id, settings.includeSample))); }, [schedule, settings.includeSample]);
+  const shown = week ?? meta?.week ?? null;
+  // Warming this week's slate here as well as at startup, so switching back to
+  // the live week loads its games rather than only the one that gets clicked.
+  // Earlier weeks are left alone: those games are played and settled, nobody is
+  // betting them, and warming sixteen of them is sixteen requests that push the
+  // one game the user actually opened to the back of the queue.
+  useEffect(() => {
+    if (schedule && meta && shown === meta.week) warm(schedule.map((g) => api4.gameMatchup.url(g.game_id, settings.includeSample)));
+  }, [schedule, meta, shown, settings.includeSample]);
   const { data, loading, error: err } = useQuery<GameMatchup>(gameId ? api4.gameMatchup.url(gameId, settings.includeSample) : null);
   const weeks = Array.from({ length: 22 }, (_, i) => i + 1);
   if (meta && !meta.team_table_ready) return <Banner kind="warn">The team tendency table is not built yet. Run <code>python -m dashboard.stats.team</code> and reload.</Banner>;

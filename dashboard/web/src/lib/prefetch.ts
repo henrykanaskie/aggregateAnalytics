@@ -29,6 +29,13 @@ async function drain(): Promise<void> {
   draining = false;
 }
 
+/** A game id is `<season>_<week>_<away>_<home>`, so it says on its face
+ *  whether it belongs to the week being played. */
+function isLive(gameId: string, meta: Meta): boolean {
+  const [season, wk] = gameId.split("_");
+  return Number(season) === meta.season && Number(wk) === meta.week;
+}
+
 // The query string is where each page keeps what it is showing, and the nav
 // remembers it, so the last coach / team / game / player gets warmed too.
 function lastParam(section: string, key: string): string | null {
@@ -44,14 +51,17 @@ export function warmAll(meta: Meta, settings: Settings): void {
   const week = (key: string) => readSticky<number | null>(key, null) ?? meta.week;
 
   urls.push(api.board.url({ week: week("board.week"), include_sample: settings.includeSample, scale: readSticky("board.scale", settings.thresholdScale) }));
+  // The schedule the tab will render, plus this week's if it was left on an
+  // earlier one. Both are cheap; it is the games behind them that are not.
   urls.push(api.schedule.url(meta.season, week("matchups.week")));
+  urls.push(api.schedule.url(meta.season, meta.week));
   urls.push(api.games.url(undefined, week("games.week"), settings.includeSample));
 
   const player = lastParam("/research", "player");
   if (player) urls.push(api.player.url(player), api.gamelog.url(player, settings.since), api.playerLines.url(player, undefined, undefined, settings.includeSample));
 
   const game = lastParam("/matchups", "game");
-  if (game) urls.push(api4.gameMatchup.url(game, settings.includeSample));
+  if (game && isLive(game, meta)) urls.push(api4.gameMatchup.url(game, settings.includeSample));
 
   const team = lastParam("/teams", "team");
   if (team) urls.push(api2.teamTendencies.url(team, readSticky("teams.since", 2012)));
@@ -72,12 +82,13 @@ export function warmAll(meta: Meta, settings: Settings): void {
 
   warm(urls);
 
-  // Every game on the slate, so picking one is a render rather than a two
-  // second wait. The schedule has to land first, since it is what says which
-  // games exist; the request below is the same one already queued above, so it
-  // attaches to that rather than making a second.
-  const matchupWeek = week("matchups.week");
-  apiGet<ScheduleGame[]>(api.schedule.url(meta.season, matchupWeek))
+  // This week's games, so picking one off the live slate is a render rather
+  // than a wait. Only this week's: an earlier week is played and settled, and
+  // warming those sixteen is sixteen requests nobody asked for, ahead of the
+  // ones they did. Opening an old game still loads it, on the click.
+  // The schedule has to land first, since it is what says which games exist;
+  // it is queued above too, so this attaches rather than making a second.
+  apiGet<ScheduleGame[]>(api.schedule.url(meta.season, meta.week))
     .then((games) => warm(games.map((g) => api4.gameMatchup.url(g.game_id, settings.includeSample))))
     .catch(() => {});
 }
