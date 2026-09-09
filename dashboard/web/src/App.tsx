@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import PlayerSearch from "./components/PlayerSearch";
 import Board from "./pages/Board";
@@ -10,6 +10,8 @@ import Teams from "./pages/Teams";
 import Matchups from "./pages/Matchups";
 import Results from "./pages/Results";
 import Coaches from "./pages/Coaches";
+import Tour from "./components/Tour";
+import Welcome from "./components/Welcome";
 import { warmAll } from "./lib/prefetch";
 import { clearSticky, readSticky, useSticky, writeSticky } from "./lib/sticky";
 import { MetaProvider, useMeta } from "./state";
@@ -33,15 +35,20 @@ function Tabs() {
     setLast((prev) => (prev[hit[0]] === full ? prev : { ...prev, [hit[0]]: full }));
   }, [loc.pathname, loc.search]);
   return (
-    <nav className="nav">
-      {SECTIONS.map(([path, label]) => <NavLink key={path} to={last[path] ?? path}>{label}</NavLink>)}
+    <nav className="nav" data-tour="nav">
+      {SECTIONS.map(([path, label]) => <NavLink key={path} to={last[path] ?? path} data-tour={`nav:${path}`}>{label}</NavLink>)}
     </nav>
   );
 }
 
+type Stage = "welcome" | "tour" | null;
+
 function Shell() {
   const { meta, error, settings, setSettings } = useMeta();
   const nav = useNavigate();
+  // Shown once, then never again unless the ? in the header asks for it.
+  const [stage, setStage] = useState<Stage>(() => (readSticky("onboard.seen.v1", false) ? null : "welcome"));
+  const close = () => { writeSticky("onboard.seen.v1", true); setStage(null); };
   // Week pickers are sticky and now outlive the browser session, so a week
   // chosen by hand has to be let go of once the league moves past it.
   useEffect(() => {
@@ -57,10 +64,11 @@ function Shell() {
   return (
     <div className="app">
       <header className="topbar">
-        <div className="brand"><span className="dot" />Props Research{meta && <span className="muted" style={{ fontWeight: 400 }}> · {meta.season} wk {meta.week}</span>}</div>
+        <div className="brand" data-tour="brand"><span className="dot" />Aggregate Analytics{meta && <span className="muted" style={{ fontWeight: 400 }}> · {meta.season} wk {meta.week}</span>}</div>
         <Tabs />
         <div className="spacer" />
-        <PlayerSearch onSelect={(p) => nav(`/research?player=${p.player_id}`)} placeholder="Jump to player…" />
+        <div data-tour="search"><PlayerSearch onSelect={(p) => nav(`/research?player=${p.player_id}`)} placeholder="Jump to player…" /></div>
+        <button className="theme-btn" title="Welcome notes and guided tour" onClick={() => setStage("welcome")}>?</button>
         <button className="theme-btn" title="toggle light / dark" onClick={() => setSettings({ theme: settings.theme === "dark" ? "light" : "dark" })}>{settings.theme === "dark" ? "Light" : "Dark"}</button>
       </header>
       <main className="main">
@@ -78,6 +86,8 @@ function Shell() {
           <Route path="/settings" element={<Settings />} />
         </Routes>
       </main>
+      {stage === "welcome" && <Welcome onTour={() => { writeSticky("onboard.seen.v1", true); setStage("tour"); }} onSkip={close} />}
+      {stage === "tour" && <Tour onDone={close} />}
     </div>
   );
 }

@@ -111,7 +111,7 @@ export default function Board() {
       </div>
       {data && <SampleBanner sources={data.sources} />}
       {data && data.alerts && data.alerts.length > 0 && <AlertsPanel alerts={data.alerts} onPick={(a) => a.player_id && nav(`/research?player=${a.player_id}${a.market ? `&market=${a.market}` : ""}`)} />}
-      <div className="panel" style={{ marginBottom: 12 }}>
+      <div className="panel" style={{ marginBottom: 12 }} data-tour="board-filters">
         <div className="controls">
           <Field label="Week"><select className="input" value={week ?? meta?.week ?? 1} onChange={(e) => setWeek(Number(e.target.value))}>{weeks.map((w) => <option key={w} value={w}>Week {w}</option>)}</select></Field>
           <Field label="Player"><input className="input" placeholder="filter…" value={q} onChange={(e) => setQ(e.target.value)} /></Field>
@@ -127,7 +127,7 @@ export default function Board() {
           {markets.length > 0 && <button className="chip" onClick={() => setMarkets([])}>clear</button>}
         </div>
       </div>
-      <div className="panel">
+      <div className="panel" data-tour="board-table">
         <div className="panel-head"><h3>{rows.length} props{(loading || stale) && <> <Spinner /></>}</h3><span className="hint">click a row to research the player</span></div>
         {!loading && rows.length === 0 && <div className="empty">No lines for this week. Pull one from Settings, ESPN is free and needs no key.</div>}
         <div className="tbl-wrap" style={{ maxHeight: "72vh" }}>

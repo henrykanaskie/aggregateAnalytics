@@ -204,3 +204,50 @@ pre { font-family: var(--mono); font-size: 12px; background: var(--bg-2); paddin
 .tbl tr.focus-row td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 .focus-toggle.on { background: rgba(90,156,245,0.16); border-color: var(--accent); color: var(--text); }
 .focus-chip { box-shadow: 0 0 0 2px rgba(90,156,245,0.35); }
+
+/* onboarding: welcome sheet and guided tour */
+.modal-veil { position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,0.62); display: flex; align-items: center; justify-content: center; padding: 24px; overflow: auto; }
+.modal { background: var(--panel); border: 1px solid var(--border-2); border-radius: 14px; box-shadow: 0 24px 60px rgba(0,0,0,0.45); max-width: 100%; }
+.welcome { width: 720px; padding: 26px 28px 22px; }
+.welcome-head { display: flex; gap: 14px; align-items: flex-start; }
+.welcome-head .brand .dot { width: 12px; height: 12px; margin-top: 8px; }
+.welcome-head h1 { font-size: 22px; letter-spacing: 0.01em; }
+.welcome-head p { margin: 6px 0 0; font-size: 13px; max-width: 60ch; }
+.welcome-notes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 20px 0 16px; }
+.welcome-notes .note { background: var(--bg-2); border: 1px solid var(--border); border-radius: 9px; padding: 11px 12px; }
+.welcome-notes .note h3 { margin-bottom: 5px; }
+.welcome-notes .note p { margin: 0; font-size: 12.5px; color: var(--muted); }
+.welcome-disc { border: 1px solid var(--border-2); border-left: 3px solid var(--warn); border-radius: 9px; padding: 12px 14px; background: rgba(230,170,60,0.06); }
+.welcome-disc h3 { color: var(--push); margin-bottom: 7px; }
+.welcome-disc ul { margin: 0; padding-left: 17px; }
+.welcome-disc li { font-size: 12.5px; color: var(--muted); margin-bottom: 5px; }
+.welcome-disc li:last-child { margin-bottom: 0; }
+.welcome-disc li b { color: var(--text); }
+.welcome-actions { display: flex; align-items: center; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
+.welcome-actions .hint { flex: 1; text-align: right; min-width: 200px; }
+@media (max-width: 640px) { .welcome-notes { grid-template-columns: 1fr; } .welcome-actions .hint { text-align: left; } }
+
+/* The ring's outsized shadow is what dims the page, so the cutout stays a plain
+   rectangle and the content underneath is still readable. */
+.tour-veil { position: fixed; inset: 0; z-index: 100; }
+.tour-veil.solid { background: rgba(0,0,0,0.62); }
+.tour-ring { position: fixed; z-index: 101; border-radius: 9px; pointer-events: none; box-shadow: 0 0 0 9999px rgba(0,0,0,0.62), inset 0 0 0 2px var(--accent); }
+.tour-card { position: fixed; z-index: 102; background: var(--panel); border: 1px solid var(--border-2); border-radius: 12px; padding: 14px 16px 12px; box-shadow: 0 18px 44px rgba(0,0,0,0.5); }
+.tour-card .tour-step { font-size: 11px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.06em; }
+.tour-card h2 { margin: 3px 0 6px; font-size: 15.5px; }
+.tour-card p { margin: 0; font-size: 12.5px; color: var(--muted); }
+.tour-actions { display: flex; align-items: center; gap: 6px; margin-top: 14px; }
+.tour-actions .spacer { flex: 1; }
+
+/* Onboarding motion: one animated property per element, so the ring and the
+   card travel to the next step instead of blinking there. */
+.tour-veil { transition: background 0.25s ease; }
+.tour-ring { opacity: 1; transition: top 0.3s cubic-bezier(0.32, 0.72, 0, 1), left 0.3s cubic-bezier(0.32, 0.72, 0, 1), width 0.3s cubic-bezier(0.32, 0.72, 0, 1), height 0.3s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.22s ease; }
+.tour-ring.off { opacity: 0; }
+.tour-card { transition: top 0.3s cubic-bezier(0.32, 0.72, 0, 1), left 0.3s cubic-bezier(0.32, 0.72, 0, 1); max-width: calc(100vw - 24px); }
+.tour-body { animation: tour-in 0.24s ease both; }
+@keyframes tour-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .tour-ring, .tour-card { transition: none; }
+  .tour-body { animation: none; }
+}
