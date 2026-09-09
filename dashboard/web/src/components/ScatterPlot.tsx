@@ -12,7 +12,7 @@ interface Props {
   xAvg?: number | null; yAvg?: number | null;
   // What each end of an axis means, in words, drawn with arrows beside the
   // axis so the reader does not have to work it out from the numbers.
-  xEnds?: { low: string; high: string }; yEnds?: { low: string; high: string };
+  xEnds?: { low: string; high: string; lowMeans?: string; highMeans?: string }; yEnds?: { low: string; high: string; lowMeans?: string; highMeans?: string };
   xGoodHigh?: boolean | null; yGoodHigh?: boolean | null; onPick?: (id: string) => void; title?: string;
 }
 
@@ -196,12 +196,15 @@ export default function ScatterPlot({ dots, xLabel, yLabel, xFmt = (v) => String
         // Up the left edge: the top margin above the plot, and the bottom
         // margin beside the X axis title, which is centred and short.
         <>
-          <div className="axis-end" style={{ left: 8, top: 4 }}>↑ {yEnds.high}</div>
-          <div className="axis-end" style={{ left: 8, bottom: 4 }}>↓ {yEnds.low}</div>
+          <div className="axis-end" style={{ left: 8, top: 4 }} title={yEnds.highMeans}>↑ {yEnds.high}</div>
+          <div className="axis-end" style={{ left: 8, bottom: 4 }} title={yEnds.lowMeans}>↓ {yEnds.low}</div>
         </>
       )}
       {xEnds && (
-        <div className="axis-ends"><span>← {xEnds.low}</span><span>{xEnds.high} →</span></div>
+        <div className="axis-ends">
+          <span>← {xEnds.low}{xEnds.lowMeans && <span className="means">{xEnds.lowMeans}</span>}</span>
+          <span>{xEnds.high} →{xEnds.highMeans && <span className="means">{xEnds.highMeans}</span>}</span>
+        </div>
       )}
       {quadrants && (
         // What each corner means, in words. Faint and behind the pointer so

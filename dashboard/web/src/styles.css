@@ -55,7 +55,10 @@ h3 { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spa
 .muted { color: var(--muted); }
 .axis-end { position: absolute; font-size: 10.5px; color: var(--muted); pointer-events: none; }
 .axis-ends { display: flex; justify-content: space-between; gap: 12px; padding: 2px 24px 0 64px; font-size: 10.5px; color: var(--muted); }
-.quad { position: absolute; max-width: 170px; font-size: 10.5px; line-height: 1.3; color: var(--muted); background: color-mix(in srgb, var(--panel) 72%, transparent); padding: 3px 6px; border-radius: 6px; pointer-events: none; }
+.axis-ends span { max-width: 48%; }
+.axis-ends span:last-child { text-align: right; }
+.axis-ends .means, .axis-end .means { display: block; font-size: 9.5px; opacity: 0.8; }
+.quad { position: absolute; max-width: 200px; font-size: 10px; line-height: 1.3; color: var(--muted); white-space: pre-line; background: color-mix(in srgb, var(--panel) 72%, transparent); padding: 3px 6px; border-radius: 6px; pointer-events: none; }
 .faint { color: var(--faint); }
 .small { font-size: 12px; }
 .tiny { font-size: 11.5px; }
