@@ -193,10 +193,12 @@ export default function ScatterPlot({ dots, xLabel, yLabel, xFmt = (v) => String
         // What each corner means, in words. Faint and behind the pointer so
         // the dots stay the chart; the axis titles still say what is measured.
         <>
-          <div className="quad" style={{ left: 70, top: 26 }}>{quadrants[0]}</div>
-          <div className="quad" style={{ right: 30, top: 26, textAlign: "right" }}>{quadrants[1]}</div>
-          <div className="quad" style={{ left: 70, bottom: 44 }}>{quadrants[2]}</div>
-          <div className="quad" style={{ right: 30, bottom: 44, textAlign: "right" }}>{quadrants[3]}</div>
+          {/* Inset past the axes: the Y axis and its title take the first
+              ~70px, the X ticks and title the last ~56px. */}
+          <div className="quad" style={{ left: 92, top: 34 }}>{quadrants[0]}</div>
+          <div className="quad" style={{ right: 44, top: 34, textAlign: "right" }}>{quadrants[1]}</div>
+          <div className="quad" style={{ left: 92, bottom: 64 }}>{quadrants[2]}</div>
+          <div className="quad" style={{ right: 44, bottom: 64, textAlign: "right" }}>{quadrants[3]}</div>
         </>
       )}
     </div>
