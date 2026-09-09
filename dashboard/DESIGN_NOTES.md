@@ -444,6 +444,47 @@ it does not; do not synthesise the missing link.**
 
 ---
 
+## 11b. Closing the loop: grading and a baseline
+
+**Decision.** Every closing line and every logged prediction is graded
+against the box score once the game is played (`odds/grading.py`), and a
+deliberately simple baseline projection (`stats/projection.py`) is logged
+through the same prediction contract the model will use.
+
+**Why grade at all.** Until something is scored, every hit rate and angle on
+the dashboard is a story. Grading turns them into measurable claims: "L10 at
+70% or better" either clears the 52.4% break-even or it does not. It also
+exposes which books' closing lines are furthest from reality (mean absolute
+error per book), which is the only honest definition of a soft book.
+
+**Why a baseline before the model.** Three reasons. The board needed a
+reference to sort by ("line minus projection"). The grader needed something
+to score on day one. And the real model needs a bar to clear that is not the
+market: if a recency-weighted average with an opponent factor gets 54% of
+sides right, a model that gets 55% has added one point, not fifty-five.
+
+**Design choices in the baseline, stated so they can be argued with.**
+- Exponential recency weights with a four-game half-life: the fifth most
+  recent game counts half the latest. Long enough to smooth a fluke, short
+  enough to follow a role change.
+- Opponent factor = defense's per-game allowance to the position over the
+  league average, clipped to 0.8-1.25. The clip is there because a factor of
+  0.5 says more about a nine-game sample than about a defense.
+- Standard deviation floored at a quarter of the mean. Yardage props are
+  noisy; a floor keeps P(over) from claiming 95% on a five-game streak.
+- Every number the projection used is returned with it (n, base, factor,
+  factor context). A projection you cannot audit is a rumour.
+
+**Grading detail worth copying.** The "form" signals are recomputed from
+games strictly before the graded game, never from the game log as it stands
+today. Otherwise the signal would include the outcome it is meant to predict,
+which is the most common way backtests lie.
+
+**Automation.** `scripts/daily.sh` runs the pull, the baseline log, and last
+week's grade, and on Tuesdays refreshes the data. It is idempotent: every
+step appends or overwrites its own week, so running it twice does no harm.
+macOS blocks cron without Full Disk Access, hence the launchd agent.
+
 ## 12. Things I deliberately did not do
 
 - **No database.** Parquet plus polars covers reads; the only writes are
