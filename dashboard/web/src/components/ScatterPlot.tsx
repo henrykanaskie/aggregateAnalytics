@@ -6,20 +6,33 @@ export interface Dot { id: string; label: string; x: number | null; y: number | 
 interface Props {
   dots: Dot[]; xLabel: string; yLabel: string; xFmt?: (v: number) => string; yFmt?: (v: number) => string;
   height?: number; imageSize?: number; showLabels?: "all" | "highlight" | "none"; quadrants?: [string, string, string, string]; // TL, TR, BL, BR
+  // The crosshairs are the mean of what is plotted unless the caller knows
+  // better. A chart showing a trimmed field has to pass the full population's
+  // average, or the line reads as the league when it is only the top of it.
+  xAvg?: number | null; yAvg?: number | null;
   xGoodHigh?: boolean | null; yGoodHigh?: boolean | null; onPick?: (id: string) => void; title?: string;
 }
 
 /** Teams or players as dots (logos / headshots) on two metrics, with league
  *  averages as crosshairs. Highlighted dots draw larger and labelled. */
-export default function ScatterPlot({ dots, xLabel, yLabel, xFmt = (v) => String(v), yFmt = (v) => String(v), height = 380, imageSize = 22, showLabels = "highlight", quadrants, onPick }: Props) {
+export default function ScatterPlot({ dots, xLabel, yLabel, xFmt = (v) => String(v), yFmt = (v) => String(v), height = 380, imageSize = 22, showLabels = "highlight", quadrants, onPick, xAvg, yAvg }: Props) {
   const T = chartTheme();
   const [hover, setHover] = useState<string | null>(null);
   const data = useMemo(() => dots.filter((d) => d.x !== null && d.y !== null && !Number.isNaN(d.x) && !Number.isNaN(d.y)), [dots]);
-  const mx = data.length ? data.reduce((a, d) => a + (d.x as number), 0) / data.length : 0;
-  const my = data.length ? data.reduce((a, d) => a + (d.y as number), 0) / data.length : 0;
+  const mean = (pick: (d: Dot) => number) => (data.length ? data.reduce((a, d) => a + pick(d), 0) / data.length : 0);
+  const mx = xAvg ?? mean((d) => d.x as number);
+  const my = yAvg ?? mean((d) => d.y as number);
   const xs = data.map((d) => d.x as number), ys = data.map((d) => d.y as number);
-  const pad = (arr: number[]) => { if (!arr.length) return [0, 1]; const lo = Math.min(...arr), hi = Math.max(...arr); const p = (hi - lo || 1) * 0.12; return [lo - p, hi + p]; };
-  const [x0, x1] = pad(xs), [y0, y1] = pad(ys);
+  // A supplied average belongs inside the domain. When the field is trimmed to
+  // its top the average sits below everything plotted, and an axis fitted to
+  // the dots alone would put the crosshair off-chart, silently.
+  const pad = (arr: number[], keep?: number | null) => {
+    const all = keep === null || keep === undefined ? arr : [...arr, keep];
+    if (!all.length) return [0, 1];
+    const lo = Math.min(...all), hi = Math.max(...all); const p = (hi - lo || 1) * 0.12;
+    return [lo - p, hi + p];
+  };
+  const [x0, x1] = pad(xs, xAvg), [y0, y1] = pad(ys, yAvg);
   const shape = (props: any) => {
     const { cx, cy, payload } = props as { cx: number; cy: number; payload: Dot };
     const hl = payload.highlight || hover === payload.id;
