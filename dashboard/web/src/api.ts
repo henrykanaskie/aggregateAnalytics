@@ -1,5 +1,7 @@
 // Typed client for dashboard/api/app.py.
 
+import { cached, invalidate } from "./lib/cache";
+
 export interface Team {
   team_abbr: string; team_name: string; team_nick: string; team_conf: string; team_division: string;
   team_color: string; team_color2: string; team_logo_espn: string;
@@ -50,12 +52,24 @@ function toPasswordBox(): never {
   throw new Error("password required");
 }
 
-async function get<T>(url: string): Promise<T> {
+async function fetchJson<T>(url: string): Promise<T> {
   const r = await fetch(url);
   if (r.status === 401) toPasswordBox();
   if (!r.ok) throw new Error(`${r.status} ${r.statusText}: ${await r.text()}`);
   return r.json();
 }
+
+// Every read goes through the shared cache (lib/cache.ts): a fresh hit never
+// touches the network, so leaving a tab and coming back costs nothing, and
+// concurrent callers for the same URL share one request.
+export const apiGet = <T,>(url: string): Promise<T> => cached<T>(url, fetchJson);
+const get = apiGet;
+
+// Endpoints are declared once as a URL builder. `api.board(opts)` fetches;
+// `api.board.url(opts)` is the same string as a cache key, which is what
+// useQuery needs to read the cache before the first paint.
+type Ep<A extends any[], T> = ((...a: A) => Promise<T>) & { url: (...a: A) => string };
+const ep = <T,>() => <A extends any[]>(url: (...a: A) => string): Ep<A, T> => Object.assign((...a: A) => get<T>(url(...a)), { url });
 
 export async function signOut(): Promise<void> {
   await fetch("/api/auth/logout", { method: "POST" });
@@ -73,24 +87,30 @@ const qs = (o: Record<string, any>) => {
 };
 
 export const api = {
-  meta: () => get<Meta>("/api/meta"),
-  search: (q: string, opts: { limit?: number; position?: string; team?: string; active?: boolean } = {}) => get<PlayerLite[]>(`/api/players${qs({ q, ...opts })}`),
-  player: (id: string) => get<Player>(`/api/players/${id}`),
-  gamelog: (id: string, since: number) => get<GameLog>(`/api/players/${id}/gamelog${qs({ since })}`),
-  playerLines: (id: string, season?: number, week?: number, includeSample = false) => get<PlayerLines>(`/api/players/${id}/lines${qs({ season, week, include_sample: includeSample })}`),
-  board: (o: { season?: number; week?: number; market?: string[]; book?: string; include_sample?: boolean; scale?: number; form?: boolean }) => get<Board>(`/api/odds/board${qs(o)}`),
-  games: (season?: number, week?: number, includeSample = false) => get<GamesResponse>(`/api/odds/games${qs({ season, week, include_sample: includeSample })}`),
-  schedule: (season?: number, week?: number) => get<ScheduleGame[]>(`/api/schedule${qs({ season, week })}`),
-  predictions: (season?: number, week?: number) => get<PredictionsResponse>(`/api/predictions${qs({ season, week })}`),
-  status: () => get<OddsStatus>("/api/odds/status"),
-  teamPlayers: (team: string, season: number) => get<{ player_id: string; name: string; position: string; games: number; ppr: number; headshot: string | null }[]>(`/api/teams/${team}/players${qs({ season })}`),
+  meta: ep<Meta>()(() => "/api/meta"),
+  search: ep<PlayerLite[]>()((q: string, opts: { limit?: number; position?: string; team?: string; active?: boolean } = {}) => `/api/players${qs({ q, ...opts })}`),
+  player: ep<Player>()((id: string) => `/api/players/${id}`),
+  gamelog: ep<GameLog>()((id: string, since: number) => `/api/players/${id}/gamelog${qs({ since })}`),
+  playerLines: ep<PlayerLines>()((id: string, season?: number, week?: number, includeSample = false) => `/api/players/${id}/lines${qs({ season, week, include_sample: includeSample })}`),
+  board: ep<Board>()((o: { season?: number; week?: number; market?: string[]; book?: string; include_sample?: boolean; scale?: number; form?: boolean }) => `/api/odds/board${qs(o)}`),
+  games: ep<GamesResponse>()((season?: number, week?: number, includeSample = false) => `/api/odds/games${qs({ season, week, include_sample: includeSample })}`),
+  schedule: ep<ScheduleGame[]>()((season?: number, week?: number) => `/api/schedule${qs({ season, week })}`),
+  predictions: ep<PredictionsResponse>()((season?: number, week?: number) => `/api/predictions${qs({ season, week })}`),
+  status: ep<OddsStatus>()(() => "/api/odds/status"),
+  teamPlayers: ep<{ player_id: string; name: string; position: string; games: number; ppr: number; headshot: string | null }[]>()((team: string, season: number) => `/api/teams/${team}/players${qs({ season })}`),
   pull: async (body: Record<string, any>) => {
     const r = await fetch("/api/odds/pull", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     if (r.status === 401) toPasswordBox();
     if (!r.ok) throw new Error((await r.json()).detail ?? r.statusText);
+    invalidate(ODDS);   // a pull rewrites the snapshot store under every lines view
     return r.json() as Promise<PullResult>;
   },
 };
+
+// What a write makes wrong. Anything derived from the odds snapshots or from
+// the graded log has to be dropped so the next read goes back to the API.
+const ODDS = /^\/api\/(odds|meta|schedule|predictions|matchups|grading)\b|\/lines(\?|$)/;
+const GRADED = /^\/api\/(grading|predictions)\b|^\/api\/odds\/board/;
 
 // --- play-by-play splits, team tendencies, coaches ---------------------------
 export interface SplitLevel { level: string; plays: number; share: number; [k: string]: number | string | null; }
@@ -109,13 +129,13 @@ export interface MatchupSide { team: string; season: TeamSeasonRow | null; last4
 export interface Matchup { season_used: number; team: MatchupSide; opponent: MatchupSide; metrics: TeamMetric[]; }
 
 export const api2 = {
-  matchup: (team: string, opponent: string) => get<Matchup>(`/api/matchup${qs({ team, opponent })}`),
-  splits: (id: string, o: { role?: string; dim?: string[]; since?: number; season_type?: string; stat?: string }) => get<Splits>(`/api/players/${id}/splits${qs(o)}`),
-  splitGames: (id: string, role: string, dim: string, since: number) => get<SplitGames>(`/api/players/${id}/splits/games${qs({ role, dim, since })}`),
-  teamTendencies: (team: string, since: number, season_type = "REG") => get<TeamTendencies>(`/api/teams/${team}/tendencies${qs({ since, season_type })}`),
-  league: (season: number) => get<LeagueTendencies>(`/api/tendencies/league${qs({ season })}`),
-  coaches: () => get<CoachSummary[]>("/api/coaches"),
-  coach: (name: string) => get<CoachProfile>(`/api/coaches/${encodeURIComponent(name)}`),
+  matchup: ep<Matchup>()((team: string, opponent: string) => `/api/matchup${qs({ team, opponent })}`),
+  splits: ep<Splits>()((id: string, o: { role?: string; dim?: string[]; since?: number; season_type?: string; stat?: string }) => `/api/players/${id}/splits${qs(o)}`),
+  splitGames: ep<SplitGames>()((id: string, role: string, dim: string, since: number) => `/api/players/${id}/splits/games${qs({ role, dim, since })}`),
+  teamTendencies: ep<TeamTendencies>()((team: string, since: number, season_type = "REG") => `/api/teams/${team}/tendencies${qs({ since, season_type })}`),
+  league: ep<LeagueTendencies>()((season: number) => `/api/tendencies/league${qs({ season })}`),
+  coaches: ep<CoachSummary[]>()(() => "/api/coaches"),
+  coach: ep<CoachProfile>()((name: string) => `/api/coaches/${encodeURIComponent(name)}`),
 };
 
 // --- context: defense vs position, usage, injuries --------------------------
@@ -128,12 +148,12 @@ export interface CoachUsageRow { team: string; season: number; team_games: numbe
 export interface InjuryRow { season: number; week: number; game_type: string; team: string; gsis_id: string; full_name: string; position: string; report_primary_injury: string | null; report_secondary_injury: string | null; report_status: string | null; practice_primary_injury: string | null; practice_status: string | null; }
 
 export const api3 = {
-  matchup: (team: string, opponent: string, position?: string | null) => get<Matchup & { dvp?: Dvp }>(`/api/matchup${qs({ team, opponent, position })}`),
-  dvp: (team: string, position: string, season: number) => get<DvpLeague>(`/api/teams/${team}/dvp${qs({ position, season })}`),
-  usage: (team: string, season: number) => get<{ team: string; season: number; rows: UsageRow[] }>(`/api/teams/${team}/usage${qs({ season })}`),
-  coachUsage: (name: string) => get<{ coach: string; rows: CoachUsageRow[] }>(`/api/coaches/${encodeURIComponent(name)}/usage`),
-  playerInjuries: (id: string) => get<{ rows: InjuryRow[] }>(`/api/players/${id}/injuries`),
-  teamInjuries: (team: string, season?: number, week?: number) => get<{ team: string; season: number; week: number; latest_week_available: number | null; rows: InjuryRow[] }>(`/api/teams/${team}/injuries${qs({ season, week })}`),
+  matchup: ep<Matchup & { dvp?: Dvp }>()((team: string, opponent: string, position?: string | null) => `/api/matchup${qs({ team, opponent, position })}`),
+  dvp: ep<DvpLeague>()((team: string, position: string, season: number) => `/api/teams/${team}/dvp${qs({ position, season })}`),
+  usage: ep<{ team: string; season: number; rows: UsageRow[] }>()((team: string, season: number) => `/api/teams/${team}/usage${qs({ season })}`),
+  coachUsage: ep<{ coach: string; rows: CoachUsageRow[] }>()((name: string) => `/api/coaches/${encodeURIComponent(name)}/usage`),
+  playerInjuries: ep<{ rows: InjuryRow[] }>()((id: string) => `/api/players/${id}/injuries`),
+  teamInjuries: ep<{ team: string; season: number; week: number; latest_week_available: number | null; rows: InjuryRow[] }>()((team: string, season?: number, week?: number) => `/api/teams/${team}/injuries${qs({ season, week })}`),
 };
 
 // --- game matchups -------------------------------------------------------------
@@ -143,7 +163,7 @@ export interface MatchupSideFull { offense: string; defense: string; offense_blo
 export interface H2H { game_id: string; season: number; week: number; game_type: string; gameday: string; home_team: string; away_team: string; roof: string | null; a: string; b: string; a_home: boolean; a_pts: number; b_pts: number; margin: number; total: number; a_spread: number | null; total_line: number | null; a_cover: boolean | null; over: boolean | null; a_coach: string | null; b_coach: string | null; a_qb: string | null; b_qb: string | null; stars: { team: string; player_id: string; name: string; position: string; line: string; ppr: number }[]; }
 export interface GameMatchup { game: ScheduleGame & Record<string, any>; season_used: number; sides: MatchupSideFull[]; metrics: TeamMetric[]; dvp_labels: Record<string, string>; history: H2H[]; venue: Record<string, any>; props: BoardRow[]; lines: any[]; predictions: GamePrediction[]; injuries: Record<string, InjuryRow[]>; sources: string[]; }
 export const api4 = {
-  gameMatchup: (gameId: string, includeSample = false) => get<GameMatchup>(`/api/matchups/${gameId}${qs({ include_sample: includeSample })}`),
+  gameMatchup: ep<GameMatchup>()((gameId: string, includeSample = false) => `/api/matchups/${gameId}${qs({ include_sample: includeSample })}`),
 };
 
 // --- projections, grading, teammates, correlations, adjustment, alerts -------------
@@ -155,16 +175,24 @@ export interface CorrRow { with: string; player_id: string | null; name?: string
 export interface DvpFactors { stat: string; dvp_stat: string | null; factors: Record<string, Record<string, number>>; }
 export interface GradeSummary { n: number; weeks: [number, number][]; by_book: { book: string; n: number; over_rate: number; push_rate: number; mae: number; bias: number }[]; by_market: { market: string; n: number; over_rate: number; push_rate: number; mae: number; bias: number }[]; signals: { signal: string; n: number; hit_rate: number }[]; movement: { signal: string; n: number; hit_rate: number }[]; models: { model_version: string; n: number; hit_rate: number | null; n_strong: number; hit_rate_strong: number | null; pred_mae: number; line_mae: number | null }[]; }
 export const api5 = {
-  teammates: (id: string) => get<TeammatePresence>(`/api/players/${id}/teammates`),
-  correlations: (id: string, stat: string) => get<{ stat: string; rows: CorrRow[] }>(`/api/players/${id}/correlations${qs({ stat })}`),
-  dvpFactors: (position: string, stat: string, since: number) => get<DvpFactors>(`/api/dvp/factors${qs({ position, stat, since })}`),
-  gradeSummary: (season?: number) => get<GradeSummary>(`/api/grading/summary${qs({ season })}`),
-  gradeRun: async (season: number, week: number, include_sample = false) => { const r = await fetch("/api/grading/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ season, week, include_sample }) }); return r.json() as Promise<{ graded: number }>; },
-  logBaseline: async (season?: number, week?: number) => { const r = await fetch("/api/projections/log", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ season, week }) }); return r.json() as Promise<{ logged: number; week: number }>; },
+  teammates: ep<TeammatePresence>()((id: string) => `/api/players/${id}/teammates`),
+  correlations: ep<{ stat: string; rows: CorrRow[] }>()((id: string, stat: string) => `/api/players/${id}/correlations${qs({ stat })}`),
+  dvpFactors: ep<DvpFactors>()((position: string, stat: string, since: number) => `/api/dvp/factors${qs({ position, stat, since })}`),
+  gradeSummary: ep<GradeSummary>()((season?: number) => `/api/grading/summary${qs({ season })}`),
+  gradeRun: async (season: number, week: number, include_sample = false) => {
+    const r = await fetch("/api/grading/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ season, week, include_sample }) });
+    invalidate(GRADED);
+    return r.json() as Promise<{ graded: number }>;
+  },
+  logBaseline: async (season?: number, week?: number) => {
+    const r = await fetch("/api/projections/log", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ season, week }) });
+    invalidate(GRADED);
+    return r.json() as Promise<{ logged: number; week: number }>;
+  },
 };
 
 // --- scatter ---------------------------------------------------------------------
 export type ScatterRow = Record<string, number | string | null> & { player_id: string; name: string; team: string; position: string; games: number; headshot: string | null };
 export const api6 = {
-  scatterPlayers: (season: number, position: string, min_games = 4) => get<{ season: number; position: string; rows: ScatterRow[] }>(`/api/scatter/players${qs({ season, position, min_games })}`),
+  scatterPlayers: ep<{ season: number; position: string; rows: ScatterRow[] }>()((season: number, position: string, min_games = 4) => `/api/scatter/players${qs({ season, position, min_games })}`),
 };

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { api, Meta, StatDef, MarketDef, Team } from "./api";
+import { peek } from "./lib/cache";
 
 export interface Settings {
   since: number;            // earliest season loaded into a game log
@@ -25,7 +26,9 @@ interface Ctx {
 const C = createContext<Ctx>(null as any);
 
 export function MetaProvider({ children }: { children: React.ReactNode }) {
-  const [meta, setMeta] = useState<Meta | null>(null);
+  // Seeded from the cache so a refresh paints the header, teams and stat
+  // catalog on the first frame instead of waiting on /api/meta.
+  const [meta, setMeta] = useState<Meta | null>(() => peek<Meta>(api.meta.url()) ?? null);
   const [error, setError] = useState<string | null>(null);
   const [settings, setS] = useState<Settings>(loadSettings);
   const reloadMeta = () => api.meta().then(setMeta).catch((e) => setError(String(e)));

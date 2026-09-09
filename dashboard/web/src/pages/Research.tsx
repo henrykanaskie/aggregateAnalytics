@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, BoardRow, BookLine, GameLog, Player, PlayerLines } from "../api";
 import { Field, SampleBanner, Seg, SourceNote, Spinner } from "../components/common";
@@ -15,6 +15,7 @@ import StatPicker from "../components/StatPicker";
 import StatTiles from "../components/StatTiles";
 import { fmtLine, fmtOdds } from "../lib/format";
 import { applyFilters, DEFAULT_FILTERS, Filters, DEFAULT_MARKET_FOR, presetFor, suggestLine } from "../lib/stats";
+import { useQuery } from "../lib/useQuery";
 import { useMeta } from "../state";
 import Splits from "../components/PbpSplits";
 import MatchupPanel from "../components/MatchupPanel";
@@ -30,11 +31,12 @@ export default function Research() {
   const [sp, setSp] = useSearchParams();
   const nav = useNavigate();
   const pid = sp.get("player");
-  const [player, setPlayer] = useState<Player | null>(null);
-  const [log, setLog] = useState<GameLog | null>(null);
-  const [lines, setLines] = useState<PlayerLines | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const bio = useQuery<Player>(pid ? api.player.url(pid) : null);
+  const gamelog = useQuery<GameLog>(pid ? api.gamelog.url(pid, settings.since) : null);
+  const playerLines = useQuery<PlayerLines>(pid ? api.playerLines.url(pid, undefined, undefined, settings.includeSample) : null);
+  const player = bio.data, log = gamelog.data, lines = playerLines.data;
+  const loading = bio.loading || gamelog.loading || playerLines.loading;
+  const err = bio.error ?? gamelog.error ?? playerLines.error;
 
   // What is being charted. "market" selects a stat + a line from the books; a bare "stat" uses a custom line.
   const market = sp.get("market");
@@ -50,28 +52,29 @@ export default function Research() {
   const [adjust, setAdjust] = useState(false);
   const [factors, setFactors] = useState<DvpFactors | null>(null);
 
+  useEffect(() => { setPicked(null); setGameFilter(null); }, [pid]);
+
+  // Columns, the mini charts and the default market are seeded once per player
+  // from the three responses. The ref keeps a cached revisit from re-seeding
+  // over choices made since.
+  const seeded = useRef<string | null>(null);
+  const seedKey = `${pid}|${settings.since}|${settings.includeSample}`;
   useEffect(() => {
-    if (!pid) { setPlayer(null); setLog(null); setLines(null); return; }
-    setLoading(true); setErr(null); setPicked(null); setGameFilter(null);
-    Promise.all([api.player(pid), api.gamelog(pid, settings.since), api.playerLines(pid, undefined, undefined, settings.includeSample)])
-      .then(([p, g, l]) => {
-        setPlayer(p); setLog(g); setLines(l);
-        const preset = presetFor(p.position).filter((k) => (g.available[k] ?? 0) > 0);
-        setColumns(preset.slice(0, 6));
-        setMiniKeys(preset.slice(0, 4));
-        if (!sp.get("market") && !sp.get("stat")) {
-          // Default to the first market the books actually posted for this player, else the position's usual one.
-          const first = l.markets.find((m) => m.kind === "ou") ?? null;
-          const fallback = DEFAULT_MARKET_FOR[p.position] ?? DEFAULT_MARKET_FOR.DEF;
-          const next = new URLSearchParams(sp);
-          next.set("market", first?.market ?? fallback);
-          setSp(next, { replace: true });
-        }
-      })
-      .catch((e) => setErr(String(e)))
-      .finally(() => setLoading(false));
+    if (!pid || !player || !log || !lines || seeded.current === seedKey) return;
+    seeded.current = seedKey;
+    const preset = presetFor(player.position).filter((k) => (log.available[k] ?? 0) > 0);
+    setColumns(preset.slice(0, 6));
+    setMiniKeys(preset.slice(0, 4));
+    if (!sp.get("market") && !sp.get("stat")) {
+      // Default to the first market the books actually posted for this player, else the position's usual one.
+      const first = lines.markets.find((m) => m.kind === "ou") ?? null;
+      const fallback = DEFAULT_MARKET_FOR[player.position] ?? DEFAULT_MARKET_FOR.DEF;
+      const next = new URLSearchParams(sp);
+      next.set("market", first?.market ?? fallback);
+      setSp(next, { replace: true });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pid, settings.since, settings.includeSample]);
+  }, [seedKey, player, log, lines]);
 
   const marketRow: BoardRow | null = useMemo(() => lines?.markets.find((m) => m.market === market) ?? null, [lines, market]);
   const rawRows = log?.rows ?? [];
