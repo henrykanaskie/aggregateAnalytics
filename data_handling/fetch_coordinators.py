@@ -52,7 +52,7 @@ from nfl.teams import FRANCHISES  # noqa: E402
 API = "https://en.wikipedia.org/w/api.php"
 # Wikimedia asks that automated clients identify themselves; an anonymous
 # scraper gets 429s far sooner. See the rate-limit page linked in their 429 body.
-USER_AGENT = "nfl-predictor/0.1 (team-season coaching staff; polite batch reader)"
+USER_AGENT = "aggregate-analytics/0.1 (team-season coaching staff; polite batch reader)"
 BATCH = 20          # titles per query; the API caps anonymous callers at 50
 PAUSE = 1.5         # seconds between batches
 TIMEOUT = 45

@@ -46,7 +46,7 @@ STATE: dict = {"last_sync": None, "files": 0, "removed": 0, "last_error": None}
 
 
 def _headers(accept: str) -> dict[str, str]:
-    h = {"Accept": accept, "User-Agent": "nfl_predictor-sync-odds"}
+    h = {"Accept": accept, "User-Agent": "aggregate-analytics-sync-odds"}
     tok = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
     if tok:
         h["Authorization"] = f"Bearer {tok}"

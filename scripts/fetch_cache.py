@@ -34,7 +34,7 @@ def _repo() -> str:
 
 
 def _headers(accept: str) -> dict[str, str]:
-    h = {"Accept": accept, "User-Agent": "nfl_predictor-fetch-cache"}
+    h = {"Accept": accept, "User-Agent": "aggregate-analytics-fetch-cache"}
     tok = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
     if tok:
         h["Authorization"] = f"Bearer {tok}"

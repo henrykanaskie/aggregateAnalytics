@@ -46,7 +46,7 @@ from ..stats.gamelog import availability, game_log
 # One password in front of everything (webauth/README.md). The dependency
 # gates every route below, including the SPA catch-all; the auth router must
 # be included before that catch-all is defined so /password is reachable.
-app = FastAPI(title="NFL props dashboard", version="0.1.0",
+app = FastAPI(title="Aggregate Analytics", version="0.1.0",
               dependencies=[Depends(require_session)])
 app.include_router(auth_router)
 # These responses are lists of dicts with the same keys repeated a few thousand

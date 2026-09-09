@@ -64,6 +64,11 @@ def _secret() -> bytes:
     explicit = os.environ.get("SESSION_SECRET")
     if explicit:
         return explicit.encode("utf-8")
+    # The prefix below is not a name, it is the salt this key is derived from,
+    # and it keeps the project's old one on purpose. Change it and every cookie
+    # ever signed stops verifying, so everyone holding a valid session is
+    # bounced to the password box the next time they load a page. It is never
+    # displayed anywhere. Renaming it buys nothing and costs that.
     return hashlib.sha256(b"nfl_predictor.session:" + _password().encode("utf-8")).digest()
 
 
