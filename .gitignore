@@ -13,3 +13,10 @@ __pycache__/
 *.egg-info/
 nfl_data_profile.html
 data_handling/explorer/cache/
+
+# secrets
+.env
+
+# dashboard frontend
+dashboard/web/node_modules/
+dashboard/web/dist/
