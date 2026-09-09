@@ -162,7 +162,11 @@ def test_dashboard_api_is_gated(dashboard_client):
 
 def test_dashboard_password_box_and_health_are_open(dashboard_client):
     assert dashboard_client.get("/password").status_code == 200
-    assert dashboard_client.get("/api/health").json() == {"ok": True}
+    # Health also reports the commit the process was built from (None off
+    # Render), so the check is on the flag, not the whole body.
+    health = dashboard_client.get("/api/health").json()
+    assert health["ok"] is True
+    assert "commit" in health
 
 
 def test_dashboard_browser_visit_is_redirected(dashboard_client):
@@ -183,7 +187,7 @@ def test_dashboard_starts_and_warms_without_a_cache(monkeypatch, capsys):
     monkeypatch.delenv("ODDS_REPO", raising=False)
     from dashboard.api import app as m
     with TestClient(m.app) as c:
-        assert c.get("/api/health").json() == {"ok": True}
+        assert c.get("/api/health").json()["ok"] is True
         m._warm()                      # run it synchronously too, for the log
     out = capsys.readouterr().out
     assert "[warm]" in out
