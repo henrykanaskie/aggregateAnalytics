@@ -128,12 +128,30 @@ def delink(raw: str) -> str:
     return s
 
 
+#: Editorial asides Wikipedia hangs on a staff line, which are not part of
+#: anyone's name: "Matt Canada; fired after Week 11", "Gregg Williams†". Left
+#: in, each one becomes a separate person -- Gregg Williams had eleven rows
+#: under his name and a twelfth under the dagger, and that orphan lost both his
+#: other seasons and the link to his head-coaching record.
+#:
+#: A comma is deliberately not a cut: "Pete Carmichael, Jr" is a name, and it
+#: is spelled that way on all five of his seasons.
+#:
+#: :func:`dashboard.stats.coaches.coordinators` applies the same rule when it
+#: reads the table, so a cache scraped before this existed is healed on load
+#: rather than needing a re-scrape. Change one and change the other; the tests
+#: check they agree.
+ANNOTATION = re.compile(r"\s*[;(].*$")
+FOOTNOTES = " *·,;.†‡–—-"
+
+
 def clean_name(raw: str) -> str:
     """The display name alone: markup off, then the asides Wikipedia hangs on a
-    person -- "(interim)", "(de facto)"."""
+    person -- "(interim)", "(de facto)", "; fired after Week 11"."""
     s = re.sub(r"\([^)]*\)", "", delink(raw))
+    s = ANNOTATION.sub("", s)
     s = re.sub(r"\s+", " ", s)
-    return s.strip(" *·,;.–—-")
+    return s.strip(FOOTNOTES)
 
 
 def parse_staff(wikitext: str) -> tuple[dict[str, list[tuple[str, str]]], bool]:

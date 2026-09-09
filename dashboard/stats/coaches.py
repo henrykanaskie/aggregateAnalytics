@@ -143,7 +143,17 @@ def _read_coordinators(stamp: float) -> pl.DataFrame:
     return (
         scan("coordinators").collect()
         .filter(pl.col("coach").is_not_null())
+        # The same rule as fetch_coordinators.clean_name, applied again here so
+        # a table scraped before that rule existed is healed on load. It has to
+        # be: the weekly job only refetches seasons the archive is missing, so
+        # a published archive that is merely *wrong* would never be rewritten,
+        # and "Matt Canada; fired after Week 11" would stay a separate person
+        # from Matt Canada for good.
+        .with_columns(pl.col("coach").str.replace(r"\s*[;(].*$", "").str.strip_chars(" *·,;.†‡–—-"))
+        .filter(pl.col("coach").str.len_chars() > 0)
         .select("season", "team", "role", "coach", "title", "slot")
+        .unique(subset=["season", "team", "role", "coach"], keep="first")
+        .sort(["season", "team", "role", "slot"])
     )
 
 

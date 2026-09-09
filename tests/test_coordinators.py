@@ -75,6 +75,35 @@ def test_clean_name_drops_disambiguation_and_asides():
     assert clean_name("[[Mike Kafka]] ''(interim)''") == "Mike Kafka"
 
 
+@pytest.mark.parametrize("raw,expected", [
+    # Wikipedia hangs editorial notes off the name. Left on, each one becomes a
+    # separate person: Gregg Williams had eleven rows and a twelfth under the
+    # dagger, and that orphan lost both his other seasons and the link to his
+    # head-coaching record.
+    ("[[Matt Canada]]; fired after Week 11", "Matt Canada"),
+    ("[[Ken Dorsey]]; fired after Week 10", "Ken Dorsey"),
+    ("[[Alan Williams]]; resigned on September 20", "Alan Williams"),
+    ("[[Gregg Williams]]\u2020", "Gregg Williams"),
+    # A comma is not a cut: this is how his name is spelled on all five of his
+    # seasons, and trimming it would split him instead of joining him.
+    ("[[Pete Carmichael, Jr]]", "Pete Carmichael, Jr"),
+])
+def test_editorial_notes_are_not_part_of_a_name(raw, expected):
+    assert clean_name(raw) == expected
+
+
+@pytest.mark.needs_data
+def test_a_cache_scraped_before_that_rule_is_healed_on_load():
+    """The archive is complete, so the weekly job will never refetch those
+    seasons: a published table that is merely wrong would keep the annotation
+    for good unless the reader strips it too."""
+    if not coaches_mod.have_coordinators():
+        pytest.skip("coordinator table not fetched")
+    names = coaches_mod.coordinators()["coach"].unique().to_list()
+    assert not [n for n in names if ";" in n or "\u2020" in n or "\u2021" in n]
+    assert "Pete Carmichael, Jr" in names, "a legitimate suffix must survive"
+
+
 @pytest.mark.parametrize("team,season,expected", [
     ("LV", 2005, "2005 Oakland Raiders season"),
     ("LV", 2021, "2021 Las Vegas Raiders season"),

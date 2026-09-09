@@ -540,7 +540,11 @@ def team_usage_api(team: str, season: int = CURRENT_SEASON - 1, season_type: str
 @app.get("/api/coaches/{name}/usage")
 def coach_usage_api(name: str, role: str = "HC"):
     _need_team_table()
-    cs = coaches_mod.role_seasons(_role(role)).filter(pl.col("coach") == name).select("team", "season").unique().sort("season")
+    # Every season he was coaching this side of the ball, not just the ones
+    # under his current title: who got the ball in Miami is exactly the
+    # question a reader has about Mike McDaniel, and it is his head-coaching
+    # years that answer it.
+    cs = coaches_mod.accountable_seasons(name, _role(role)).select("team", "season").unique().sort("season")
     if cs.is_empty():
         raise HTTPException(404, "unknown coach")
     return {"coach": name, "rows": [{k: _clean(v) if not isinstance(v, dict) else {kk: _clean(vv) for kk, vv in v.items()} for k, v in r.items()}

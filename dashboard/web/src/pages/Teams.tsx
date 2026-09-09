@@ -10,19 +10,8 @@ import { useQuery } from "../lib/useQuery";
 import { useMeta } from "../state";
 import TeamScatter from "../components/TeamScatter";
 import UsageTree from "../components/UsageTree";
+import { rankTint } from "../lib/rank";
 import DvpTable from "../components/DvpTable";
-
-export const rankClass = (rank: number | null | undefined, n: number | null | undefined, good: string) => {
-  if (!rank || !n || good === "none") return "";
-  const pct = 1 - (rank - 1) / (n - 1);
-  const isGood = good === "high" ? pct : 1 - pct;
-  return isGood >= 0.75 ? "over" : isGood <= 0.25 ? "under" : "";
-};
-export const rankBg = (rank: number | null | undefined, n: number | null | undefined) => {
-  if (!rank || !n) return undefined;
-  const pct = 1 - (rank - 1) / (n - 1);
-  return `rgba(90,156,245,${(0.06 + pct * 0.34).toFixed(2)})`;
-};
 
 export default function Teams() {
   const { meta } = useMeta();
@@ -125,7 +114,7 @@ export default function Teams() {
                     <tr key={s.season}><td className="left">{s.season}</td><td className="left small muted">{coach?.coach ?? ""}</td>
                       <td className="left small muted">{cord ? <Link to={`/coaches?role=${side === "off" ? "OC" : "DC"}&coach=${encodeURIComponent(cord)}`}>{cord}</Link> : ""}</td>
                       <td className="num muted">{s.games}</td>
-                      {metrics.map((m) => { const v = s[m.key] as number | null; const r = s[`${m.key}_rank`] as number | null; return <td key={m.key} className={`num ${rankClass(r, s.n_teams, m.good)}`} title={r ? `rank ${r} of ${s.n_teams}` : ""}>{v === null || v === undefined ? "–" : <>{fmtStat(v, m.fmt as any)} <span className="faint tiny">{r}</span></>}</td>; })}
+                      {metrics.map((m) => { const v = s[m.key] as number | null; const r = s[`${m.key}_rank`] as number | null; return <td key={m.key} className="num" style={{ background: rankTint(r, s.n_teams, m.good) }} title={r ? `rank ${r} of ${s.n_teams}` : ""}>{v === null || v === undefined ? "–" : <>{fmtStat(v, m.fmt as any)} <span className="faint tiny">{r}</span></>}</td>; })}
                     </tr>
                   ); })}
                 </tbody>
@@ -162,7 +151,7 @@ export default function Teams() {
               {sortedLeague.map((t) => (
                 <tr key={t.team as string} className={`clickable ${t.team === team ? "hl" : ""}`} onClick={() => setSp({ team: t.team as string })}>
                   <td className="left"><TeamTag abbr={t.team as string} /></td><td className="left small muted">{league?.coaches[t.team as string] ?? ""}</td>
-                  {metrics.map((m) => { const v = t[m.key] as number | null; const r = t[`${m.key}_rank`] as number | null; return <td key={m.key} className={`num ${rankClass(r, t.n_teams, m.good)}`} style={{ background: m.key === active ? rankBg(r, t.n_teams) : undefined }}>{v === null || v === undefined ? "–" : fmtStat(v, m.fmt as any)}</td>; })}
+                  {metrics.map((m) => { const v = t[m.key] as number | null; const r = t[`${m.key}_rank`] as number | null; return <td key={m.key} className="num" style={{ background: rankTint(r, t.n_teams, m.good) }} title={r ? `rank ${r} of ${t.n_teams}` : ""}>{v === null || v === undefined ? "–" : fmtStat(v, m.fmt as any)}</td>; })}
                 </tr>
               ))}
             </tbody>

@@ -7,7 +7,7 @@ import { warm } from "../lib/prefetch";
 import { useSticky } from "../lib/sticky";
 import { useQuery } from "../lib/useQuery";
 import { useMeta } from "../state";
-import { rankClass } from "./Teams";
+import { rankTint } from "../lib/rank";
 
 const OFF_KEYS = ["pass_rate", "proe", "neutral_pass_rate", "plays_pg", "sec_per_play", "third_down_conv", "shotgun_rate", "under_center_rate", "p11_rate", "p12_rate", "pa_rate", "motion_rate", "screen_rate", "deep_rate", "adot", "rb_target_share", "wr_target_share", "te_target_share", "lead_rb_share", "qb_rush_rate", "rz_td_rate", "rz_pass_rate", "rz_te_target_share", "rz_rb_target_share", "fourth_go_rate", "fga_pg", "sack_rate_taken", "int_rate", "epa_play", "explosive_rate"];
 const DEF_KEYS = ["def_epa_play", "def_pass_epa", "def_rush_epa", "def_success_rate", "def_explosive_rate", "def_pass_rate_faced", "def_third_down_conv", "def_sack_rate", "def_int_rate", "def_pressure_rate", "def_blitz_rate", "def_man_rate", "def_cover1_rate", "def_cover3_rate", "def_two_high_rate", "def_cover0_rate", "def_box_avg", "def_adot_faced", "def_deep_rate_faced", "def_rb_target_share", "def_te_target_share", "def_rz_td_rate", "def_fga_pg"];
@@ -176,7 +176,7 @@ function SideView({ s, metrics, labels }: { s: MatchupSideFull; metrics: TeamMet
     const m = mdefs.get(k); const row = block.season; if (!m || !row) return null;
     const v = row[k] as number | null; const r = row[`${k}_rank`] as number | null; const l4 = block.last4?.[k] ?? null;
     if (v === null || v === undefined) return null;
-    return <tr><td className="left" title={m.note || undefined}>{m.label}</td><td className="num">{fmtStat(v, m.fmt as any)}</td><td className={`num ${rankClass(r, row.n_teams, m.good)}`}>{r}</td><td className="num muted">{fmtStat(l4, m.fmt as any)}</td></tr>;
+    return <tr><td className="left" title={m.note || undefined}>{m.label}</td><td className="num">{fmtStat(v, m.fmt as any)}</td><td className="num" style={{ background: rankTint(r, row.n_teams, m.good) }}>{r}</td><td className="num muted">{fmtStat(l4, m.fmt as any)}</td></tr>;
   };
   const groups: Record<string, DefPlayer[]> = { CB: [], S: [], LB: [], DL: [] };
   for (const p of s.defense_personnel) groups[p.group]?.push(p);
