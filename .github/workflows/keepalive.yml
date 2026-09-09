@@ -1,0 +1,60 @@
+name: keepalive
+
+# Render's free plan stops the process after about fifteen idle minutes, and
+# the next visitor waits roughly thirty seconds for it to come back (DEPLOY.md,
+# "What free costs you"). A request every ten minutes keeps it up, so the wake
+# happens here instead of in front of whoever opened the site.
+#
+# Two things to know before relying on it:
+#
+#   * Instance hours. Never sleeping is about 730 hours a month against the
+#     free plan's 750, so this works only while this is the one free web
+#     service on the account. Add a second and both start getting stopped.
+#   * Cron drift. GitHub's scheduler runs late under load and skips slots
+#     outright, which DEPLOY.md already notes for the other two workflows. Ten
+#     minutes against a fifteen-minute idle timeout leaves room for one late
+#     run and no more, so the occasional cold start still gets through. This
+#     makes them rare, it does not make them impossible.
+#
+# Set the repository variable SITE_URL to the site's origin (Settings ->
+# Secrets and variables -> Actions -> Variables), e.g.
+# https://nfl-predictor.onrender.com. Without it this exits without pinging,
+# so a fork or a clone does not hammer someone else's host.
+#
+# /api/health is exempt from the password (webauth/auth.py EXEMPT_PREFIXES),
+# so no token is needed here.
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: keepalive
+  cancel-in-progress: true
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping the health endpoint
+        env:
+          SITE_URL: ${{ vars.SITE_URL }}
+        run: |
+          if [ -z "${SITE_URL}" ]; then
+            echo "SITE_URL is not set; nothing to ping. See the comment at the top of this file."
+            exit 0
+          fi
+          # --max-time 60, not the default: a request that arrives on a stopped
+          # host is the one that starts it, and paying that wait here is the
+          # whole point. Waking counts as success, so a slow reply is not a
+          # failure and must not turn the run red.
+          code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 60 "${SITE_URL%/}/api/health" || echo "000")
+          echo "GET ${SITE_URL%/}/api/health -> ${code}"
+          # A 5xx or a timeout means the host is unwell rather than merely
+          # asleep, and that is worth seeing in the Actions tab.
+          case "$code" in
+            2*|3*) exit 0 ;;
+            *) echo "::warning::health check returned ${code}"; exit 0 ;;
+          esac

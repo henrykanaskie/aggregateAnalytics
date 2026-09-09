@@ -11,6 +11,7 @@ GitHub Release, where the commit history is the audit trail.
 |---|---|---|---|
 | `lines.yml` | GitHub Actions | 4x/day (~6am, noon, 6pm, 11pm ET) | fetches the three tables the puller needs, runs `dashboard.odds.pull`, commits `data/odds/` |
 | `stats.yml` | GitHub Actions | Tuesday 6am ET | refreshes the current season in the parquet cache, rebuilds `data/derived/`, grades the weeks that have finished, uploads the cache to the `data-cache` Release, commits `data/derived/` and `data/odds/graded/` |
+| `keepalive.yml` | GitHub Actions | every 10 min | `GET /api/health`, so the host does not idle out and wake up in front of a visitor. Needs the `SITE_URL` repo variable; without it the job exits doing nothing |
 | `scripts/build.sh` | Render, on deploy | code or derived-table pushes | `pip install`, `scripts/fetch_cache.py` pulls the cache from the Release, `npm run build` for the SPA |
 | `data_handling/sync_odds.py` | inside the app | on wake, every 30 min | pulls new `data/odds/` files from GitHub, so lines commits never need a rebuild; deletes the snapshots the new ones replace |
 | `webauth/` | inside the app | every request | the password |
@@ -41,8 +42,15 @@ build minutes.
 
 ## What free costs you
 
-- **Sleep.** After about fifteen idle minutes Render stops the process. The
-  next visitor waits roughly thirty seconds while it starts and syncs odds.
+- **Sleep.** After about fifteen idle minutes Render stops the process, and
+  the next visitor waits roughly thirty seconds while it starts and syncs
+  odds. `keepalive.yml` pings every ten minutes to stop that happening, which
+  costs two things worth knowing. Never sleeping is about 730 instance-hours a
+  month against the free plan's 750, so it holds only while this is the one
+  free web service on the account. And GitHub's scheduler runs late and skips
+  slots, so ten minutes against a fifteen-minute timeout leaves room for one
+  late run and no more: cold starts get rarer, not impossible. Delete the
+  workflow or unset `SITE_URL` to go back to sleeping.
 - **Memory.** 512 MB. Fine for polars scans with a column select; not fine
   for `pl.read_parquet` on the whole play-by-play table. The 45-second team
   tendency rebuild runs in Actions, never on Render.

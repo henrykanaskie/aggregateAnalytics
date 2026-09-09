@@ -13,11 +13,25 @@ export interface Entry<T = unknown> { data: T; at: number }
 const mem = new Map<string, Entry>();
 const inflight = new Map<string, Promise<any>>();
 
-// A deploy can change the shape of a response, and a cache that outlives the
-// build that filled it would hand stale shapes to new code. Scoping the keys to
-// the build means each deploy starts clean and every reload after it does not.
-declare const __BUILD_ID__: string;
-const PREFIX = `pdq.${typeof __BUILD_ID__ === "string" ? __BUILD_ID__ : "dev"}:`;
+// A deploy can change the shape of a response, and a cache that outlives it
+// would hand stale shapes to new code. This used to be keyed on the build
+// timestamp, which was safe and far too blunt: every deploy emptied every
+// visitor's cache, so the next visit refetched the whole site against a host
+// that had usually gone to sleep. Most deploys do not touch a single response.
+//
+// So the key is a version that moves when the *responses* do, not when the
+// bundle does.
+//
+//   BUMP THIS whenever an API response changes shape: a renamed or removed
+//   field, a changed type, a different nesting. Adding a field that old code
+//   simply ignores does not need it.
+//
+// Forgetting to bump it after a shape change means a returning visitor paints
+// one stale frame from an old shape before the refetch lands, so bump it when
+// in doubt: the cost is one slow visit, and the cost of not bumping is a
+// render against data that no longer looks like the code expects.
+const CACHE_VERSION = "1";
+const PREFIX = `pdq.v${CACHE_VERSION}:`;
 const MAX_ENTRY = 3_000_000;    // characters; bigger payloads stay memory-only
 const MAX_AGE = 7 * 86_400_000;  // a mirrored entry older than this is dropped
 const MINUTE = 60_000;
@@ -106,9 +120,10 @@ function evict(s: Storage, need: number): void {
   }
 }
 
-// Keys are build-scoped, so a deploy would otherwise leave the previous build's
-// entries sitting in a 5MB quota forever.
-function sweepOldBuilds(): void {
+// Keys carry the version, so a bump would otherwise leave the previous one's
+// entries sitting in a 5MB quota forever. This also clears the old
+// timestamp-keyed entries from before the version existed.
+function sweepOldVersions(): void {
   const s = store();
   if (!s) return;
   const kill: string[] = [];
@@ -118,7 +133,7 @@ function sweepOldBuilds(): void {
   }
   for (const k of kill) { try { s.removeItem(k); } catch {} }
 }
-sweepOldBuilds();
+sweepOldVersions();
 
 // --- reads ------------------------------------------------------------------
 
