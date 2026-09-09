@@ -123,6 +123,24 @@ async def _warm_on_startup() -> None:
     asyncio.get_running_loop().run_in_executor(None, _warm)
 
 
+@app.on_event("startup")
+async def _cap_workers() -> None:
+    """How many requests may run their parquet scans at the same time.
+
+    Every endpoint here is a plain function, so Starlette runs each one on a
+    worker thread, forty of them by default. A research page fires sixteen
+    requests at once, and sixteen polars scans in flight together took the
+    process from 340 MB to 546 MB, past the 512 MB the free host allows: the
+    kernel killed it and the visitor got Render's 502 page for whichever
+    player they had opened. Four at a time keeps the peak well under the
+    line; the page loads in the same few hundred milliseconds either way,
+    since the scans queue behind each other rather than fighting for memory.
+    API_WORKERS overrides it for a bigger host.
+    """
+    import anyio
+    anyio.to_thread.current_default_thread_limiter().total_tokens = int(os.environ.get("API_WORKERS", "4"))
+
+
 # --- helpers ---------------------------------------------------------------
 
 def _clean(v: Any) -> Any:

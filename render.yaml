@@ -28,6 +28,17 @@ services:
         value: "2026"
       - key: NFL_DATA_DIR
         value: /opt/render/project/src/data
+      # Memory, not speed. The free instance has 512 MB and reports many
+      # cores, and polars parallelises every parquet scan across all of them,
+      # each thread with its own working set. A research page fires sixteen
+      # requests at once; measured on the same data, that burst peaked at
+      # 519 MB with the defaults (the process was killed and visitors saw a
+      # 502) and at 346 MB with polars on two threads and four requests
+      # scanning at a time. The sixteen finish in the same 0.3 s either way.
+      - key: POLARS_MAX_THREADS
+        value: "2"
+      - key: API_WORKERS
+        value: "4"
       - key: CACHE_REPO
         value: henrykanaskie/aggregateAnalytics
       - key: ODDS_REPO

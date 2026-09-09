@@ -110,9 +110,41 @@ def search(q: str, limit: int = 25, position: str | None = None, team: str | Non
 
 def profile(player_id: str) -> dict | None:
     row = player_index().filter(pl.col("player_id") == player_id)
-    if row.is_empty():
+    if not row.is_empty():
+        return row.row(0, named=True)
+    return roster_profile(player_id)
+
+
+def roster_profile(player_id: str) -> dict | None:
+    """A profile for someone on a roster who has never logged a stat line.
+
+    The index is built from the stat table, so a rookie is not in it until
+    his first box score lands, and the sportsbooks post his props weeks
+    before that. Clicking one of those rows used to open a research page
+    that said "unknown player". The roster table knows him, so this builds
+    the same shape the index would, with zero games: every page that reads
+    a profile then renders, with an empty game log rather than an error.
+    Search still goes through the index, so he is reachable from a line,
+    not by name.
+    """
+    m = players_master().filter(pl.col("gsis_id") == player_id)
+    if m.is_empty():
         return None
-    return row.row(0, named=True)
+    r = m.row(0, named=True)
+    season = r.get("rookie_season") or r.get("last_season")
+    name = r.get("display_name") or ""
+    return {
+        "player_id": player_id, "name": name, "position": r.get("position"),
+        "last_team": r.get("latest_team"), "team": r.get("latest_team"),
+        "first_season": season, "last_season": season, "games": 0, "last_season_ppr": 0.0,
+        "headshot": r.get("headshot"), "latest_team": r.get("latest_team"), "status": r.get("status"),
+        "espn_id": r.get("espn_id"), "pfr_id": r.get("pfr_id"), "jersey_number": r.get("jersey_number"),
+        "birth_date": str(r["birth_date"]) if r.get("birth_date") is not None else None,
+        "height": r.get("height"), "weight": r.get("weight"), "college_name": r.get("college_name"),
+        "draft_year": r.get("draft_year"), "draft_round": r.get("draft_round"), "draft_pick": r.get("draft_pick"),
+        "draft_team": r.get("draft_team"), "rookie_season": r.get("rookie_season"),
+        "years_of_experience": r.get("years_of_experience"), "name_norm": normalize_name(name),
+    }
 
 
 def team_players(team: str, season: int) -> pl.DataFrame:

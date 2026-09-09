@@ -17,7 +17,7 @@ export default function PlayerHeader({ p, game }: { p: Player; game: ScheduleGam
           {p.draft_year && <span>{p.draft_year} R{p.draft_round} #{p.draft_pick} ({p.draft_team})</span>}
           {!p.draft_year && p.rookie_season && <span>UDFA {p.rookie_season}</span>}
           {p.college_name && <span>{p.college_name}</span>}
-          <span>{p.games} games · {p.first_season}–{p.last_season}</span>
+          <span>{p.games ? `${p.games} games · ${p.first_season}–${p.last_season}` : `no games yet${p.rookie_season ? ` · ${p.rookie_season} rookie` : ""}`}</span>
         </div>
       </div>
       {game && (
