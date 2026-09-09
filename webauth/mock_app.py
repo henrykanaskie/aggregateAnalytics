@@ -17,6 +17,7 @@ from fastapi import Depends, FastAPI
 from fastapi.responses import HTMLResponse
 
 from webauth import auth_router, require_session
+from data_handling import sync_odds
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 TRACK_CSV = REPO_ROOT / "track_record" / "predictions.csv"
@@ -123,10 +124,11 @@ def create_app() -> FastAPI:
     # is redirected to the password box before seeing any of the page.
     app = FastAPI(title="nfl_predictor (placeholder)", dependencies=[Depends(require_session)])
     app.include_router(auth_router)
+    sync_odds.install(app)          # data/odds from GitHub, on wake and every 30 min
 
     @app.get("/healthz")
     async def healthz() -> dict:
-        return {"ok": True, "log_present": TRACK_CSV.exists()}
+        return {"ok": True, "log_present": TRACK_CSV.exists(), "odds": sync_odds.STATE}
 
     @app.get("/api/board")
     async def board() -> dict:

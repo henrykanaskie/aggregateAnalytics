@@ -1,0 +1,58 @@
+name: stats
+
+# Weekly, Tuesday 10:00 UTC (6am ET): nflverse has Monday night's games by
+# then. Refreshes the current season in the parquet cache, rebuilds the
+# derived tables, re-uploads the cache to the data-cache Release, commits
+# data/derived/. Run it by hand with full=true once to seed the cache.
+on:
+  schedule:
+    - cron: "0 10 * * 2"
+  workflow_dispatch:
+    inputs:
+      full:
+        description: "Ingest every season from 1999 (first run, or after a schema break)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: stats
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      NFL_DATA_DIR: ${{ github.workspace }}/data
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[web]"
+      - name: Fetch the existing cache
+        if: ${{ !inputs.full }}
+        run: python scripts/fetch_cache.py
+      - name: Full ingest
+        if: ${{ inputs.full }}
+        run: python data_handling/ingest.py
+      - name: Refresh current season and rebuild derived tables
+        run: bash scripts/refresh_stats.sh
+      - name: Upload the cache
+        run: bash scripts/push_cache.sh
+      - name: Commit derived tables
+        run: |
+          git config user.name "stats-bot"
+          git config user.email "stats-bot@users.noreply.github.com"
+          git add data/derived || true
+          if git diff --cached --quiet; then
+            echo "derived tables unchanged"; exit 0
+          fi
+          git commit -m "Derived tables $(date -u +'%Y-%m-%d')"
+          git pull --rebase origin ${{ github.ref_name }}
+          git push

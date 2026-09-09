@@ -1,0 +1,36 @@
+# Render Blueprint: one free web service. Connect the repo in Render, pick
+# "Blueprint", and set SITE_PASSWORD (and GH_TOKEN if the repo is private) in
+# the dashboard when prompted.
+#
+# Lines snapshots do not trigger a rebuild (see buildFilter); the running app
+# syncs data/odds from GitHub on wake and every 30 minutes. Code and derived
+# table pushes do rebuild, which is a handful of times a week.
+services:
+  - type: web
+    name: nfl-predictor
+    runtime: python
+    plan: free
+    buildCommand: bash scripts/build.sh
+    startCommand: uvicorn webauth.mock_app:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /healthz
+    buildFilter:
+      ignoredPaths:
+        - data/odds/**
+        - track_record/**
+        - tests/**
+        - ROADMAP.md
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.6"
+      - key: NFL_DATA_DIR
+        value: /opt/render/project/src/data
+      - key: CACHE_REPO
+        value: henrykanaskie/nfl_predictor
+      - key: ODDS_REPO
+        value: henrykanaskie/nfl_predictor
+      - key: ODDS_REF
+        value: main
+      - key: SITE_PASSWORD
+        sync: false
+      - key: GH_TOKEN
+        sync: false

@@ -129,7 +129,8 @@ Then `check_slate` gains one more rule: every game's kickoff must be in the
 future. This turns "I logged before kickoff" from a claim into an invariant.
 
 **A3. Odds snapshots.** (90 min, the roadmap's Clock 2, unchanged in
-priority)
+priority) *2026-09-09: the schedule and the commit step exist in
+`lines.yml`; what remains is game spreads in the dashboard's puller.*
 
 Write `data_handling/odds.py`. What it does:
 
@@ -392,9 +393,11 @@ number you could ever have bet. Beating the **opening** line, or the line
 available Tuesday morning, is a genuinely achievable target and a more honest
 one. But nflverse does not archive line movement, so you can only get this by
 snapshotting it yourself, starting now.
-*Status: not started. Note that `log_week` does capture nflverse's
-`spread_line` at logging time, which is one snapshot per week of one book's
-number. That is better than nothing and much less than A3.*
+*Status 2026-09-09: the dashboard's ESPN puller captures DraftKings props
+per pull, and `.github/workflows/lines.yml` now runs it four times a day and
+commits each snapshot to `data/odds/`. Game spreads still need the Odds API
+provider (a key) or an ESPN game-lines pull; A3 is that one addition, not a
+new script. See DEPLOY.md for the pipeline.*
 
 Total cost: about 90 minutes. Do both before Wednesday.
 

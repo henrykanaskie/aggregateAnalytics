@@ -3,7 +3,12 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .DS_Store
-/data
+# The raw parquet cache stays out of git (it lives on a GitHub Release, see
+# scripts/fetch_cache.py). Odds snapshots and derived tables are tracked:
+# they are small, and their commit history is the audit trail.
+/data/*
+!/data/odds/
+!/data/derived/
 
 !package.json
 !package-lock.json
