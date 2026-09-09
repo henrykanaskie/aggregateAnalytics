@@ -1,5 +1,5 @@
 import { chartTheme } from "../lib/theme";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { api2, LeagueTendencies, TeamMetric, TeamTendencies } from "../api";
@@ -38,21 +38,35 @@ export default function Teams() {
   const err = teamErr ?? leagueErr;
   const metrics: TeamMetric[] = (data?.metrics ?? meta?.team_metrics ?? []).filter((m) => m.side === side);
   const mdef = metrics.find((m) => m.key === metric) ?? metrics[0];
+  // Newest season the coordinator scrape has for this team; it can trail the
+  // schedule, so the header labels it rather than passing it off as "now".
+  const staff = (data?.coordinators ?? [])[0];
   const trend = useMemo(() => (data?.seasons ?? []).slice().reverse().map((s) => ({ season: s.season, v: s[metric] as number | null, rank: s[`${metric}_rank`] as number | null })), [data, metric]);
   const gameTrend = useMemo(() => (data?.games ?? []).filter((g) => g.season >= (data?.seasons[0]?.season ?? 0) - 1).map((g) => ({ label: `${g.season} W${g.week} ${g.home ? "vs" : "@"} ${g.opponent}`, v: g[metric] as number | null })), [data, metric]);
   const teams = (meta?.teams ?? []).filter((t) => !["OAK", "SD", "STL", "LAR"].includes(t.team_abbr));
-  const sortedLeague = useMemo(() => (league?.teams ?? []).slice().sort((a, b) => ((b[metric] as number) ?? -1e9) - ((a[metric] as number) ?? -1e9)), [league, metric]);
+  const active = mdef?.key ?? metric;   // what is actually charted, sorted and highlighted
+  const sortedLeague = useMemo(() => (league?.teams ?? []).slice().sort((a, b) => ((b[active] as number) ?? -1e9) - ((a[active] as number) ?? -1e9)), [league, active]);
+  // The highlighted column is usually past the right edge of a table this wide,
+  // so choosing a metric looked like it did nothing. Bring it into view.
+  const leagueWrap = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const wrap = leagueWrap.current;
+    const th = wrap?.querySelector<HTMLElement>("th[data-active='1']");
+    if (wrap && th) wrap.scrollLeft = Math.max(0, th.offsetLeft - wrap.clientWidth / 2 + th.offsetWidth / 2);
+  }, [active, league]);
   if (meta && !meta.team_table_ready) return <Banner kind="warn">The team tendency table is not built yet. Run <code>python -m dashboard.stats.team</code> (about a minute) and reload.</Banner>;
   return (
     <div>
-      <div className="page-head"><div><h1>Team tendencies</h1><div className="muted small">Pass rate, pace, red zone, personnel, RB usage and defense, per season with league ranks and per game. Built from play-by-play, so every number is a countable thing.</div></div></div>
+      <div className="page-head"><div><h1>Team tendencies</h1><div className="muted small">Pass rate, pace, red zone, personnel, RB usage and defense, per season with league ranks and per game. Built from play-by-play, so every number is a countable thing.{team ? "" : " Pick a team for its history and game-by-game charts, or stay here to rank all 32 on one metric."}</div></div></div>
       {err && <Banner kind="err">{err}</Banner>}
       <div className="panel" style={{ marginBottom: 12 }}>
         <div className="controls">
           <Field label="Team"><select className="input" value={team} onChange={(e) => setSp({ team: e.target.value })}><option value="">League table only</option>{teams.map((t) => <option key={t.team_abbr} value={t.team_abbr}>{t.team_name}</option>)}</select></Field>
           <Field label="Side"><Seg value={side} options={[{ v: "off", l: "Offense" }, { v: "def", l: "Defense" }]} onChange={(v) => { setSide(v); const first = (meta?.team_metrics ?? []).find((m) => m.side === v); if (first) setMetric(first.key); }} /></Field>
-          <Field label="Metric"><select className="input" value={mdef?.key ?? ""} onChange={(e) => setMetric(e.target.value)}>{metrics.map((m) => <option key={m.key} value={m.key}>{m.label}{m.since > 1999 ? ` (${m.since}+)` : ""}</option>)}</select></Field>
-          <Field label="Since"><input className="input num" type="number" min={1999} max={2026} value={since} onChange={(e) => setSince(Number(e.target.value))} /></Field>
+          <Field label={team ? "Charted metric" : "Rank the league by"}><select className="input" value={mdef?.key ?? ""} onChange={(e) => setMetric(e.target.value)}>{metrics.map((m) => <option key={m.key} value={m.key}>{m.label}{m.since > 1999 ? ` (${m.since}+)` : ""}</option>)}</select></Field>
+          {/* Only ever used to fetch one team's season history, so with no team
+              picked it was a control that changed nothing. */}
+          {team && <Field label="History since"><input className="input num" type="number" min={1999} max={2026} value={since} onChange={(e) => setSince(Number(e.target.value))} /></Field>}
           {mdef?.note && <div className="hint" style={{ maxWidth: 380 }}>{mdef.note}</div>}
         </div>
       </div>
@@ -61,7 +75,17 @@ export default function Teams() {
         <div className="grid" style={{ marginBottom: 14 }}>
           <div className="panel">
             <div className="panel-head">
-              <div style={{ display: "flex", gap: 10, alignItems: "center" }}><TeamTag abbr={team} name /> <span className="muted small">head coach {data.current_coach ? <Link to={`/coaches?coach=${encodeURIComponent(data.current_coach)}`}>{data.current_coach}</Link> : "–"}</span></div>
+              <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}><TeamTag abbr={team} name />
+                <span className="muted small">head coach {data.current_coach ? <Link to={`/coaches?role=HC&coach=${encodeURIComponent(data.current_coach)}`}>{data.current_coach}</Link> : "–"}</span>
+                {staff && (
+                  <span className="muted small">
+                    {/* The staff table is scraped per completed season, so it can trail the
+                        schedule; say which season these two are from rather than implying now. */}
+                    {staff.season !== data.seasons[0]?.season ? `${staff.season} ` : ""}OC {staff.OC ? <Link to={`/coaches?role=OC&coach=${encodeURIComponent(staff.OC)}`}>{staff.OC}</Link> : "–"}
+                    {" · "}DC {staff.DC ? <Link to={`/coaches?role=DC&coach=${encodeURIComponent(staff.DC)}`}>{staff.DC}</Link> : "–"}
+                  </span>
+                )}
+              </div>
               <span className="hint">coaches by season: {data.coaches.slice(0, 8).map((c) => `${c.season} ${c.coach.split(" ").slice(-1)[0]}`).join(" · ")}</span>
             </div>
             <div className="grid grid-2">
@@ -95,10 +119,12 @@ export default function Teams() {
             <div className="panel-head"><h3>{team} by season · {side === "off" ? "offense" : "defense"}</h3><span className="hint">value with league rank; green/red = top/bottom quarter where direction matters · <span className="scroll-hint">scroll sideways for all {metrics.length} metrics</span></span></div>
             <div className="tbl-wrap">
               <table className="tbl wide">
-                <thead><tr><th className="left">Season</th><th className="left">Coach</th><th>G</th>{metrics.map((m) => <th key={m.key} className={m.key === metric ? "over" : ""} onClick={() => setMetric(m.key)} title={m.note || undefined}>{m.label}</th>)}</tr></thead>
+                <thead><tr><th className="left">Season</th><th className="left">Coach</th><th className="left">{side === "off" ? "OC" : "DC"}</th><th>G</th>{metrics.map((m) => <th key={m.key} className={m.key === active ? "over" : ""} onClick={() => setMetric(m.key)} title={m.note || undefined}>{m.label}</th>)}</tr></thead>
                 <tbody>
-                  {data.seasons.map((s) => { const coach = data.coaches.find((c) => c.season === s.season); return (
-                    <tr key={s.season}><td className="left">{s.season}</td><td className="left small muted">{coach?.coach ?? ""}</td><td className="num muted">{s.games}</td>
+                  {data.seasons.map((s) => { const coach = data.coaches.find((c) => c.season === s.season); const co = (data.coordinators ?? []).find((c) => c.season === s.season); const cord = side === "off" ? co?.OC : co?.DC; return (
+                    <tr key={s.season}><td className="left">{s.season}</td><td className="left small muted">{coach?.coach ?? ""}</td>
+                      <td className="left small muted">{cord ? <Link to={`/coaches?role=${side === "off" ? "OC" : "DC"}&coach=${encodeURIComponent(cord)}`}>{cord}</Link> : ""}</td>
+                      <td className="num muted">{s.games}</td>
                       {metrics.map((m) => { const v = s[m.key] as number | null; const r = s[`${m.key}_rank`] as number | null; return <td key={m.key} className={`num ${rankClass(r, s.n_teams, m.good)}`} title={r ? `rank ${r} of ${s.n_teams}` : ""}>{v === null || v === undefined ? "–" : <>{fmtStat(v, m.fmt as any)} <span className="faint tiny">{r}</span></>}</td>; })}
                     </tr>
                   ); })}
@@ -126,16 +152,17 @@ export default function Teams() {
       <div className="panel">
         <div className="panel-head">
           <h3>League table · {league?.season}</h3>
+          <span className="hint">sorted by {mdef?.label ?? active}, high to low{mdef?.good === "low" ? " (low is better here)" : ""} · click any column to sort by it</span>
           <Field label="Season"><input className="input num" type="number" min={1999} max={(meta?.season ?? 2026) - 1} value={leagueSeason ?? league?.season ?? ""} onChange={(e) => setLeagueSeason(Number(e.target.value))} /></Field>
         </div>
-        <div className="tbl-wrap" style={{ maxHeight: 640 }}>
+        <div className="tbl-wrap" style={{ maxHeight: 640 }} ref={leagueWrap}>
           <table className="tbl wide">
-            <thead><tr><th className="left">Team</th><th className="left">Coach</th>{metrics.map((m) => <th key={m.key} className={m.key === metric ? "over" : ""} onClick={() => setMetric(m.key)} title={m.note || undefined}>{m.label}</th>)}</tr></thead>
+            <thead><tr><th className="left">Team</th><th className="left">Coach</th>{metrics.map((m) => <th key={m.key} data-active={m.key === active ? "1" : undefined} className={m.key === active ? "over" : ""} onClick={() => setMetric(m.key)} title={m.note || undefined}>{m.label}{m.key === active ? " ↓" : ""}</th>)}</tr></thead>
             <tbody>
               {sortedLeague.map((t) => (
                 <tr key={t.team as string} className={`clickable ${t.team === team ? "hl" : ""}`} onClick={() => setSp({ team: t.team as string })}>
                   <td className="left"><TeamTag abbr={t.team as string} /></td><td className="left small muted">{league?.coaches[t.team as string] ?? ""}</td>
-                  {metrics.map((m) => { const v = t[m.key] as number | null; const r = t[`${m.key}_rank`] as number | null; return <td key={m.key} className={`num ${rankClass(r, t.n_teams, m.good)}`} style={{ background: m.key === metric ? rankBg(r, t.n_teams) : undefined }}>{v === null || v === undefined ? "–" : fmtStat(v, m.fmt as any)}</td>; })}
+                  {metrics.map((m) => { const v = t[m.key] as number | null; const r = t[`${m.key}_rank`] as number | null; return <td key={m.key} className={`num ${rankClass(r, t.n_teams, m.good)}`} style={{ background: m.key === active ? rankBg(r, t.n_teams) : undefined }}>{v === null || v === undefined ? "–" : fmtStat(v, m.fmt as any)}</td>; })}
                 </tr>
               ))}
             </tbody>
