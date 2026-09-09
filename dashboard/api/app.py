@@ -8,14 +8,18 @@ Every endpoint is read-only against the parquet cache except ``POST
 
 from __future__ import annotations
 
+import gzip
+import json
 import math
+import threading
 from datetime import date, datetime
 from typing import Any
 
 import polars as pl
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -79,13 +83,18 @@ def _warm() -> None:
         ("coordinators", coaches_mod.coordinators),
         ("odds status", store.status),
         # The landing route is the board, so this is the request the first
-        # visitor after a wake is actually waiting on, and it was the only
-        # expensive one not warmed here. Warming it also fills the DvP tables
-        # and the recent-form scan that every other page reads.
-        # Called with every Query-defaulted argument spelled out: reached this
-        # way rather than through HTTP, an omitted one arrives as FastAPI's
-        # Query object and lands in a polars expression as itself.
-        ("odds board", lambda: odds_board(market=None, scale=1.0)),
+        # visitor after a wake is actually waiting on. Warming it also fills
+        # the DvP tables and the recent-form scan every other page reads.
+        # Both sample settings: these land in the response cache and the
+        # browser asks with sample lines on by default, so warming only the
+        # other one would leave the first visitor building it anyway.
+        ("odds board", lambda: _board_bytes(CURRENT_SEASON, None, None, None, True, 1.0, True)),
+        ("odds board (real only)", lambda: _board_bytes(CURRENT_SEASON, None, None, None, False, 1.0, True)),
+        # Last, and after the board: the browser warms every game on the slate
+        # in the background as soon as it loads, which was sixteen full builds
+        # per visitor. Built here they are handed out from memory instead. This
+        # is the slowest step and nobody is waiting on it.
+        ("this week's matchups", _warm_matchups),
     )
     for name, fn in steps:
         t0 = time.perf_counter()
@@ -94,6 +103,15 @@ def _warm() -> None:
             print(f"[warm] {name}: {time.perf_counter() - t0:.2f}s")
         except Exception as exc:  # noqa: BLE001
             print(f"[warm] {name} skipped: {type(exc).__name__}: {exc}")
+
+
+def _warm_matchups() -> None:
+    # Only the browser's default setting. With a real feed pulled the store
+    # drops sample rows anyway, so warming the other one would build the same
+    # sixteen responses twice.
+    week = current_week(CURRENT_SEASON)
+    for gid in schedule(CURRENT_SEASON).filter(pl.col("week") == week)["game_id"].to_list():
+        _MATCHUP_CACHE.get((store.version(), gid, True), lambda g=gid: game_matchup(g, True))
 
 
 @app.on_event("startup")
@@ -110,6 +128,62 @@ def _clean(v: Any) -> Any:
     if isinstance(v, (datetime, date)):
         return v.isoformat()
     return v
+
+
+# --- cached JSON responses --------------------------------------------------
+# Two reads on this site cost real CPU and produce a megabyte of JSON, and
+# neither moves until a new snapshot lands. What is kept is the finished bytes
+# rather than the dict, because encoding and compressing them was costing more
+# than the query itself: the board is 1.1 MB of JSON that gzips to 91 KB, and
+# doing that per request on a container with a fraction of a CPU is most of
+# what a first-time visitor waits through.
+#
+# Every key starts with store.version(), so a pull or a sync retires the whole
+# cache without anything having to remember to clear it.
+
+class _ByteCache:
+    """Built-once (json, gzipped json) pairs, newest snapshot only."""
+
+    def __init__(self, limit: int) -> None:
+        self.limit = limit
+        self.entries: dict[tuple, tuple[bytes, bytes]] = {}
+        self.lock = threading.Lock()
+
+    def get(self, key: tuple, build) -> tuple[bytes, bytes]:
+        hit = self.entries.get(key)
+        if hit is not None:
+            return hit
+        # One builder at a time. Two visitors landing together on a cold cache
+        # would otherwise run the same scan side by side on one small CPU,
+        # which is slower for both than one of them waiting for the other.
+        with self.lock:
+            hit = self.entries.get(key)
+            if hit is not None:
+                return hit
+            # The same encoder and separators FastAPI would have used, so what
+            # goes over the wire is what it was before the cache existed.
+            raw = json.dumps(jsonable_encoder(build()), ensure_ascii=False,
+                             allow_nan=False, separators=(",", ":")).encode()
+            # Level 6 rather than gzip's 9: within a few percent of the size,
+            # a third of the time, and this host has CPU to spare for neither.
+            entry = (raw, gzip.compress(raw, 6))
+            for k in [k for k in self.entries if k[0] != key[0]]:
+                del self.entries[k]
+            while len(self.entries) >= self.limit:
+                del self.entries[next(iter(self.entries))]
+            self.entries[key] = entry
+            return entry
+
+
+def _cached_json(request: Request, entry: tuple[bytes, bytes]) -> Response:
+    """Serve a cached pair, pre-encoded when the client takes gzip. The gzip
+    middleware sees content-encoding already set and leaves it alone."""
+    raw, gz = entry
+    headers = {"vary": "Accept-Encoding"}
+    if "gzip" in request.headers.get("accept-encoding", ""):
+        return Response(gz, media_type="application/json",
+                        headers={**headers, "content-encoding": "gzip"})
+    return Response(raw, media_type="application/json", headers=headers)
 
 
 def records(df: pl.DataFrame) -> list[dict]:
@@ -369,7 +443,18 @@ def matchup(team: str, opponent: str, season: int = CURRENT_SEASON, position: st
     return out
 
 
+# One game is 176 KB of JSON, and the browser warms every game on the slate in
+# the background, so this is the other read worth keeping built.
+_MATCHUP_CACHE = _ByteCache(limit=20)   # a week is sixteen games, plus a few
+
+
 @app.get("/api/matchups/{game_id}")
+def game_matchup_route(request: Request, game_id: str, include_sample: bool = False):
+    entry = _MATCHUP_CACHE.get((store.version(), game_id, include_sample),
+                               lambda: game_matchup(game_id, include_sample))
+    return _cached_json(request, entry)
+
+
 def game_matchup(game_id: str, include_sample: bool = False):
     """Everything about one game: scheme both ways, angles, personnel,
     history, venue, injuries, props and the model's call."""
@@ -512,11 +597,35 @@ def coach_api(name: str, role: str = "HC"):
 
 # --- odds ------------------------------------------------------------------
 
+# The board is the landing page and by far the most expensive read on the
+# host: eight hundred rows, each one projected off two seasons of game logs.
+# Nothing in it moves until a new snapshot lands, so the built response is kept
+# and handed straight back until the store's fingerprint changes. Without this
+# every visitor paid the full build, and on a small container that is seconds
+# of staring at an empty board.
+_BOARD_CACHE = _ByteCache(limit=6)      # a handful of filter combinations
+
+
+def _board_bytes(season: int, week: int | None, market: list[str] | None, book: str | None,
+                 include_sample: bool, scale: float, form: bool) -> tuple[bytes, bytes]:
+    week = _week_default(season, week)
+    # Keyed on the resolved week, so a request that left the week to the server
+    # and one that named it share an entry rather than building the same board
+    # twice.
+    key = (store.version(), season, week, tuple(market or ()), book, include_sample, scale, form)
+    return _BOARD_CACHE.get(key, lambda: _build_board_response(
+        season, week, market, book, include_sample, scale, form))
+
+
 @app.get("/api/odds/board")
-def odds_board(season: int = CURRENT_SEASON, week: int | None = None,
+def odds_board(request: Request, season: int = CURRENT_SEASON, week: int | None = None,
                market: list[str] | None = Query(None), book: str | None = None,
                include_sample: bool = False, scale: float = Query(1.0, gt=0), form: bool = True):
-    week = _week_default(season, week)
+    return _cached_json(request, _board_bytes(season, week, market, book, include_sample, scale, form))
+
+
+def _build_board_response(season: int, week: int, market: list[str] | None, book: str | None,
+                          include_sample: bool, scale: float, form: bool) -> dict:
     latest = store.latest_props(season, week, include_sample)
     rows = build_board(latest, markets=market, threshold_scale=scale)
     if book:

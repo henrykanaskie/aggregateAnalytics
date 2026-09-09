@@ -1,5 +1,5 @@
 import { api, api2, api3, api4, api5, apiGet, Meta, ScheduleGame } from "../api";
-import { isFresh } from "./cache";
+import { busy, isFresh } from "./cache";
 import { readSticky } from "./sticky";
 import type { Settings } from "../state";
 
@@ -15,11 +15,27 @@ export function warm(urls: (string | null)[]): void {
   for (const u of urls) if (u && !isFresh(u) && !queue.includes(u)) queue.push(u);
   if (draining || !queue.length) return;
   draining = true;
-  window.setTimeout(drain, 500);   // let the current page get its own data first
+  window.setTimeout(drain, 500);
+}
+
+/** Wait until nothing the user asked for is in flight.
+ *
+ *  This queue used to start on a flat timer, which meant twenty-odd background
+ *  requests began while the board the visitor was actually staring at was
+ *  still being built. On one small container that is the same CPU three times
+ *  over, and the page they wanted came last. The drain now yields to every
+ *  real request: by the time this is checked the previous prefetch has already
+ *  resolved, so anything still in flight is a page waiting to paint. */
+function whenFree(): Promise<void> {
+  return new Promise((resolve) => {
+    const check = () => (busy() ? window.setTimeout(check, 200) : resolve());
+    check();
+  });
 }
 
 async function drain(): Promise<void> {
   while (queue.length) {
+    await whenFree();
     const url = queue.shift()!;
     if (isFresh(url)) continue;
     // A failure here is not the user's problem: they never asked for this page.

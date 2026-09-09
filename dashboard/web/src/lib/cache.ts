@@ -178,6 +178,12 @@ export function cached<T>(url: string, fetcher: (url: string) => Promise<T>): Pr
   return p;
 }
 
+/** Is a request the user is waiting on in flight? Prefetching reads this so it
+ *  can stay out of the way; see lib/prefetch.ts. */
+export function busy(): boolean {
+  return inflight.size > 0;
+}
+
 /** Forget everything matching, so the next read refetches. */
 export function invalidate(match: RegExp): void {
   for (const url of [...mem.keys()]) if (match.test(url)) mem.delete(url);

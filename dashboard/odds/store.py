@@ -157,6 +157,19 @@ def prop_history(player_id: str, market: str | None = None, season: int | None =
     return lf.sort(["market", "book", "side", "pulled_at"]).collect()
 
 
+def version() -> tuple[int, int]:
+    """Cheap fingerprint of the store: (file count, newest mtime).
+
+    A pull writes a new snapshot and the git sync downloads or prunes them, and
+    either changes one of these two numbers. Anything built on top of the
+    snapshots can hold on to its result and hand it back until this moves. A
+    glob and a stat over a few dozen files is well under a millisecond, so it
+    is cheap enough to check on every request.
+    """
+    files = [p for d in (PROPS_DIR, GAMES_DIR) if d.is_dir() for p in d.glob("*.parquet")]
+    return len(files), max((p.stat().st_mtime_ns for p in files), default=0)
+
+
 def status() -> dict:
     """Per-source pull history, for the settings page."""
     out: dict[str, dict] = {}
