@@ -9,8 +9,10 @@ Every endpoint is read-only against the parquet cache except ``POST
 from __future__ import annotations
 
 import gzip
+import hashlib
 import json
 import math
+import os
 import threading
 from datetime import date, datetime
 from typing import Any
@@ -28,7 +30,8 @@ from nfl.data import cached_datasets, scan
 from webauth import auth_router, require_session
 
 from .. import predictions
-from ..config import CURRENT_SEASON, DEFAULT_SINCE, WEB_DIST, odds_api_key
+from ..config import CURRENT_SEASON, DEFAULT_SINCE, DERIVED_DIR, WEB_DIST, odds_api_key
+from nfl.data import DATA_ROOT, MANIFEST_PATH
 from ..odds import store
 from ..odds.analysis import attach_form, build_board
 from ..odds.common import current_week, schedule
@@ -197,6 +200,43 @@ def _week_default(season: int, week: int | None) -> int:
 
 # --- meta ------------------------------------------------------------------
 
+def data_version() -> str:
+    """A fingerprint of the files every response is built from.
+
+    The browser mirrors responses into localStorage and treats historical
+    stats as fresh for an hour, which is right while nothing on disk has
+    moved and wrong the moment a deploy lands a new cache: the coaches page
+    kept showing the old staff for an hour after a rescrape. This is what
+    lets the frontend tell the difference. It moves when a parquet under
+    data/raw or data/derived is added, removed or rewritten, or when a lines
+    snapshot lands; it does not move on a code-only deploy, so a redeploy
+    that changed nothing keeps every visitor's cache warm.
+
+    Mtimes are taken to the second because the cache travels as a tar, which
+    keeps seconds and nothing finer, and sizes guard the case where a rewrite
+    lands inside the same second. A walk over a thousand-odd files is a few
+    milliseconds, paid once per /api/meta.
+    """
+    h = hashlib.sha1()
+    for root in (DATA_ROOT / "raw", DERIVED_DIR):
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames.sort()
+            for name in sorted(filenames):
+                if name.startswith("."):
+                    continue
+                try:
+                    st = os.stat(os.path.join(dirpath, name))
+                except OSError:
+                    continue
+                rel = os.path.relpath(os.path.join(dirpath, name), DATA_ROOT)
+                h.update(f"{rel}|{int(st.st_mtime)}|{st.st_size}\n".encode())
+    if MANIFEST_PATH.exists():
+        st = MANIFEST_PATH.stat()
+        h.update(f"manifest|{int(st.st_mtime)}|{st.st_size}\n".encode())
+    h.update(repr(store.version()).encode())
+    return h.hexdigest()[:16]
+
+
 @app.get("/api/health")
 def health():
     return {"ok": True}
@@ -209,6 +249,7 @@ def meta():
     return {
         "season": season,
         "week": week,
+        "data_version": data_version(),
         "default_since": DEFAULT_SINCE,
         "teams": players_mod.teams(),
         "stats": catalog_json(),

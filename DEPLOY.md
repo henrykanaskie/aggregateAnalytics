@@ -39,6 +39,12 @@ build minutes.
 4. **Frontend build**: `scripts/build.sh` runs `npm ci` and `npm run build`
    in `dashboard/web/` on every deploy, so `dist/` never needs committing.
    `render.yaml` pins `NODE_VERSION`.
+5. **Deploy hook.** Render reads the cache only when it builds, so every
+   `stats` run wants a build, and a run that changed nothing under
+   `data/derived/` (a coordinator rescrape, say) pushes no commit for
+   Auto-Deploy to notice. In the service's Settings, copy the Deploy Hook URL
+   and add it to the repo as the `RENDER_DEPLOY_HOOK` secret; the workflow
+   calls it at the end of every run. Without the secret the step is skipped.
 
 ## What free costs you
 

@@ -1,6 +1,6 @@
 // Typed client for dashboard/api/app.py.
 
-import { cached, invalidate } from "./lib/cache";
+import { cached, invalidate, prime } from "./lib/cache";
 
 export interface Team {
   team_abbr: string; team_name: string; team_nick: string; team_conf: string; team_division: string;
@@ -11,7 +11,7 @@ export interface MarketDef { key: string; label: string; stat: string | null; ki
 export interface SourceStatus { last_pull: string | null; pulls: number; rows: number; books: number; }
 export interface OddsStatus { has_odds_api_key: boolean; status: Record<string, { props?: SourceStatus; games?: SourceStatus }>; oddsapi_usage: { at: string; remaining: number | null; used: number | null; last_cost: number | null; note: string } | null; }
 export interface Meta {
-  season: number; week: number; default_since: number; teams: Team[]; stats: StatDef[]; stat_groups: string[];
+  season: number; week: number; data_version?: string; default_since: number; teams: Team[]; stats: StatDef[]; stat_groups: string[];
   markets: MarketDef[]; books: Record<string, string>; odds: OddsStatus; datasets: string[];
   split_dims: { key: string; label: string; roles: string[]; since: number; note: string }[];
   team_metrics: TeamMetric[]; team_table_ready: boolean; current_coaches: Record<string, string>;
@@ -65,6 +65,11 @@ async function fetchJson<T>(url: string): Promise<T> {
 // concurrent callers for the same URL share one request.
 export const apiGet = <T,>(url: string): Promise<T> => cached<T>(url, fetchJson);
 const get = apiGet;
+
+/** Straight to the network, then into the cache. For the one read that has to
+ *  be current to be useful: meta carries the data version, and reading it
+ *  from a ten-minute-fresh copy would hide a deploy for ten minutes. */
+export const apiFresh = <T,>(url: string): Promise<T> => fetchJson<T>(url).then((d) => { prime(url, d); return d; });
 
 // Endpoints are declared once as a URL builder. `api.board(opts)` fetches;
 // `api.board.url(opts)` is the same string as a cache key, which is what

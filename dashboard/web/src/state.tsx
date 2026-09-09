@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { api, Meta, StatDef, MarketDef, Team } from "./api";
-import { peek } from "./lib/cache";
+import { api, apiFresh, Meta, StatDef, MarketDef, Team } from "./api";
+import { peek, syncDataVersion } from "./lib/cache";
 
 export interface Settings {
   since: number;            // earliest season loaded into a game log
@@ -47,7 +47,9 @@ export function MetaProvider({ children }: { children: React.ReactNode }) {
   const [meta, setMeta] = useState<Meta | null>(() => peek<Meta>(api.meta.url()) ?? null);
   const [error, setError] = useState<string | null>(null);
   const [settings, setS] = useState<Settings>(loadSettings);
-  const reloadMeta = () => api.meta().then(setMeta).catch((e) => setError(String(e)));
+  // The version check runs before meta is stored, so the render that follows
+  // finds an empty cache and refetches rather than seeding from the old copy.
+  const reloadMeta = () => apiFresh<Meta>(api.meta.url()).then((m) => { syncDataVersion(m.data_version); setMeta(m); }).catch((e) => setError(String(e)));
   useEffect(() => { reloadMeta(); }, []);
   useEffect(() => { document.documentElement.setAttribute("data-theme", settings.theme); }, [settings.theme]);
   const setSettings = (p: Partial<Settings>) => setS((s) => { const n = { ...s, ...p }; localStorage.setItem(KEY, JSON.stringify(n)); return n; });

@@ -192,17 +192,62 @@ export function busy(): boolean {
   return inflight.size > 0;
 }
 
+// --- generation -------------------------------------------------------------
+// Dropping entries is not enough on its own: a page that already resolved its
+// query holds the old data in component state and has no reason to ask again.
+// Every invalidation bumps this counter, and useQuery re-runs its fetch when it
+// moves, so the page it is showing refetches rather than waiting for the user
+// to leave and come back.
+
+let gen = 0;
+const listeners = new Set<() => void>();
+export const generation = () => gen;
+export function subscribe(fn: () => void): () => void {
+  listeners.add(fn);
+  return () => { listeners.delete(fn); };
+}
+
 /** Forget everything matching, so the next read refetches. */
 export function invalidate(match: RegExp): void {
   for (const url of [...mem.keys()]) if (match.test(url)) mem.delete(url);
   for (const url of [...inflight.keys()]) if (match.test(url)) inflight.delete(url);
   for (const url of [...queued.keys()]) if (match.test(url)) queued.delete(url);
   const s = store();
-  if (!s) return;
-  const kill: string[] = [];
-  for (let i = 0; i < s.length; i++) {
-    const k = s.key(i);
-    if (k?.startsWith(PREFIX) && match.test(k.slice(PREFIX.length))) kill.push(k);
+  if (s) {
+    const kill: string[] = [];
+    for (let i = 0; i < s.length; i++) {
+      const k = s.key(i);
+      if (k?.startsWith(PREFIX) && match.test(k.slice(PREFIX.length))) kill.push(k);
+    }
+    for (const k of kill) { try { s.removeItem(k); } catch {} }
   }
-  for (const k of kill) { try { s.removeItem(k); } catch {} }
+  gen++;
+  for (const fn of listeners) fn();
+}
+
+// Everything but /api/meta: meta is what carries the version, and it has just
+// been fetched, so it is the one thing known to be current.
+const ALL_BUT_META = /^(?!\/api\/meta\b)/;
+const VERSION_KEY = "pdq-data-version";
+
+/**
+ * Called with the data version /api/meta reports. The first time a version is
+ * seen that differs from the one this browser last saw, every mirrored and
+ * in-memory response is dropped, so a deploy that landed new parquet does not
+ * spend the next hour serving the old numbers out of localStorage. A version
+ * that has not moved costs nothing, which is what keeps a code-only deploy
+ * from emptying the cache, as keying on the build stamp used to.
+ */
+export function syncDataVersion(version: string | undefined): boolean {
+  if (!version) return false;
+  const s = store();
+  let seen: string | null = null;
+  try { seen = s?.getItem(VERSION_KEY) ?? null; } catch {}
+  if (seen === version) return false;
+  // A browser that has never recorded a version may still hold a mirror from
+  // before versions existed, so a first sighting clears it too; on a new
+  // browser there is nothing to clear and this costs nothing.
+  invalidate(ALL_BUT_META);
+  try { s?.setItem(VERSION_KEY, version); } catch {}
+  return true;
 }

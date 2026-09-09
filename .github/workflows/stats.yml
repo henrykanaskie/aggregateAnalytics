@@ -66,3 +66,18 @@ jobs:
           git commit -m "Derived tables and grades $(date -u +'%Y-%m-%d')"
           git pull --rebase origin ${{ github.ref_name }}
           git push
+      # Every run uploads a fresh cache, and Render only reads the cache at
+      # build time, so every run wants a build. A derived-table push is meant
+      # to trigger one, but that hangs on the service's Auto-Deploy setting,
+      # and a refresh that only moved the cache (a coordinator rescrape, say)
+      # commits nothing and would otherwise be invisible until the next build
+      # for some other reason. The service's Deploy Hook asks for the build
+      # directly. Optional: with no RENDER_DEPLOY_HOOK secret this is skipped.
+      - name: Redeploy Render
+        env:
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$HOOK" ]; then
+            echo "RENDER_DEPLOY_HOOK not set; not asking Render to redeploy"; exit 0
+          fi
+          curl -fsS -X POST "$HOOK" && echo "asked Render to redeploy"

@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { apiGet } from "../api";
-import { isFresh, peek } from "./cache";
+import { generation, isFresh, peek, subscribe } from "./cache";
 
 export interface Query<T> { data: T | null; loading: boolean; stale: boolean; error: string | null; reload: () => void }
 
@@ -14,6 +14,9 @@ const seed = <T,>(url: string | null): S<T> => ({ url, data: url ? peek<T>(url) 
 export function useQuery<T>(url: string | null): Query<T> {
   const [st, setSt] = useState<S<T>>(() => seed<T>(url));
   const [nonce, setNonce] = useState(0);
+  // Moves whenever the cache is invalidated, so a page already on screen
+  // refetches instead of keeping the data it resolved with.
+  const gen = useSyncExternalStore(subscribe, generation, generation);
 
   // A url change swaps in that url's cached value during render, so the
   // previous selection's data is never shown under a new heading.
@@ -22,11 +25,14 @@ export function useQuery<T>(url: string | null): Query<T> {
   useEffect(() => {
     if (!url) return;
     let alive = true;
+    // A fresh hit resolves from memory, so this is free for the common case
+    // and only shows as "stale" while an actual refetch is in flight.
+    if (!isFresh(url)) setSt((s) => (s.url === url && !s.pending ? { ...s, pending: true } : s));
     apiGet<T>(url)
       .then((d) => alive && setSt((s) => (s.url === url ? { url, data: d, error: null, pending: false } : s)))
       .catch((e) => alive && setSt((s) => (s.url === url ? { ...s, error: String(e), pending: false } : s)));
     return () => { alive = false; };
-  }, [url, nonce]);
+  }, [url, nonce, gen]);
 
   const reload = useCallback(() => { setSt((s) => ({ ...s, pending: true })); setNonce((n) => n + 1); }, []);
   const cur = st.url === url ? st : seed<T>(url);
