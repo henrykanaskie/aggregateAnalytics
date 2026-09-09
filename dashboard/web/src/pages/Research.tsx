@@ -152,7 +152,7 @@ export default function Research() {
       {loading && !player && <div className="empty"><Spinner /> loading…</div>}
       {player && (
         <div className={settings.focus ? "focus-on" : ""}>
-          <div className="panel" style={{ marginBottom: 14, display: "flex", gap: 12, alignItems: "center" }}>
+          <div className="panel" style={{ marginBottom: 14, display: "flex", gap: 12, alignItems: "center" }} data-tour="research-player">
             <div style={{ flex: 1 }}><PlayerHeader p={player} game={lines?.game ?? null} /></div>
             <button className={`btn focus-toggle ${settings.focus ? "on" : ""}`} title="Highlight the stats that matter for this player and prop; dim the rest" onClick={() => setSettings({ focus: !settings.focus })}>{settings.focus ? "★ Focus on" : "☆ Focus"}</button>
           </div>
@@ -162,7 +162,7 @@ export default function Research() {
           {gameFilter && <div className="banner info" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><span>Showing only games <b>{gameFilter.label}</b> ({gameFilter.ids.size} games)</span><button className="btn sm" onClick={() => setGameFilter(null)}>clear</button></div>}
 
           {/* Prop / stat selection */}
-          <div className="panel" style={{ marginBottom: 14 }}>
+          <div className="panel" style={{ marginBottom: 14 }} data-tour="research-markets">
             <div className="panel-head">
               <h3>Props with lines this week</h3>
               <SourceNote sources={lines?.sources ?? []} />
@@ -205,7 +205,7 @@ export default function Research() {
 
           <div className="grid grid-main">
             <div className="grid" style={{ gap: 14 }}>
-              <div className="panel">
+              <div className="panel" data-tour="research-chart">
                 <div className="panel-head">
                   <div><h2>{stat?.label ?? statKey}{marketRow ? <span className="muted"> · {marketRow.market_label} line {line}</span> : line !== null ? <span className="muted"> · custom line {line}</span> : null}</h2>{stat?.note && <div className="hint">{stat.note}</div>}</div>
                   <div className="actions">
@@ -218,7 +218,7 @@ export default function Research() {
               <div className="panel"><StatTiles rows={filtered} allRows={allRows} statKey={statKey} stat={stat} line={line} /></div>
               <div className="panel"><GameLogTable rows={filtered} columns={columns} setColumns={setColumns} statKey={statKey} line={line} available={log?.available} position={player.position} picked={picked} onPick={(id) => setPicked((p) => (p === id ? null : id))} important={important} /></div>
               <div className="panel">
-                <div className="panel-head"><h3>Among {player.position}s · {stat?.label ?? statKey} vs the volume behind it</h3><span className="hint">the highlighted face is {player.name}; dashed lines average the position's most-used players, not its whole roster</span></div>
+                <div className="panel-head" data-tour="research-peers"><h3>Among {player.position}s · {stat?.label ?? statKey} vs the volume behind it</h3><span className="hint">the highlighted face is {player.name}; dashed lines average the position's most-used players, not its whole roster</span></div>
                 <PlayerScatter playerId={pid} position={player.position} statKey={statKey} season={(meta?.season ?? 2026) - 1} name={player.name} />
               </div>
               <div className="panel"><MiniCharts rows={filtered} keys={miniKeys} setKeys={setMiniKeys} available={log?.available} position={player.position} onFocus={chooseStat} /></div>

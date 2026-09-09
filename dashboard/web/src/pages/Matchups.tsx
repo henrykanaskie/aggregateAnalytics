@@ -63,7 +63,7 @@ function GameView({ d }: { d: GameMatchup }) {
   return (
     <div className="grid" style={{ gap: 14 }}>
       <SampleBanner sources={d.sources} />
-      <div className="panel">
+      <div className="panel" data-tour="matchup-top">
         <div className="panel-head">
           <div style={{ display: "flex", gap: 10, alignItems: "center", fontSize: 16 }}><TeamTag abbr={g.away_team} name /> <span className="muted">at</span> <TeamTag abbr={g.home_team} name /></div>
           <div className="small muted">{d.venue.gameday} {d.venue.gametime} · {d.venue.stadium} · {d.venue.roof}, {d.venue.surface}{d.venue.temp ? ` · ${d.venue.temp}°F` : ""}{d.venue.wind ? `, wind ${d.venue.wind}` : ""}{g.div_game ? " · division game" : ""}</div>
@@ -78,7 +78,9 @@ function GameView({ d }: { d: GameMatchup }) {
         <div className="hint" style={{ marginTop: 8 }}>Tendencies below use {d.season_used} regular-season numbers{d.season_used < g.season ? " (this season has too few games yet)" : ""}. Ranks are among 32 teams.</div>
       </div>
 
-      {d.sides.map((s) => <SideView key={s.offense} s={s} metrics={d.metrics} labels={d.dvp_labels} />)}
+      <div className="grid" style={{ gap: 14 }} data-tour="matchup-sides">
+        {d.sides.map((s) => <SideView key={s.offense} s={s} metrics={d.metrics} labels={d.dvp_labels} />)}
+      </div>
 
       <div className="grid grid-2">
         <div className="panel">

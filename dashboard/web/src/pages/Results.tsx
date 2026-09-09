@@ -41,7 +41,7 @@ export default function Results() {
       {data && data.n === 0 && <Banner kind="info">Nothing graded yet for this season. Lines can only be graded once their games have been played.</Banner>}
       {data && data.n > 0 && (
         <div className="grid grid-2">
-          <div className="panel">
+          <div className="panel" data-tour="results-books">
             <div className="panel-head"><h3>By book · {data.n} lines · weeks {data.weeks.map((w) => w[1]).join(", ")}</h3></div>
             <table className="tbl"><thead><tr><th className="left">Book</th><th>n</th><th>Over %</th><th>Push %</th><th>MAE</th><th>Bias</th></tr></thead>
               <tbody>{data.by_book.map((b) => <tr key={b.book}><td className="left">{meta?.books[b.book] ?? b.book}</td><td className="num muted">{b.n}</td><td className="num"><Rate v={b.over_rate} /></td><td className="num muted">{fmtPct(b.push_rate, 1)}</td><td className="num">{b.mae.toFixed(1)}</td><td className={`num ${b.bias > 0 ? "over" : "under"}`}>{b.bias > 0 ? "+" : ""}{b.bias.toFixed(1)}</td></tr>)}</tbody></table>
@@ -58,7 +58,7 @@ export default function Results() {
               <tbody>{[...data.signals, ...data.movement].map((s, i) => <tr key={i}><td className="left">{s.signal}</td><td className="num muted">{s.n}</td><td className="num"><Rate v={s.hit_rate} good={0.55} /></td></tr>)}</tbody></table>
             <div className="hint" style={{ marginTop: 6 }}>Break-even at -110 is 52.4%. A signal has to clear that with a real sample before it deserves weight.</div>
           </div>
-          <div className="panel">
+          <div className="panel" data-tour="results-models">
             <div className="panel-head"><h3>Models vs the line</h3></div>
             {data.models.length === 0 && <div className="hint">No logged predictions graded yet.</div>}
             {data.models.length > 0 && <table className="tbl"><thead><tr><th className="left">Model</th><th>n</th><th>Side hit %</th><th>Strong (|edge| ≥ 5)</th><th>Pred MAE</th><th>Line MAE</th></tr></thead>

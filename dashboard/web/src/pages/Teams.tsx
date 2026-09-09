@@ -115,7 +115,7 @@ export default function Teams() {
               </div>
             </div>
           </div>
-          <div className="panel">
+          <div className="panel" data-tour="team-seasons">
             <div className="panel-head"><h3>{team} by season · {side === "off" ? "offense" : "defense"}</h3><span className="hint">value with league rank; green/red = top/bottom quarter where direction matters · <span className="scroll-hint">scroll sideways for all {metrics.length} metrics</span></span></div>
             <div className="tbl-wrap">
               <table className="tbl wide">
@@ -144,7 +144,7 @@ export default function Teams() {
         <div className="panel" style={{ marginBottom: 14 }}><DvpTable season={league?.season ?? (meta?.season ?? 2026) - 1} onPick={(t) => setSp({ team: t })} /></div>
       )}
       {league && (
-        <div className="panel" style={{ marginBottom: 14 }}>
+        <div className="panel" style={{ marginBottom: 14 }} data-tour="team-scatter">
           <div className="panel-head"><h3>League scatter · {league.season}</h3><span className="hint">where every team sits on two tendencies at once{team ? `, ${team} highlighted` : ""}</span></div>
           <TeamScatter league={league} highlight={team ? [team] : []} onPick={(t) => setSp({ team: t })} />
         </div>

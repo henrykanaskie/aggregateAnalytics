@@ -96,7 +96,7 @@ export default function Coaches() {
           {name && !prof && !err && roleReady && !noHistory && <div className="empty"><Spinner /></div>}
           {prof && (
             <>
-              <div className="panel">
+              <div className="panel" data-tour="coach-profile">
                 <div className="panel-head">
                   <div>
                     <h2>{prof.coach}</h2>

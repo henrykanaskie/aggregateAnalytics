@@ -19,7 +19,7 @@ export default function Games() {
       {data && <SampleBanner sources={data.sources} />}
       <div className="panel" style={{ marginBottom: 12 }}><div className="controls"><Field label="Week"><select className="input" value={week ?? meta?.week ?? 1} onChange={(e) => setWeek(Number(e.target.value))}>{weeks.map((w) => <option key={w} value={w}>Week {w}</option>)}</select></Field></div></div>
       {loading && <div className="empty"><Spinner /></div>}
-      <div className="grid grid-2">
+      <div className="grid grid-2" data-tour="games-grid">
         {data?.games.map((g) => {
           const pred = g.predictions[0];
           return (

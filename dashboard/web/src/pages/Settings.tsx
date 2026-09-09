@@ -29,7 +29,7 @@ export default function Settings() {
     <div>
       <div className="page-head"><div><h1>Settings & data</h1></div><button className="btn" onClick={() => signOut()} title="Forget the site password on this browser">Sign out</button></div>
       <div className="grid grid-2">
-        <div className="panel">
+        <div className="panel" data-tour="settings-pull">
           <div className="panel-head"><h3>Pull lines</h3><span className="hint">every pull is appended; nothing is overwritten</span></div>
           <div className="controls" style={{ marginBottom: 12 }}>
             <Field label="Week (blank = current)"><input className="input num" type="number" min={1} max={22} value={week} onChange={(e) => setWeek(e.target.value === "" ? "" : Number(e.target.value))} /></Field>
