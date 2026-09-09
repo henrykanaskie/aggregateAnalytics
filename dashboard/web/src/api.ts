@@ -31,9 +31,9 @@ export interface BoardRow {
   stat: string | null; kind: "ou" | "yesno"; group: string; threshold: number; player_id: string | null; player_name: string; team: string | null;
   position: string | null; headshot: string | null; sources: string[]; consensus: number; mean_line: number; n_books: number; min_line: number; max_line: number;
   line_spread: number; outliers: string[]; best_over: { book: string; title: string; line: number | null; price: number } | null;
-  best_under: { book: string; title: string; line: number | null; price: number } | null; books: BookLine[]; form?: Form | null;
+  best_under: { book: string; title: string; line: number | null; price: number } | null; books: BookLine[]; form?: Form | null; proj?: Proj | null;
 }
-export interface Board { season: number; week: number; sources: string[]; pulled_at: string | null; n: number; rows: BoardRow[]; }
+export interface Board { season: number; week: number; sources: string[]; pulled_at: string | null; n: number; rows: BoardRow[]; alerts?: Alert[]; }
 export interface ScheduleGame { game_id: string; season: number; week: number; game_type: string; gameday: string; gametime: string; home_team: string; away_team: string; home_score: number | null; away_score: number | null; spread_line: number | null; total_line: number | null; home_moneyline: number | null; away_moneyline: number | null; }
 export interface HistoryRow { pulled_at: string; source: string; book: string; market: string; side: string; line: number | null; price: number | null; open_line: number | null; }
 export interface PlayerLines { player_id: string; season: number; week: number; game: ScheduleGame | null; sources: string[]; markets: BoardRow[]; history: HistoryRow[]; }
@@ -144,4 +144,21 @@ export interface H2H { game_id: string; season: number; week: number; game_type:
 export interface GameMatchup { game: ScheduleGame & Record<string, any>; season_used: number; sides: MatchupSideFull[]; metrics: TeamMetric[]; dvp_labels: Record<string, string>; history: H2H[]; venue: Record<string, any>; props: BoardRow[]; lines: any[]; predictions: GamePrediction[]; injuries: Record<string, InjuryRow[]>; sources: string[]; }
 export const api4 = {
   gameMatchup: (gameId: string, includeSample = false) => get<GameMatchup>(`/api/matchups/${gameId}${qs({ include_sample: includeSample })}`),
+};
+
+// --- projections, grading, teammates, correlations, adjustment, alerts -------------
+export interface Proj { value: number; base: number; median: number; sd: number; factor: number; factor_ctx: { allowed: number; league: number; rank: number | null; games: number; season: number } | null; n: number; low: number; high: number; p_over: number | null; edge: number | null; model_version: string; }
+export interface Alert { kind: "move" | "outlier" | "injury"; severity: number; player_id: string | null; player: string; team: string | null; market: string | null; market_label: string | null; game_id: string | null; title: string; detail: string; }
+export interface Teammate { player_id: string; name: string; position: string; games_with: number; games_without: number; eligible: string[]; }
+export interface TeammatePresence { teammates: Teammate[]; presence: Record<string, string[]>; since?: number; }
+export interface CorrRow { with: string; player_id: string | null; name?: string; position?: string; stat: string; r: number; n: number; }
+export interface DvpFactors { stat: string; dvp_stat: string | null; factors: Record<string, Record<string, number>>; }
+export interface GradeSummary { n: number; weeks: [number, number][]; by_book: { book: string; n: number; over_rate: number; push_rate: number; mae: number; bias: number }[]; by_market: { market: string; n: number; over_rate: number; push_rate: number; mae: number; bias: number }[]; signals: { signal: string; n: number; hit_rate: number }[]; movement: { signal: string; n: number; hit_rate: number }[]; models: { model_version: string; n: number; hit_rate: number | null; n_strong: number; hit_rate_strong: number | null; pred_mae: number; line_mae: number | null }[]; }
+export const api5 = {
+  teammates: (id: string) => get<TeammatePresence>(`/api/players/${id}/teammates`),
+  correlations: (id: string, stat: string) => get<{ stat: string; rows: CorrRow[] }>(`/api/players/${id}/correlations${qs({ stat })}`),
+  dvpFactors: (position: string, stat: string, since: number) => get<DvpFactors>(`/api/dvp/factors${qs({ position, stat, since })}`),
+  gradeSummary: (season?: number) => get<GradeSummary>(`/api/grading/summary${qs({ season })}`),
+  gradeRun: async (season: number, week: number, include_sample = false) => { const r = await fetch("/api/grading/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ season, week, include_sample }) }); return r.json() as Promise<{ graded: number }>; },
+  logBaseline: async (season?: number, week?: number) => { const r = await fetch("/api/projections/log", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ season, week }) }); return r.json() as Promise<{ logged: number; week: number }>; },
 };

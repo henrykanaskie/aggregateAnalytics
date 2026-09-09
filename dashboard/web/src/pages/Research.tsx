@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, BoardRow, BookLine, GameLog, Player, PlayerLines } from "../api";
 import { Field, SampleBanner, Seg, SourceNote, Spinner } from "../components/common";
 import BookLines from "../components/BookLines";
@@ -20,6 +20,9 @@ import Splits from "../components/PbpSplits";
 import MatchupPanel from "../components/MatchupPanel";
 import InjuryPanel from "../components/InjuryPanel";
 import { importantStats } from "../lib/focus";
+import TeammatesPanel from "../components/TeammatesPanel";
+import CorrelationsPanel from "../components/CorrelationsPanel";
+import { api5, DvpFactors } from "../api";
 
 export default function Research() {
   const { meta, settings, setSettings, statByKey, marketByKey } = useMeta();
@@ -42,10 +45,13 @@ export default function Research() {
   const [miniKeys, setMiniKeys] = useState<string[]>([]);
   const [picked, setPicked] = useState<string | null>(null);
   const [rollWin, setRollWin] = useState(5);
+  const [gameFilter, setGameFilter] = useState<{ ids: Set<string>; label: string; key: string } | null>(null);   // from the teammates panel
+  const [adjust, setAdjust] = useState(false);
+  const [factors, setFactors] = useState<DvpFactors | null>(null);
 
   useEffect(() => {
     if (!pid) { setPlayer(null); setLog(null); setLines(null); return; }
-    setLoading(true); setErr(null); setPicked(null);
+    setLoading(true); setErr(null); setPicked(null); setGameFilter(null);
     Promise.all([api.player(pid), api.gamelog(pid, settings.since), api.playerLines(pid, undefined, undefined, settings.includeSample)])
       .then(([p, g, l]) => {
         setPlayer(p); setLog(g); setLines(l);
@@ -67,8 +73,21 @@ export default function Research() {
   }, [pid, settings.since, settings.includeSample]);
 
   const marketRow: BoardRow | null = useMemo(() => lines?.markets.find((m) => m.market === market) ?? null, [lines, market]);
-  const allRows = log?.rows ?? [];
+  const rawRows = log?.rows ?? [];
+  useEffect(() => {
+    if (adjust && player) api5.dvpFactors(player.position, statKey, settings.since).then(setFactors).catch(() => setFactors(null));
+    else setFactors(null);
+  }, [adjust, player, statKey, settings.since]);
+  // Opponent-adjusted view: scale the charted stat by how generous each game's defense was to the position that season.
+  const allRows = useMemo(() => {
+    let rows = rawRows;
+    if (gameFilter) rows = rows.filter((r) => gameFilter.ids.has(r.game_id));
+    if (adjust && factors && factors.dvp_stat) rows = rows.map((r) => { const f = factors.factors[String(r.season)]?.[r.opponent]; const v = r[statKey]; return f && typeof v === "number" ? { ...r, [statKey]: Math.round(v * f * 10) / 10, _factor: f } : r; });
+    return rows;
+  }, [rawRows, gameFilter, adjust, factors, statKey]);
   const filtered = useMemo(() => applyFilters(allRows, filters), [allRows, filters]);
+  const lastTeam = rawRows.length ? rawRows[rawRows.length - 1].team : null;
+  const changedTeam = player && lastTeam && player.team && lastTeam !== player.team;
   const stat = statByKey.get(statKey);
   const important = useMemo(() => (settings.focus && player ? new Set(importantStats(market, statKey, player.position)) : null), [settings.focus, player, market, statKey]);
   const seasons = useMemo(() => [...new Set(allRows.map((r) => r.season))].sort((a, b) => b - a), [allRows]);
@@ -134,6 +153,9 @@ export default function Research() {
             <button className={`btn focus-toggle ${settings.focus ? "on" : ""}`} title="Highlight the stats that matter for this player and prop; dim the rest" onClick={() => setSettings({ focus: !settings.focus })}>{settings.focus ? "★ Focus on" : "☆ Focus"}</button>
           </div>
           {lines && <SampleBanner sources={lines.sources} />}
+          {changedTeam && <div className="banner warn"><b>New team.</b> Every game below was with <b>{lastTeam}</b>; {player.name} is now on <b>{player.team}</b>. Role, quarterback and scheme have changed, so weight recent form lightly and lean on the <Link to={`/teams?team=${player.team}`}>{player.team} usage tree</Link> and the matchup panel for the new context.</div>}
+          {!changedTeam && rawRows.length > 0 && rawRows.length < 6 && <div className="banner info"><b>Small sample.</b> Only {rawRows.length} games on record; treat every rate on this page as noise until there are more.</div>}
+          {gameFilter && <div className="banner info" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><span>Showing only games <b>{gameFilter.label}</b> ({gameFilter.ids.size} games)</span><button className="btn sm" onClick={() => setGameFilter(null)}>clear</button></div>}
 
           {/* Prop / stat selection */}
           <div className="panel" style={{ marginBottom: 14 }}>
@@ -167,6 +189,7 @@ export default function Research() {
               <Field label="Opponent"><select className="input" value={filters.opponent ?? ""} onChange={(e) => setFilters({ ...filters, opponent: e.target.value || null })}><option value="">Any</option>{opponents.map((o) => <option key={o} value={o}>{o}</option>)}</select></Field>
               <Field label="Weather"><Seg value={filters.weather} options={[{ v: "ALL", l: "All" }, { v: "INDOORS", l: "Dome" }, { v: "OUTDOORS", l: "Outdoors" }, { v: "COLD", l: "Cold" }, { v: "WINDY", l: "Windy" }]} onChange={(v) => setFilters({ ...filters, weather: v })} /></Field>
               {player.position !== "QB" && qbs.length > 1 && <Field label="Starting QB"><select className="input" value={filters.qb ?? ""} onChange={(e) => setFilters({ ...filters, qb: e.target.value || null })}><option value="">Any</option>{qbs.map(([q, n]) => <option key={q} value={q}>{q} ({n})</option>)}</select></Field>}
+              <Field label="Opp. adjusted"><button className={`chip ${adjust ? "on" : ""}`} title="Scale each game by how generous that defense was to the position that season (league average / allowed). Asks: what would this have been against an average defense?" onClick={() => setAdjust(!adjust)}>{adjust ? "on" : "off"}{adjust && factors && !factors.dvp_stat ? " (n/a for this stat)" : ""}</button></Field>
               <Field label="Min snap %"><input className="input num" type="number" min={0} max={100} step={5} value={filters.minSnapPct === null ? "" : filters.minSnapPct * 100} placeholder="–" onChange={(e) => setFilters({ ...filters, minSnapPct: e.target.value === "" ? null : Number(e.target.value) / 100 })} /></Field>
               <Field label="Seasons">
                 <div className="chips">
@@ -191,7 +214,15 @@ export default function Research() {
               <div className="panel"><StatTiles rows={filtered} allRows={allRows} statKey={statKey} stat={stat} line={line} /></div>
               <div className="panel"><GameLogTable rows={filtered} columns={columns} setColumns={setColumns} statKey={statKey} line={line} available={log?.available} position={player.position} picked={picked} onPick={(id) => setPicked((p) => (p === id ? null : id))} important={important} /></div>
               <div className="panel"><MiniCharts rows={filtered} keys={miniKeys} setKeys={setMiniKeys} available={log?.available} position={player.position} onFocus={chooseStat} /></div>
+              <div className="panel">
+                <div className="panel-head"><h3>With / without teammates · {stat?.label ?? statKey}{line !== null ? ` vs ${line}` : ""}</h3></div>
+                <TeammatesPanel playerId={pid} rows={rawRows} statKey={statKey} stat={stat} line={line} active={gameFilter?.key ?? null} onFilter={(ids, label, key) => setGameFilter(ids && label ? { ids: new Set(ids), label, key: key ?? label } : null)} />
+              </div>
               <div className="panel"><Splits playerId={pid} statKey={statKey} position={player.position} since={settings.since} /></div>
+              <div className="panel">
+                <div className="panel-head"><h3>Same-game correlations · {stat?.label ?? statKey}</h3></div>
+                <CorrelationsPanel playerId={pid} statKey={statKey} statLabel={stat?.label ?? statKey} />
+              </div>
             </div>
             <div className="grid" style={{ gap: 14, alignContent: "start" }}>
               <div className="panel">
@@ -215,7 +246,7 @@ export default function Research() {
                 <div className="panel-head"><h3>Injuries</h3></div>
                 <InjuryPanel playerId={pid} team={player.team} opponent={lines?.game ? (lines.game.home_team === player.team ? lines.game.away_team : lines.game.home_team) : null} />
               </div>
-              <PredictionSlot playerId={pid} market={market} line={line} />
+              <PredictionSlot playerId={pid} market={market} line={line} proj={marketRow?.proj ?? null} statFmt={stat?.fmt} />
             </div>
           </div>
         </div>
@@ -224,7 +255,7 @@ export default function Research() {
   );
 }
 
-function PredictionSlot({ playerId, market, line }: { playerId: string; market: string | null; line: number | null }) {
+function PredictionSlot({ playerId, market, line, proj, statFmt }: { playerId: string; market: string | null; line: number | null; proj: import("../api").Proj | null; statFmt?: string }) {
   const { meta } = useMeta();
   const [rows, setRows] = useState<any[]>([]);
   useEffect(() => { if (meta) api.predictions(meta.season, meta.week).then((d) => setRows(d.props.filter((p) => p.player_id === playerId))).catch(() => setRows([])); }, [meta, playerId]);
@@ -232,7 +263,16 @@ function PredictionSlot({ playerId, market, line }: { playerId: string; market: 
   return (
     <div className="panel">
       <div className="panel-head"><h3>Prediction</h3>{mine.length ? <span className="pill over">{mine.length} logged</span> : <span className="pill">nothing logged</span>}</div>
-      {mine.length === 0 && <div className="hint">When the model logs a row to <code>data/derived/prop_predictions.parquet</code> for this player and market, it shows here next to the line. See the Predictions page for the schema.</div>}
+      {proj && (
+        <div className="small" style={{ marginBottom: 8 }}>
+          <span className="pill">baseline</span> projects <b className="num">{proj.value}</b> <span className="muted">(50% band {proj.low}–{proj.high})</span>
+          {line !== null && proj.edge !== null && <> · vs line <span className="num">{line}</span> <span className={`num ${proj.edge > 0 ? "over" : "under"}`}>{proj.edge > 0 ? "+" : ""}{proj.edge}</span></>}
+          {proj.p_over !== null && <> · P(over) <b className="num">{Math.round(proj.p_over * 100)}%</b></>}
+          <div className="hint">Recency-weighted mean of the last {proj.n} games ({proj.base}){proj.factor !== 1 && proj.factor_ctx ? <> × {proj.factor} for the opponent (allows {proj.factor_ctx.allowed.toFixed(1)} vs league {proj.factor_ctx.league.toFixed(1)}, rank {proj.factor_ctx.rank})</> : null}. A reference, not a model.</div>
+        </div>
+      )}
+      {mine.length === 0 && !proj && <div className="hint">When the model logs a row to <code>data/derived/prop_predictions.parquet</code> for this player and market, it shows here next to the line. See the Predictions page for the schema.</div>}
+      {mine.length === 0 && proj && <div className="hint">No model prediction logged; the baseline above is what the grader scores as <code>baseline-v1</code>.</div>}
       {mine.map((p) => (
         <div key={p.model_version + p.market} className="small" style={{ marginBottom: 6 }}>
           <span className="pill accent">{p.model_version}</span> {p.market}: pred <b className="num">{p.pred?.toFixed(1)}</b>
