@@ -78,6 +78,14 @@ def _warm() -> None:
         ("current coaches", coaches_mod.current_coaches),
         ("coordinators", coaches_mod.coordinators),
         ("odds status", store.status),
+        # The landing route is the board, so this is the request the first
+        # visitor after a wake is actually waiting on, and it was the only
+        # expensive one not warmed here. Warming it also fills the DvP tables
+        # and the recent-form scan that every other page reads.
+        # Called with every Query-defaulted argument spelled out: reached this
+        # way rather than through HTTP, an omitted one arrives as FastAPI's
+        # Query object and lands in a polars expression as itself.
+        ("odds board", lambda: odds_board(market=None, scale=1.0)),
     )
     for name, fn in steps:
         t0 = time.perf_counter()

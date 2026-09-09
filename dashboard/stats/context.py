@@ -48,9 +48,20 @@ def dvp_games() -> pl.DataFrame:
     )
 
 
+@lru_cache(maxsize=64)
 def dvp_table(season: int, position: str, season_type: str = "REG") -> pl.DataFrame:
     """League table: per-game averages allowed to a position, with ranks
-    (1 = most allowed, the matchup a bettor wants)."""
+    (1 = most allowed, the matchup a bettor wants).
+
+    Cached because the board asks for it once per row. Projecting a full slate
+    called this 639 times for the four position tables it actually needs, and
+    rebuilt the league from scratch every time: a group-by and eleven ranks
+    over every game of the season, to read one team's row out of it. That was
+    1.1 of the 2.2 seconds the landing page took to build.
+
+    The key space is tiny -- four positions across the seasons on offer -- and
+    every caller only ever filters or reads, so one frame is safe to share.
+    """
     g = dvp_games().filter((pl.col("season") == season) & (pl.col("pos") == position))
     if season_type in ("REG", "POST"):
         g = g.filter(pl.col("season_type") == season_type)
