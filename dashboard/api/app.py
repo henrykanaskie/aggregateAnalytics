@@ -14,6 +14,7 @@ from typing import Any
 
 import polars as pl
 from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -47,6 +48,13 @@ from ..stats.gamelog import availability, game_log
 app = FastAPI(title="NFL props dashboard", version="0.1.0",
               dependencies=[Depends(require_session)])
 app.include_router(auth_router)
+# These responses are lists of dicts with the same keys repeated a few thousand
+# times, which is the case gzip is best at: measured 5x on a team's tendencies
+# (1016 KB -> 188 KB), 8x on a position's scatter, 9x on a game log. The host
+# is one small container on a free plan, so the seconds saved on the wire are
+# worth more than the milliseconds spent compressing. 500 bytes is the floor
+# because below it the gzip header is most of what you sent.
+app.add_middleware(GZipMiddleware, minimum_size=500)
 # On a stateless host, new odds snapshots arrive from git, not from disk.
 sync_odds.install(app)
 
@@ -67,6 +75,7 @@ def _warm() -> None:
         ("teams", players_mod.teams),
         ("team metrics", team_mod.metric_json),
         ("current coaches", coaches_mod.current_coaches),
+        ("coordinators", coaches_mod.coordinators),
         ("odds status", store.status),
     )
     for name, fn in steps:
@@ -133,6 +142,9 @@ def meta():
         "team_metrics": team_mod.metric_json(),
         "team_table_ready": team_mod.CACHE.exists(),
         "current_coaches": coaches_mod.current_coaches(),
+        "have_coordinators": coaches_mod.have_coordinators(),
+        "coach_roles": [{"key": r, "label": coaches_mod.ROLE_LABEL[r], "sides": list(coaches_mod.ROLE_SIDES[r]),
+                         "attribution": coaches_mod.ROLE_ATTRIBUTION[r]} for r in coaches_mod.ROLES],
     }
 
 
@@ -309,6 +321,7 @@ def team_tendencies(team: str, since: int = Query(2010, ge=1999), season_type: s
     return {
         "team": team, "since": since, "seasons": records(seasons), "games": records(games),
         "coaches": coaches_mod.team_history(team), "current_coach": coaches_mod.current_coaches().get(team),
+        "coordinators": coaches_mod.team_staff_history(team),
         "metrics": team_mod.metric_json(),
     }
 
@@ -442,9 +455,9 @@ def team_usage_api(team: str, season: int = CURRENT_SEASON - 1, season_type: str
 
 
 @app.get("/api/coaches/{name}/usage")
-def coach_usage_api(name: str):
+def coach_usage_api(name: str, role: str = "HC"):
     _need_team_table()
-    cs = coaches_mod.coach_seasons().filter(pl.col("coach") == name).select("team", "season").unique().sort("season")
+    cs = coaches_mod.role_seasons(_role(role)).filter(pl.col("coach") == name).select("team", "season").unique().sort("season")
     if cs.is_empty():
         raise HTTPException(404, "unknown coach")
     return {"coach": name, "rows": [{k: _clean(v) if not isinstance(v, dict) else {kk: _clean(vv) for kk, vv in v.items()} for k, v in r.items()}
@@ -474,16 +487,25 @@ def league_tendencies(season: int = CURRENT_SEASON - 1):
             "coaches": {k: v for k, v in coaches_mod.current_coaches(season).items()}}
 
 
+def _role(role: str) -> str:
+    r = role.upper()
+    if r not in coaches_mod.ROLE_SIDES:
+        raise HTTPException(422, f"unknown role {role!r}; expected one of {', '.join(coaches_mod.ROLES)}")
+    if r != "HC" and not coaches_mod.have_coordinators():
+        raise HTTPException(503, "coordinator table not fetched yet: run `python -m data_handling.fetch_coordinators`")
+    return r
+
+
 @app.get("/api/coaches")
-def coaches_api():
+def coaches_api(role: str = "HC"):
     _need_team_table()
-    return coaches_mod.coach_list()
+    return coaches_mod.staff_list(_role(role))
 
 
 @app.get("/api/coaches/{name}")
-def coach_api(name: str):
+def coach_api(name: str, role: str = "HC"):
     _need_team_table()
-    p = coaches_mod.coach_profile(name)
+    p = coaches_mod.staff_profile(name, _role(role))
     if p is None:
         raise HTTPException(404, "unknown coach")
     return {**p, "seasons": [{k: _clean(v) for k, v in s.items()} for s in p["seasons"]],

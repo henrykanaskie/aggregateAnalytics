@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Link as RLink } from "react-router-dom";
-import { api2, api3, CoachProfile, CoachSummary, CoachUsageRow } from "../api";
+import { api2, api3, CoachProfile, CoachRoleKey, CoachSummary, CoachUsageRow } from "../api";
 import { fmtPct } from "../lib/format";
 import { Banner, Field, Seg, Spinner, TeamTag } from "../components/common";
 import { fmtStat } from "../lib/format";
@@ -12,54 +12,112 @@ import { rankClass } from "./Teams";
 import ScatterPlot from "../components/ScatterPlot";
 import { fmtStat as fmtS } from "../lib/format";
 
+const ROLES: { v: CoachRoleKey; l: string }[] = [{ v: "HC", l: "Head coaches" }, { v: "OC", l: "OCs" }, { v: "DC", l: "DCs" }];
+// A coordinator is only answerable for his own side of the ball, so the side
+// toggle is a head-coach control; for an OC or a DC the side is the job.
+const ROLE_SIDE: Record<CoachRoleKey, "off" | "def" | null> = { HC: null, OC: "off", DC: "def" };
+const ROLE_NOUN: Record<CoachRoleKey, string> = { HC: "head coach", OC: "offensive coordinator", DC: "defensive coordinator" };
+
 export default function Coaches() {
   const { meta } = useMeta();
   const [sp, setSp] = useSearchParams();
   const name = sp.get("coach") ?? "";
-  const [side, setSide] = useSticky<"off" | "def">("coaches.side", "off");
+  const role = ((sp.get("role") as CoachRoleKey) || "HC") as CoachRoleKey;
+  const [hcSide, setHcSide] = useSticky<"off" | "def">("coaches.side", "off");
+  const side = ROLE_SIDE[role] ?? hcSide;
   const [q, setQ] = useSticky("coaches.q", "");
   const [onlyActive, setOnlyActive] = useSticky("coaches.onlyActive", true);
   const [sx, setSx] = useSticky("coaches.sx", "pass_rate");
   const [sy, setSy] = useSticky("coaches.sy", "sec_per_play");
-  const { data: allCoaches, error: listErr } = useQuery<CoachSummary[]>(api2.coaches.url());
+  const haveCoords = meta?.have_coordinators ?? true;
+  const roleReady = role === "HC" || haveCoords;
+  const select = (next: { coach?: string; role?: CoachRoleKey }) => {
+    const r = next.role ?? role;
+    const c = next.coach ?? "";
+    setSp(c ? { role: r, coach: c } : { role: r });
+  };
+  const { data: allCoaches, error: listErr } = useQuery<CoachSummary[]>(roleReady ? api2.coaches.url(role) : null);
   const list = allCoaches ?? [];
-  const { data: prof, error: profErr } = useQuery<CoachProfile>(name ? api2.coach.url(name) : null);
-  const { data: usageResp } = useQuery<{ coach: string; rows: CoachUsageRow[] }>(name ? api3.coachUsage.url(name) : null);
+  // Someone in his first season has the job but no numbers yet, so there is
+  // nothing to fetch and a 404 would read as a broken page.
+  const picked = list.find((c) => c.coach === name);
+  const noHistory = !!picked && !picked.has_history;
+  const { data: prof, error: profErr } = useQuery<CoachProfile>(name && roleReady && !noHistory ? api2.coach.url(name, role) : null);
+  // Who got the ball is an offensive question; a DC's page has no use for it.
+  const wantUsage = name && roleReady && !noHistory && role !== "DC";
+  const { data: usageResp } = useQuery<{ coach: string; rows: CoachUsageRow[] }>(wantUsage ? api3.coachUsage.url(name, role) : null);
   const usage = usageResp?.rows ?? [];
   const err = listErr ?? profErr;
-  const metrics = (prof?.metrics ?? meta?.team_metrics ?? []).filter((m) => m.side === side);
+  const sides = prof?.sides ?? (ROLE_SIDE[role] ? [ROLE_SIDE[role] as string] : ["off", "def"]);
+  const allMetrics = (prof?.metrics ?? meta?.team_metrics ?? []).filter((m) => sides.includes(m.side));
+  const metrics = allMetrics.filter((m) => m.side === side);
   const fp = useMemo(() => (prof?.fingerprint ?? []).filter((f) => f.side === side && f.seasons >= 2), [prof, side]);
   const shown = useMemo(() => list.filter((c) => (!onlyActive || c.current_team) && (!q || c.coach.toLowerCase().includes(q.toLowerCase()))), [list, onlyActive, q]);
+  // A coordinator's scatter axes have to come from his own side, or the
+  // selector offers him metrics his page cannot plot.
+  const axisMetrics = allMetrics;
+  const ax = axisMetrics.some((m) => m.key === sx) ? sx : axisMetrics[0]?.key ?? sx;
+  const ay = axisMetrics.some((m) => m.key === sy) ? sy : axisMetrics[1]?.key ?? sy;
   if (meta && !meta.team_table_ready) return <Banner kind="warn">The team tendency table is not built yet. Run <code>python -m dashboard.stats.team</code> and reload.</Banner>;
   return (
     <div>
-      <div className="page-head"><div><h1>Coaches</h1><div className="muted small">A head coach's tendencies over every game he coached, with the league rank each season. "Feeds his running backs" becomes a number: RB target share, and how many seasons it ranked in the top third.</div></div></div>
+      <div className="page-head">
+        <div>
+          <h1>Coaches</h1>
+          <div className="muted small">A coach's tendencies over the seasons he ran, with the league rank each year. "Feeds his running backs" becomes a number: RB target share, and how many seasons it ranked in the top third. Coordinators are here too, each judged only on his own side of the ball.</div>
+        </div>
+        <Field label="Role"><Seg value={role} options={ROLES} onChange={(r) => select({ role: r as CoachRoleKey })} /></Field>
+      </div>
       {err && <Banner kind="err">{err}</Banner>}
+      {!roleReady && <Banner kind="warn">Coordinators are not in the cache yet. nflverse carries no OC or DC anywhere, so they are scraped separately: run <code>python -m data_handling.fetch_coordinators</code> and reload.</Banner>}
       <div className="grid grid-main" style={{ gridTemplateColumns: "340px minmax(0,1fr)" }}>
         <div className="panel" style={{ alignSelf: "start" }}>
           <div className="controls" style={{ marginBottom: 8 }}>
-            <input className="input" placeholder="filter coaches…" value={q} onChange={(e) => setQ(e.target.value)} style={{ flex: 1 }} />
-            <button className={`chip ${onlyActive ? "on" : ""}`} onClick={() => setOnlyActive(!onlyActive)}>2026 HCs</button>
+            <input className="input" placeholder={`filter ${role === "HC" ? "coaches" : role + "s"}…`} value={q} onChange={(e) => setQ(e.target.value)} style={{ flex: 1 }} />
+            <button className={`chip ${onlyActive ? "on" : ""}`} onClick={() => setOnlyActive(!onlyActive)}>2026 {role}s</button>
           </div>
           <div className="tbl-wrap" style={{ maxHeight: "70vh" }}>
             <table className="tbl compact">
-              <thead><tr><th className="left">Coach</th><th className="left">Now</th><th>Yrs</th><th>W-L</th></tr></thead>
-              <tbody>{shown.map((c) => <tr key={c.coach} className={`clickable ${c.coach === name ? "hl" : ""}`} onClick={() => setSp({ coach: c.coach })}><td className="left">{c.coach}</td><td className="left">{c.current_team ? <TeamTag abbr={c.current_team} /> : <span className="faint small">{c.first_season}–{c.last_season}</span>}</td><td className="num muted">{c.seasons}</td><td className="num muted">{c.wins}-{c.losses}</td></tr>)}</tbody>
+              <thead><tr><th className="left">{role === "HC" ? "Coach" : role}</th><th className="left">Now</th><th>Yrs</th><th>W-L</th></tr></thead>
+              <tbody>{shown.map((c) => <tr key={c.coach} className={`clickable ${c.coach === name ? "hl" : ""}`} onClick={() => select({ coach: c.coach })}><td className="left">{c.coach}</td><td className="left">{c.current_team ? <TeamTag abbr={c.current_team} /> : <span className="faint small">{c.first_season}–{c.last_season}</span>}</td><td className="num muted">{c.seasons}</td><td className="num muted">{c.wins}-{c.losses}</td></tr>)}</tbody>
             </table>
           </div>
+          {roleReady && shown.length === 0 && <div className="hint" style={{ marginTop: 8 }}>Nobody matches. {onlyActive ? "The 2026 filter is on." : ""}</div>}
         </div>
         <div className="grid" style={{ alignContent: "start" }}>
-          {!name && <div className="empty">Pick a coach.</div>}
-          {name && !prof && !err && <div className="empty"><Spinner /></div>}
+          {!name && roleReady && <div className="empty">Pick a {ROLE_NOUN[role]}.</div>}
+          {noHistory && (
+            <div className="panel">
+              <h2>{name}</h2>
+              <div className="muted small">{picked?.current_team ? <>2026: <Link to={`/teams?team=${picked.current_team}`}><TeamTag abbr={picked.current_team} name /></Link></> : null}</div>
+              <div className="hint" style={{ marginTop: 8 }}>First season in this job. The tendency table runs through 2025, so there is nothing to profile until 2026 games are played.</div>
+            </div>
+          )}
+          {name && !prof && !err && roleReady && !noHistory && <div className="empty"><Spinner /></div>}
           {prof && (
             <>
               <div className="panel">
                 <div className="panel-head">
-                  <div><h2>{prof.coach}</h2><div className="muted small">{prof.current_team ? <>2026: <Link to={`/teams?team=${prof.current_team}`}><TeamTag abbr={prof.current_team} name /></Link> · </> : null}{prof.seasons.length} seasons · {prof.seasons.reduce((a, s) => a + s.win, 0)}-{prof.seasons.reduce((a, s) => a + s.loss, 0)} · teams {[...new Set(prof.seasons.map((s) => s.team))].join(", ")}</div></div>
-                  <Field label="Side"><Seg value={side} options={[{ v: "off", l: "Offense" }, { v: "def", l: "Defense" }]} onChange={setSide} /></Field>
+                  <div>
+                    <h2>{prof.coach}</h2>
+                    <div className="muted small">{prof.role_label} · {prof.current_team ? <>2026: <Link to={`/teams?team=${prof.current_team}`}><TeamTag abbr={prof.current_team} name /></Link> · </> : null}{prof.seasons.length} seasons · {prof.seasons.reduce((a, s) => a + s.win, 0)}-{prof.seasons.reduce((a, s) => a + s.loss, 0)} · teams {[...new Set(prof.seasons.map((s) => s.team))].join(", ")}</div>
+                    {prof.also.filter((a) => a.role !== role).length > 0 && (
+                      <div className="hint" style={{ marginTop: 4 }}>Also{" "}
+                        {prof.also.filter((a) => a.role !== role).map((a, i) => (
+                          <span key={a.role}>{i > 0 ? ", " : ""}<a href="#" onClick={(e) => { e.preventDefault(); select({ coach: prof.coach, role: a.role }); }}>{a.label.toLowerCase()} {a.first_season}–{a.last_season}</a></span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {role === "HC" && <Field label="Side"><Seg value={side} options={[{ v: "off", l: "Offense" }, { v: "def", l: "Defense" }]} onChange={setHcSide} /></Field>}
                 </div>
+                {prof.attribution === "season" && (
+                  <div className="hint" style={{ marginBottom: 8 }}>
+                    Coordinator tenures are dated by season, not by game: the source lists each season's final staff, so a mid-season hire owns the whole year and the man he replaced owns none of it. These are the team's full-season numbers.
+                  </div>
+                )}
                 <h3 style={{ marginBottom: 6 }}>Tendency fingerprint</h3>
-                <div className="hint" style={{ marginBottom: 8 }}>Average league percentile of each tendency across the coach's seasons (regular season). Far from the middle = a consistent identity. "Top ⅓" counts the seasons ranked in the top third of the league.</div>
+                <div className="hint" style={{ marginBottom: 8 }}>Average league percentile of each tendency across his seasons (regular season). Far from the middle = a consistent identity. "Top ⅓" counts the seasons ranked in the top third of the league.</div>
                 <div className="tbl-wrap">
                   <table className="tbl">
                     <thead><tr><th className="left">Tendency</th><th>Career</th><th style={{ width: 180 }}>Percentile</th><th>Seasons</th><th>Top ⅓</th><th>Bottom ⅓</th></tr></thead>
@@ -70,6 +128,7 @@ export default function Coaches() {
                     ))}</tbody>
                   </table>
                 </div>
+                {fp.length === 0 && <div className="hint">Only one season on record, so there is no fingerprint to average yet.</div>}
               </div>
               {usage.length > 0 && (
                 <div className="panel">
@@ -88,12 +147,12 @@ export default function Coaches() {
               <div className="panel">
                 <div className="panel-head"><h3>Seasons as dots</h3>
                   <div className="controls">
-                    <Field label="X"><select className="input" value={sx} onChange={(e) => setSx(e.target.value)}>{(prof.metrics ?? []).map((m) => <option key={m.key} value={m.key}>{m.side === "def" ? "DEF · " : ""}{m.label}</option>)}</select></Field>
-                    <Field label="Y"><select className="input" value={sy} onChange={(e) => setSy(e.target.value)}>{(prof.metrics ?? []).map((m) => <option key={m.key} value={m.key}>{m.side === "def" ? "DEF · " : ""}{m.label}</option>)}</select></Field>
+                    <Field label="X"><select className="input" value={ax} onChange={(e) => setSx(e.target.value)}>{axisMetrics.map((m) => <option key={m.key} value={m.key}>{m.side === "def" ? "DEF · " : ""}{m.label}</option>)}</select></Field>
+                    <Field label="Y"><select className="input" value={ay} onChange={(e) => setSy(e.target.value)}>{axisMetrics.map((m) => <option key={m.key} value={m.key}>{m.side === "def" ? "DEF · " : ""}{m.label}</option>)}</select></Field>
                   </div>
                 </div>
-                {(() => { const mx = prof.metrics.find((m) => m.key === sx), my = prof.metrics.find((m) => m.key === sy); const dots = prof.seasons.map((s) => ({ id: `${s.season}-${s.team}`, label: `${s.season} ${s.team}`, x: s[sx] as number | null, y: s[sy] as number | null, sub: `${s.win}-${s.loss}`, extra: { [`${mx?.label ?? sx} rank`]: (s[`${sx}_rank`] as number) ?? null, [`${my?.label ?? sy} rank`]: (s[`${sy}_rank`] as number) ?? null } })); return <ScatterPlot dots={dots} xLabel={`${mx?.label ?? sx}${sx === "sec_per_play" ? " (higher = slower)" : ""}`} yLabel={`${my?.label ?? sy}${sy === "sec_per_play" ? " (higher = slower)" : ""}`} xFmt={(v) => fmtS(v, (mx?.fmt ?? "dec1") as any)} yFmt={(v) => fmtS(v, (my?.fmt ?? "dec1") as any)} showLabels="all" height={300} />; })()}
-                <div className="hint">Each dot is one of the coach's seasons; the dashed lines are his own career averages. A tight cluster is an identity, a drift is a coach who changed.</div>
+                {(() => { const mx = axisMetrics.find((m) => m.key === ax), my = axisMetrics.find((m) => m.key === ay); const dots = prof.seasons.map((s) => ({ id: `${s.season}-${s.team}`, label: `${s.season} ${s.team}`, x: s[ax] as number | null, y: s[ay] as number | null, sub: `${s.win}-${s.loss}`, extra: { [`${mx?.label ?? ax} rank`]: (s[`${ax}_rank`] as number) ?? null, [`${my?.label ?? ay} rank`]: (s[`${ay}_rank`] as number) ?? null } })); return <ScatterPlot dots={dots} xLabel={`${mx?.label ?? ax}${ax === "sec_per_play" ? " (higher = slower)" : ""}`} yLabel={`${my?.label ?? ay}${ay === "sec_per_play" ? " (higher = slower)" : ""}`} xFmt={(v) => fmtS(v, (mx?.fmt ?? "dec1") as any)} yFmt={(v) => fmtS(v, (my?.fmt ?? "dec1") as any)} showLabels="all" height={300} />; })()}
+                <div className="hint">Each dot is one of his seasons; the dashed lines are his own career averages. A tight cluster is an identity, a drift is a coach who changed.</div>
               </div>
               <div className="panel">
                 <div className="panel-head"><h3>Season by season · {side === "off" ? "offense" : "defense"}</h3><span className="hint">rank shown small; green/red = top/bottom quarter where direction matters · <span className="scroll-hint">scroll sideways for all {metrics.length} metrics</span></span></div>

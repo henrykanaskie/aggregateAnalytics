@@ -15,6 +15,7 @@ export interface Meta {
   markets: MarketDef[]; books: Record<string, string>; odds: OddsStatus; datasets: string[];
   split_dims: { key: string; label: string; roles: string[]; since: number; note: string }[];
   team_metrics: TeamMetric[]; team_table_ready: boolean; current_coaches: Record<string, string>;
+  have_coordinators: boolean; coach_roles: CoachRole[];
 }
 export interface PlayerLite { player_id: string; name: string; position: string; team: string; first_season: number; last_season: number; games: number; headshot: string | null; jersey_number: string | null; status: string | null; }
 export interface Player extends PlayerLite { birth_date: string | null; height: number | null; weight: number | null; college_name: string | null; draft_year: number | null; draft_round: number | null; draft_pick: number | null; draft_team: string | null; rookie_season: number | null; years_of_experience: number | null; espn_id: string | null; pfr_id: string | null; last_season_ppr: number | null; }
@@ -119,11 +120,13 @@ export interface Splits { role: "rush" | "rec" | "pass"; n_plays: number; since:
 export interface SplitGames { role: string; dim: string; label?: string; games: { game_id: string; season: number; week: number; season_type: string; opponent: string; levels: Record<string, Record<string, number | null>> }[]; }
 export interface TeamMetric { key: string; label: string; fmt: "pct" | "dec1" | "dec2" | "int"; side: "off" | "def"; since: number; note: string; good: "high" | "low" | "none"; }
 export type TeamSeasonRow = Record<string, number | string | null> & { season: number; team: string; games: number; n_teams: number };
-export interface TeamTendencies { team: string; since: number; seasons: TeamSeasonRow[]; games: (Record<string, number | string | boolean | null> & { season: number; week: number; game_id: string; opponent: string; home: boolean })[]; coaches: { season: number; coach: string; games: number; wins: number; losses: number }[]; current_coach: string | null; metrics: TeamMetric[]; }
+export interface TeamTendencies { team: string; since: number; seasons: TeamSeasonRow[]; games: (Record<string, number | string | boolean | null> & { season: number; week: number; game_id: string; opponent: string; home: boolean })[]; coaches: { season: number; coach: string; games: number; wins: number; losses: number }[]; coordinators: { season: number; OC: string | null; DC: string | null }[]; current_coach: string | null; metrics: TeamMetric[]; }
 export interface LeagueTendencies { season: number; teams: TeamSeasonRow[]; metrics: TeamMetric[]; coaches: Record<string, string>; }
-export interface CoachSummary { coach: string; first_season: number; last_season: number; seasons: number; games: number; wins: number; losses: number; teams: string[]; current_team: string | null; }
+export type CoachRoleKey = "HC" | "OC" | "DC";
+export interface CoachRole { key: CoachRoleKey; label: string; sides: string[]; attribution: "game" | "season"; }
+export interface CoachSummary { role: CoachRoleKey; coach: string; first_season: number; last_season: number; seasons: number; games: number; wins: number; losses: number; teams: string[]; current_team: string | null; has_history: boolean; }
 export interface Fingerprint { key: string; label: string; side: string; fmt: string; good: string; mean_pct: number; seasons: number; top_third: number; bottom_third: number; career: number | null; }
-export interface CoachProfile { coach: string; current_team: string | null; seasons: (TeamSeasonRow & { coach: string; win: number; loss: number; tie: number; ppg: number | null; opp_ppg: number | null })[]; career: Record<string, number | null>; fingerprint: Fingerprint[]; metrics: TeamMetric[]; }
+export interface CoachProfile { coach: string; role: CoachRoleKey; role_label: string; sides: string[]; attribution: "game" | "season"; also: { role: CoachRoleKey; label: string; seasons: number; first_season: number; last_season: number }[]; current_team: string | null; seasons: (TeamSeasonRow & { coach: string; win: number; loss: number; tie: number; ppg: number | null; opp_ppg: number | null })[]; career: Record<string, number | null>; fingerprint: Fingerprint[]; metrics: TeamMetric[]; }
 
 export interface MatchupSide { team: string; season: TeamSeasonRow | null; last4: Record<string, number | null> | null; coach: string | null; }
 export interface Matchup { season_used: number; team: MatchupSide; opponent: MatchupSide; metrics: TeamMetric[]; }
@@ -134,8 +137,8 @@ export const api2 = {
   splitGames: ep<SplitGames>()((id: string, role: string, dim: string, since: number) => `/api/players/${id}/splits/games${qs({ role, dim, since })}`),
   teamTendencies: ep<TeamTendencies>()((team: string, since: number, season_type = "REG") => `/api/teams/${team}/tendencies${qs({ since, season_type })}`),
   league: ep<LeagueTendencies>()((season: number) => `/api/tendencies/league${qs({ season })}`),
-  coaches: ep<CoachSummary[]>()(() => "/api/coaches"),
-  coach: ep<CoachProfile>()((name: string) => `/api/coaches/${encodeURIComponent(name)}`),
+  coaches: ep<CoachSummary[]>()((role: string = "HC") => `/api/coaches?role=${role}`),
+  coach: ep<CoachProfile>()((name: string, role: string = "HC") => `/api/coaches/${encodeURIComponent(name)}?role=${role}`),
 };
 
 // --- context: defense vs position, usage, injuries --------------------------
@@ -151,7 +154,7 @@ export const api3 = {
   matchup: ep<Matchup & { dvp?: Dvp }>()((team: string, opponent: string, position?: string | null) => `/api/matchup${qs({ team, opponent, position })}`),
   dvp: ep<DvpLeague>()((team: string, position: string, season: number) => `/api/teams/${team}/dvp${qs({ position, season })}`),
   usage: ep<{ team: string; season: number; rows: UsageRow[] }>()((team: string, season: number) => `/api/teams/${team}/usage${qs({ season })}`),
-  coachUsage: ep<{ coach: string; rows: CoachUsageRow[] }>()((name: string) => `/api/coaches/${encodeURIComponent(name)}/usage`),
+  coachUsage: ep<{ coach: string; rows: CoachUsageRow[] }>()((name: string, role: string = "HC") => `/api/coaches/${encodeURIComponent(name)}/usage?role=${role}`),
   playerInjuries: ep<{ rows: InjuryRow[] }>()((id: string) => `/api/players/${id}/injuries`),
   teamInjuries: ep<{ team: string; season: number; week: number; latest_week_available: number | null; rows: InjuryRow[] }>()((team: string, season?: number, week?: number) => `/api/teams/${team}/injuries${qs({ season, week })}`),
 };

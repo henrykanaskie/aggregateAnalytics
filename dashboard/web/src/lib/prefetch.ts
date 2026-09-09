@@ -59,9 +59,12 @@ export function warmAll(meta: Meta, settings: Settings): void {
   urls.push(api2.league.url(leagueSeason));
   urls.push(api3.dvp.url("ALL", readSticky("dvp.pos", "RB"), leagueSeason));   // the table under the Teams page
 
-  urls.push(api2.coaches.url());
+  // The tab remembers which role it was left on, so warm that list rather than
+  // always the head coaches.
+  const role = lastParam("/coaches", "role") ?? "HC";
+  urls.push(api2.coaches.url(role));
   const coach = lastParam("/coaches", "coach");
-  if (coach) urls.push(api2.coach.url(coach), api3.coachUsage.url(coach));
+  if (coach) urls.push(api2.coach.url(coach, role), role === "DC" ? null : api3.coachUsage.url(coach, role));
 
   urls.push(api.predictions.url(undefined, week("predictions.week")));
   urls.push(api5.gradeSummary.url(readSticky<number | null>("results.season", null) ?? undefined));
