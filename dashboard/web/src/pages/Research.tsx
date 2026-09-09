@@ -22,6 +22,7 @@ import InjuryPanel from "../components/InjuryPanel";
 import { importantStats } from "../lib/focus";
 import TeammatesPanel from "../components/TeammatesPanel";
 import CorrelationsPanel from "../components/CorrelationsPanel";
+import PlayerScatter from "../components/PlayerScatter";
 import { api5, DvpFactors } from "../api";
 
 export default function Research() {
@@ -213,6 +214,10 @@ export default function Research() {
               </div>
               <div className="panel"><StatTiles rows={filtered} allRows={allRows} statKey={statKey} stat={stat} line={line} /></div>
               <div className="panel"><GameLogTable rows={filtered} columns={columns} setColumns={setColumns} statKey={statKey} line={line} available={log?.available} position={player.position} picked={picked} onPick={(id) => setPicked((p) => (p === id ? null : id))} important={important} /></div>
+              <div className="panel">
+                <div className="panel-head"><h3>Among {player.position}s · {stat?.label ?? statKey} vs the volume behind it</h3><span className="hint">the highlighted face is {player.name.split(" ").slice(-1)[0]}; dashed lines are position averages</span></div>
+                <PlayerScatter playerId={pid} position={player.position} statKey={statKey} season={(meta?.season ?? 2026) - 1} />
+              </div>
               <div className="panel"><MiniCharts rows={filtered} keys={miniKeys} setKeys={setMiniKeys} available={log?.available} position={player.position} onFocus={chooseStat} /></div>
               <div className="panel">
                 <div className="panel-head"><h3>With / without teammates · {stat?.label ?? statKey}{line !== null ? ` vs ${line}` : ""}</h3></div>

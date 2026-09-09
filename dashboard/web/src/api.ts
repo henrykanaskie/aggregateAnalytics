@@ -162,3 +162,9 @@ export const api5 = {
   gradeRun: async (season: number, week: number, include_sample = false) => { const r = await fetch("/api/grading/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ season, week, include_sample }) }); return r.json() as Promise<{ graded: number }>; },
   logBaseline: async (season?: number, week?: number) => { const r = await fetch("/api/projections/log", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ season, week }) }); return r.json() as Promise<{ logged: number; week: number }>; },
 };
+
+// --- scatter ---------------------------------------------------------------------
+export type ScatterRow = Record<string, number | string | null> & { player_id: string; name: string; team: string; position: string; games: number; headshot: string | null };
+export const api6 = {
+  scatterPlayers: (season: number, position: string, min_games = 4) => get<{ season: number; position: string; rows: ScatterRow[] }>(`/api/scatter/players${qs({ season, position, min_games })}`),
+};
