@@ -210,3 +210,55 @@ def alerts(rows: list[dict], season: int, week: int, scale: float = 1.0) -> list
                         "title": f"{r['player_name']} is {status}", "detail": f"{i.get('report_primary_injury') or ''} · {i.get('practice_status') or ''}".strip(" ·")})
     out.sort(key=lambda a: (-a["severity"], a["kind"], a["player"] or ""))
     return out
+
+
+# --- league-wide player scatter --------------------------------------------------
+
+def player_scatter(season: int, position: str, min_games: int = 4, season_type: str = "REG") -> list[dict]:
+    """One row per player at the position for a season: per-game averages for
+    counting stats, ratio stats computed from season totals, plus snap share.
+    Feeds the peer-comparison scatter charts."""
+    from .catalog import RAW_STAT_COLUMNS, STATS
+    from .context import POS_GROUPS
+    pos_list = POS_GROUPS.get(position, [position])
+    lf = (
+        scan("player_stats_week")
+        .filter((pl.col("season") == season) & pl.col("position").is_in(pos_list))
+    )
+    if season_type in ("REG", "POST"):
+        lf = lf.filter(pl.col("season_type") == season_type)
+    totals = (
+        lf.group_by("player_id")
+        .agg([pl.col("player_display_name").last().alias("name"), pl.col("team").last().alias("team"),
+              pl.col("position").last().alias("position"), pl.len().alias("games"),
+              pl.col("headshot_url").drop_nulls().last().alias("headshot")]
+             + [pl.col(c).sum().alias(c) for c in RAW_STAT_COLUMNS if c not in ("target_share", "air_yards_share", "wopr", "racr", "pacr", "passing_cpoe")]
+             + [pl.col(c).mean().alias(c) for c in ("target_share", "air_yards_share", "wopr", "racr", "pacr", "passing_cpoe")])
+        .filter(pl.col("games") >= min_games)
+        .collect()
+    )
+    if totals.is_empty():
+        return []
+    derived = [s for s in STATS if s.expr is not None]
+    totals = totals.with_columns([s.expr.alias(s.key) for s in derived])
+    per_game = [s.key for s in STATS if s.expr is None and s.key in totals.columns and s.fmt in ("int", "dec1", "dec2")
+                and s.key not in ("target_share", "air_yards_share", "wopr", "racr", "pacr", "passing_cpoe")]
+    # Derived sums (rush_rec_yards, touches...) are totals too; ratios are already ratios.
+    sum_like = {s.key for s in derived if s.fmt == "int"}
+    totals = totals.with_columns([(pl.col(k) / pl.col("games")).alias(k) for k in per_game + sorted(sum_like)])
+    # snap share
+    try:
+        ids = players_master().select(pl.col("pfr_id").alias("pfr_player_id"), pl.col("gsis_id").alias("player_id"))
+        snaps = (
+            scan("snap_counts").filter((pl.col("season") == season) & (pl.col("game_type") == "REG"))
+            .group_by("pfr_player_id").agg(pl.col("offense_pct").mean().alias("snap_offense_pct")).collect()
+            .join(ids, on="pfr_player_id", how="inner").drop("pfr_player_id")
+        )
+        totals = totals.join(snaps, on="player_id", how="left")
+    except FileNotFoundError:
+        pass
+    keep = ["player_id", "name", "team", "position", "games", "headshot"] + [c for c in totals.columns if c in {s.key for s in STATS}]
+    out = []
+    for r in totals.select(keep).to_dicts():
+        out.append({k: (None if isinstance(v, float) and v != v else v) for k, v in r.items()})
+    return out

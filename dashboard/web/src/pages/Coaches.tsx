@@ -7,6 +7,8 @@ import { Banner, Field, Seg, Spinner, TeamTag } from "../components/common";
 import { fmtStat } from "../lib/format";
 import { useMeta } from "../state";
 import { rankClass } from "./Teams";
+import ScatterPlot from "../components/ScatterPlot";
+import { fmtStat as fmtS } from "../lib/format";
 
 export default function Coaches() {
   const { meta } = useMeta();
@@ -18,6 +20,8 @@ export default function Coaches() {
   const [side, setSide] = useState<"off" | "def">("off");
   const [q, setQ] = useState("");
   const [onlyActive, setOnlyActive] = useState(true);
+  const [sx, setSx] = useState("pass_rate");
+  const [sy, setSy] = useState("sec_per_play");
   const [err, setErr] = useState<string | null>(null);
   useEffect(() => { api2.coaches().then(setList).catch((e) => setErr(String(e))); }, []);
   useEffect(() => { if (name) { setProf(null); setUsage([]); api2.coach(name).then(setProf).catch((e) => setErr(String(e))); api3.coachUsage(name).then((d) => setUsage(d.rows)).catch(() => setUsage([])); } }, [name]);
@@ -79,6 +83,16 @@ export default function Coaches() {
                   </table></div>
                 </div>
               )}
+              <div className="panel">
+                <div className="panel-head"><h3>Seasons as dots</h3>
+                  <div className="controls">
+                    <Field label="X"><select className="input" value={sx} onChange={(e) => setSx(e.target.value)}>{(prof.metrics ?? []).map((m) => <option key={m.key} value={m.key}>{m.side === "def" ? "DEF · " : ""}{m.label}</option>)}</select></Field>
+                    <Field label="Y"><select className="input" value={sy} onChange={(e) => setSy(e.target.value)}>{(prof.metrics ?? []).map((m) => <option key={m.key} value={m.key}>{m.side === "def" ? "DEF · " : ""}{m.label}</option>)}</select></Field>
+                  </div>
+                </div>
+                {(() => { const mx = prof.metrics.find((m) => m.key === sx), my = prof.metrics.find((m) => m.key === sy); const dots = prof.seasons.map((s) => ({ id: `${s.season}-${s.team}`, label: `${s.season} ${s.team}`, x: s[sx] as number | null, y: s[sy] as number | null, sub: `${s.win}-${s.loss}`, extra: { [`${mx?.label ?? sx} rank`]: (s[`${sx}_rank`] as number) ?? null, [`${my?.label ?? sy} rank`]: (s[`${sy}_rank`] as number) ?? null } })); return <ScatterPlot dots={dots} xLabel={`${mx?.label ?? sx}${sx === "sec_per_play" ? " (higher = slower)" : ""}`} yLabel={`${my?.label ?? sy}${sy === "sec_per_play" ? " (higher = slower)" : ""}`} xFmt={(v) => fmtS(v, (mx?.fmt ?? "dec1") as any)} yFmt={(v) => fmtS(v, (my?.fmt ?? "dec1") as any)} showLabels="all" height={300} />; })()}
+                <div className="hint">Each dot is one of the coach's seasons; the dashed lines are his own career averages. A tight cluster is an identity, a drift is a coach who changed.</div>
+              </div>
               <div className="panel">
                 <div className="panel-head"><h3>Season by season · {side === "off" ? "offense" : "defense"}</h3><span className="hint">rank shown small; green/red = top/bottom quarter where direction matters · <span className="scroll-hint">scroll sideways for all {metrics.length} metrics</span></span></div>
                 <div className="tbl-wrap">

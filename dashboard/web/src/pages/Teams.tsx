@@ -6,6 +6,7 @@ import { api2, LeagueTendencies, TeamMetric, TeamTendencies } from "../api";
 import { Banner, Field, Seg, Spinner, TeamTag } from "../components/common";
 import { fmtStat } from "../lib/format";
 import { useMeta } from "../state";
+import TeamScatter from "../components/TeamScatter";
 import UsageTree from "../components/UsageTree";
 import DvpTable from "../components/DvpTable";
 
@@ -115,6 +116,12 @@ export default function Teams() {
       )}
       {!team && (
         <div className="panel" style={{ marginBottom: 14 }}><DvpTable season={league?.season ?? (meta?.season ?? 2026) - 1} onPick={(t) => setSp({ team: t })} /></div>
+      )}
+      {league && (
+        <div className="panel" style={{ marginBottom: 14 }}>
+          <div className="panel-head"><h3>League scatter · {league.season}</h3><span className="hint">where every team sits on two tendencies at once{team ? `, ${team} highlighted` : ""}</span></div>
+          <TeamScatter league={league} highlight={team ? [team] : []} onPick={(t) => setSp({ team: t })} />
+        </div>
       )}
       <div className="panel">
         <div className="panel-head">

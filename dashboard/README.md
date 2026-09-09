@@ -91,6 +91,14 @@ use; the store is what makes "opening line vs. now" possible later.
   the board (line moves, outlier books, injury designations), and a warning
   when a player has changed teams.
 
+## Scatter views
+
+Teams page: every team as its logo on any two tendencies (presets such as
+pace vs plays per game, pass rate vs PROE, pressure vs blitz), league
+averages as crosshairs, quadrants labelled in words. Research page: the
+player among position peers for a season, headshots as markers. Coaches
+page: a coach's seasons as dots around his career averages.
+
 ## Automation
 
 `dashboard/scripts/daily.sh` pulls lines, logs the baseline, grades last week,

@@ -237,6 +237,12 @@ def player_correlations(player_id: str, stat: str, since: int | None = None):
     return {"stat": stat, "rows": ex_mod.correlations(player_id, stat, since)}
 
 
+@app.get("/api/scatter/players")
+def scatter_players(season: int = CURRENT_SEASON - 1, position: str = "WR", min_games: int = 4):
+    """League-wide per-game numbers for one position and season, for peer scatter charts."""
+    return {"season": season, "position": position.upper(), "rows": ex_mod.player_scatter(season, position.upper(), min_games)}
+
+
 @app.get("/api/dvp/factors")
 def dvp_factors_api(position: str, stat: str, since: int = 2016):
     return ex_mod.dvp_factors(position.upper(), stat, since)
