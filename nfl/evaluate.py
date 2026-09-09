@@ -209,6 +209,45 @@ def margin_to_win_prob(margin: Vector | float, sigma: float) -> pl.Series | floa
     )
 
 
+def fit_win_prob_sigma(
+    pred_margin: Vector, margin: Vector, *,
+    lo: float = 5.0, hi: float = 20.0, passes: int = 3, steps: int = 15,
+) -> float:
+    """Scale that best turns a predicted margin into a win probability.
+
+    NOT the residual sd of margin. That is the natural guess and it is wrong,
+    measurably so: on 2020-2025 this model's residual sd is 13.1 while the
+    Brier-optimal scale is about 11.0, and using the former makes every stated
+    probability too timid.
+
+    They differ because they answer different questions. Residual sd describes
+    the spread of *errors*; this fits the scale that best predicts a binary
+    *outcome*. NFL margins are discrete, spike hard at 3 and 7, and have fatter
+    tails than a normal, so the normal that best matches the error distribution
+    is not the normal that best separates wins from losses.
+
+    Ties are dropped: a draw has no binary outcome to score against.
+
+    Fitted by successive refinement rather than a closed form, because Brier as
+    a function of sigma has no analytic minimiser here. It is smooth and
+    unimodal over any sensible range, so a few passes suffice.
+    """
+    p, m = _paired(pred_margin, margin)
+    keep = m != 0
+    p, o = p.filter(keep), (m.filter(keep) > 0).cast(pl.Float64)
+    if len(p) == 0:
+        raise ValueError("no decided games to fit a probability scale on")
+
+    best = lo
+    for _ in range(passes):
+        grid = [lo + (hi - lo) * i / (steps - 1) for i in range(steps)]
+        scores = [brier(margin_to_win_prob(p, sigma=g), o) for g in grid]
+        i = min(range(steps), key=scores.__getitem__)
+        best, step = grid[i], (hi - lo) / (steps - 1)
+        lo, hi = max(best - step, 1e-6), best + step
+    return best
+
+
 # --------------------------------------------------------------------------
 # Baselines
 # --------------------------------------------------------------------------
