@@ -38,12 +38,20 @@ def test_unconfigured_password_refuses_everything(monkeypatch):
 def test_api_is_401_before_login(client):
     r = client.get("/api/board")
     assert r.status_code == 401
-    assert r.headers["X-Login-Url"] == "/login"
+    assert r.headers["X-Login-Url"] == "/password"
 
 
-def test_index_is_gated_but_login_page_is_open(client):
-    assert client.get("/").status_code == 401
-    r = client.get("/login")
+def test_browser_navigation_is_redirected_to_the_password_box(client):
+    """A person, not a fetch: Accept says text/html, so they are sent to the
+    box rather than shown a JSON error. Nothing of the page is served."""
+    r = client.get("/", headers={"Accept": "text/html,*/*"}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/password"
+    r = client.get("/api/board", headers={"Accept": "text/html"}, follow_redirects=False)
+    assert r.status_code == 303
+
+
+def test_password_page_is_open(client):
+    r = client.get("/password")
     assert r.status_code == 200
     assert b"<form" in r.content
 
@@ -65,7 +73,7 @@ def test_login_sets_cookie_and_opens_the_api(client):
 
 def test_logged_in_visitor_to_login_page_is_sent_home(client):
     client.post("/api/auth/login", json={"password": PW})
-    r = client.get("/login", follow_redirects=False)
+    r = client.get("/password", follow_redirects=False)
     assert r.status_code == 303 and r.headers["location"] == "/"
 
 
