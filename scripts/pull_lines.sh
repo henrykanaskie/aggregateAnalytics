@@ -7,10 +7,12 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# ESPN (DraftKings lines, free) always; The Odds API too when a key is set.
-# `--source all` reports a failure for either provider as a non-zero exit, so
-# choose explicitly rather than let a missing key fail the run.
-if [ -n "${ODDS_API_KEY:-}" ]; then
+# ESPN only (DraftKings lines, free, no key). The Odds API is deliberately
+# NOT on the schedule: its free tier is 500 credits a month and one default
+# pull is ~115, so four a day would exhaust it on day one. Spend those credits
+# by hand from the Settings page, which shows the cost before pulling.
+# To put it on the schedule anyway (paid tier), set ODDS_API_SCHEDULED=1.
+if [ -n "${ODDS_API_KEY:-}" ] && [ "${ODDS_API_SCHEDULED:-0}" = "1" ]; then
   PULL_CMD="python -m dashboard.odds.pull --source all"
 else
   PULL_CMD="python -m dashboard.odds.pull --source espn"
