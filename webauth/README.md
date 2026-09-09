@@ -49,6 +49,12 @@ of the app is served. (If you had `StaticFiles(..., html=True)` mounted at
     await fetch('/api/auth/logout', { method: 'POST' });
     window.location.replace('/password');
 
+**4. Odds sync**, next to the password lines, so the deployed app picks up
+snapshots the lines workflow commits without a rebuild:
+
+    from data_handling import sync_odds
+    sync_odds.install(app)
+
 Then delete `webauth/mock_app.py`; nothing else imports it.
 
 ## Environment
@@ -64,17 +70,10 @@ ignored by the dashboard's own config.
 
 ## Hosting
 
-The dashboard keeps odds snapshots under `data/odds/` and derived tables
-under `data/derived/`, pulls from ESPN on a schedule, and rebuilds team
-tendencies in about 45 seconds. That is a long-running process with a disk,
-which rules out request-scoped function hosts (Vercel, Netlify) for this
-app. Use a host that runs a process and mounts a volume: Render, Fly.io or
-Railway. Start command on any of them:
-
-    uvicorn dashboard.api.app:app --host 0.0.0.0 --port $PORT
-
-The cookie is marked `Secure` whenever the request arrives over HTTPS
-(directly or via `X-Forwarded-Proto`), which all three hosts set.
+Render's free web service, via `render.yaml`. The full pipeline (scheduled
+pulls in GitHub Actions, the cache on a Release, the in-app odds sync) is in
+[DEPLOY.md](../DEPLOY.md). The cookie is marked `Secure` whenever the request
+arrives over HTTPS, directly or via `X-Forwarded-Proto`, which Render sets.
 
 ## What it is and is not
 
