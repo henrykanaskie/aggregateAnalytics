@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, api4, Angle, DefPlayer, GameMatchup, MatchupSideFull, ScheduleGame, TeamMetric } from "../api";
 import { Banner, Field, Headshot, SampleBanner, Spinner, TeamTag } from "../components/common";
 import { fmtLine, fmtOdds, fmtPct, fmtSpread, fmtStat } from "../lib/format";
+import { useSticky } from "../lib/sticky";
+import { useQuery } from "../lib/useQuery";
 import { useMeta } from "../state";
 import { rankClass } from "./Teams";
 
@@ -14,17 +16,10 @@ export default function Matchups() {
   const { meta, settings } = useMeta();
   const [sp, setSp] = useSearchParams();
   const gameId = sp.get("game") ?? "";
-  const [week, setWeek] = useState<number | null>(null);
-  const [games, setGames] = useState<ScheduleGame[]>([]);
-  const [data, setData] = useState<GameMatchup | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  useEffect(() => { if (meta) api.schedule(meta.season, week ?? meta.week).then(setGames); }, [meta, week]);
-  useEffect(() => {
-    if (!gameId) { setData(null); return; }
-    setLoading(true); setErr(null);
-    api4.gameMatchup(gameId, settings.includeSample).then(setData).catch((e) => setErr(String(e))).finally(() => setLoading(false));
-  }, [gameId, settings.includeSample]);
+  const [week, setWeek] = useSticky<number | null>("matchups.week", null);
+  const { data: schedule } = useQuery<ScheduleGame[]>(meta ? api.schedule.url(meta.season, week ?? meta.week) : null);
+  const games = schedule ?? [];
+  const { data, loading, error: err } = useQuery<GameMatchup>(gameId ? api4.gameMatchup.url(gameId, settings.includeSample) : null);
   const weeks = Array.from({ length: 22 }, (_, i) => i + 1);
   if (meta && !meta.team_table_ready) return <Banner kind="warn">The team tendency table is not built yet. Run <code>python -m dashboard.stats.team</code> and reload.</Banner>;
   return (

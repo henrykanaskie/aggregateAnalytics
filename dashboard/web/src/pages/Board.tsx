@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, Board as BoardT, BoardRow } from "../api";
 import { Field, SampleBanner, Seg, SourceNote, Spinner } from "../components/common";
+import { useSticky } from "../lib/sticky";
+import { useQuery } from "../lib/useQuery";
 import { fmtDelta, fmtLine, fmtOdds, fmtPct } from "../lib/format";
 import { useMeta } from "../state";
 
@@ -41,29 +43,27 @@ function AlertsPanel({ alerts, onPick }: { alerts: import("../api").Alert[]; onP
 export default function Board() {
   const { meta, settings } = useMeta();
   const nav = useNavigate();
-  const [week, setWeek] = useState<number | null>(null);
-  const [data, setData] = useState<BoardT | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [markets, setMarkets] = useState<string[]>([]);
-  const [pos, setPos] = useState("");
-  const [team, setTeam] = useState("");
-  const [book, setBook] = useState("");
-  const [q, setQ] = useState("");
-  const [onlyFlag, setOnlyFlag] = useState(false);
-  const [minL10, setMinL10] = useState(0);
-  const [sort, setSort] = useState<{ k: SortKey; d: 1 | -1 }>({ k: "spread", d: -1 });
-  const [scale, setScale] = useState(settings.thresholdScale);
+  // Filters live in sticky state: leaving the board and coming back should land
+  // on the same view, not a reset one.
+  const [week, setWeek] = useSticky<number | null>("board.week", null);
+  const [markets, setMarkets] = useSticky<string[]>("board.markets", []);
+  const [pos, setPos] = useSticky("board.pos", "");
+  const [team, setTeam] = useSticky("board.team", "");
+  const [book, setBook] = useSticky("board.book", "");
+  const [q, setQ] = useSticky("board.q", "");
+  const [onlyFlag, setOnlyFlag] = useSticky("board.onlyFlag", false);
+  const [minL10, setMinL10] = useSticky("board.minL10", 0);
+  const [sort, setSort] = useSticky<{ k: SortKey; d: 1 | -1 }>("board.sort", { k: "spread", d: -1 });
+  const [scale, setScale] = useSticky("board.scale", settings.thresholdScale);
+
+  const { data, loading, stale } = useQuery<BoardT>(meta ? api.board.url({ week: week ?? meta.week, include_sample: settings.includeSample, scale }) : null);
 
   useEffect(() => {
-    if (!meta) return;
-    setLoading(true);
-    api.board({ week: week ?? meta.week, include_sample: settings.includeSample, scale }).then((d) => {
-      setData(d);
-      // With a single book there is no spread between books to sort by; line movement is the interesting column.
-      const multi = d.rows.some((r) => r.n_books > 1);
-      setSort((s) => (s.k === "spread" && !multi ? { k: "moved", d: -1 } : s.k === "moved" && multi ? { k: "spread", d: -1 } : s));
-    }).finally(() => setLoading(false));
-  }, [meta, week, settings.includeSample, scale]);
+    if (!data) return;
+    // With a single book there is no spread between books to sort by; line movement is the interesting column.
+    const multi = data.rows.some((r) => r.n_books > 1);
+    setSort((s) => (s.k === "spread" && !multi ? { k: "moved", d: -1 } : s.k === "moved" && multi ? { k: "spread", d: -1 } : s));
+  }, [data]);
 
   const books = useMemo(() => {
     const set = new Set<string>();
@@ -128,7 +128,7 @@ export default function Board() {
         </div>
       </div>
       <div className="panel">
-        <div className="panel-head"><h3>{rows.length} props{loading && <> <Spinner /></>}</h3><span className="hint">click a row to research the player</span></div>
+        <div className="panel-head"><h3>{rows.length} props{(loading || stale) && <> <Spinner /></>}</h3><span className="hint">click a row to research the player</span></div>
         {!loading && rows.length === 0 && <div className="empty">No lines for this week. Pull one from Settings, ESPN is free and needs no key.</div>}
         <div className="tbl-wrap" style={{ maxHeight: "72vh" }}>
           <table className="tbl compact tight">

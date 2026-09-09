@@ -1,27 +1,29 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { api5, GradeSummary } from "../api";
 import { Banner, Field, Spinner } from "../components/common";
 import { fmtPct } from "../lib/format";
+import { useSticky } from "../lib/sticky";
+import { useQuery } from "../lib/useQuery";
 import { useMeta } from "../state";
 
 export default function Results() {
   const { meta } = useMeta();
-  const [data, setData] = useState<GradeSummary | null>(null);
-  const [season, setSeason] = useState<number | null>(null);
+  const [season, setSeason] = useSticky<number | null>("results.season", null);
   const [busy, setBusy] = useState(false);
-  const [week, setWeek] = useState<number | "">("");
+  const [week, setWeek] = useSticky<number | "">("results.week", "");
   const [msg, setMsg] = useState<string | null>(null);
-  const load = () => api5.gradeSummary(season ?? undefined).then(setData);
-  useEffect(() => { load(); }, [season]);
+  // Grading rewrites the log, so the POST drops the cached summary and this
+  // pulls the new one.
+  const { data, reload: load } = useQuery<GradeSummary>(api5.gradeSummary.url(season ?? undefined));
   const run = async () => {
     if (!meta) return; setBusy(true); setMsg(null);
     try {
       const w = week === "" ? Math.max(1, meta.week - 1) : week;
       const r = await api5.gradeRun(season ?? meta.season, w);
-      setMsg(`Graded ${r.graded} lines for ${season ?? meta.season} week ${w}.`); await load();
+      setMsg(`Graded ${r.graded} lines for ${season ?? meta.season} week ${w}.`); load();
     } finally { setBusy(false); }
   };
-  const logBase = async () => { setBusy(true); try { const r = await api5.logBaseline(); setMsg(`Logged ${r.logged} baseline projections for week ${r.week}.`); } finally { setBusy(false); } };
+  const logBase = async () => { setBusy(true); try { const r = await api5.logBaseline(); setMsg(`Logged ${r.logged} baseline projections for week ${r.week}.`); load(); } finally { setBusy(false); } };
   const Rate = ({ v, good = 0.55 }: { v: number | null; good?: number }) => <span className={v === null ? "muted" : v >= good ? "over" : v <= 1 - good ? "under" : ""}>{fmtPct(v, 1)}</span>;
   return (
     <div>

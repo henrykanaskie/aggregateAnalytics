@@ -1,22 +1,24 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { api, OddsStatus, PullResult, signOut } from "../api";
 import { Field, Seg, Spinner } from "../components/common";
+import { useSticky } from "../lib/sticky";
+import { useQuery } from "../lib/useQuery";
 import { useMeta } from "../state";
 
 export default function Settings() {
   const { meta, settings, setSettings, reloadMeta } = useMeta();
-  const [status, setStatus] = useState<OddsStatus | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [result, setResult] = useState<PullResult | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [week, setWeek] = useState<number | "">("");
-  const [markets, setMarkets] = useState<string[]>(["player_pass_yds", "player_pass_tds", "player_rush_yds", "player_rush_attempts", "player_reception_yds", "player_receptions", "player_anytime_td"]);
-  const [maxCredits, setMaxCredits] = useState(250);
-  const refresh = () => api.status().then(setStatus);
-  useEffect(() => { refresh(); }, []);
+  const [week, setWeek] = useSticky<number | "">("settings.week", "");
+  const [markets, setMarkets] = useSticky<string[]>("settings.markets", ["player_pass_yds", "player_pass_tds", "player_rush_yds", "player_rush_attempts", "player_reception_yds", "player_receptions", "player_anytime_td"]);
+  const [maxCredits, setMaxCredits] = useSticky("settings.maxCredits", 250);
+  const { data: status, reload: refresh } = useQuery<OddsStatus>(api.status.url());
   const pull = async (source: string, extra: Record<string, any> = {}) => {
     setBusy(source); setErr(null); setResult(null);
-    try { setResult(await api.pull({ source, week: week === "" ? null : week, ...extra })); await refresh(); reloadMeta(); }
+    // api.pull drops every cached view built on the snapshot store, so the
+    // refresh below and the next visit to any lines page read the new pull.
+    try { setResult(await api.pull({ source, week: week === "" ? null : week, ...extra })); refresh(); reloadMeta(); }
     catch (e: any) { setErr(String(e.message ?? e)); }
     finally { setBusy(null); }
   };
