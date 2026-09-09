@@ -78,6 +78,26 @@ use; the store is what makes "opening line vs. now" possible later.
   ball each season (lead RB carry share, RB2 share, WR1/TE1 target share).
 - **Predictions**: reads `data/predictions.parquet` (games) and
   `data/derived/prop_predictions.parquet` (players, schema on the page).
+- **Results**: closing lines and logged predictions graded against the box
+  score: over rate and error by book and market, whether the L5/L10 signals
+  and line moves were predictive, and each model's side hit rate and error
+  against the line's. `POST /api/grading/run` or the daily script.
+- **Baseline projection** (`baseline-v1`): recency-weighted mean of the last
+  12 games times an opponent factor from the defense-vs-position table, with
+  a spread and P(over). Shown on the board and research page, logged through
+  the prediction contract so it is graded like any model.
+- **Research extras**: with / without each key teammate (from snap counts),
+  same-game correlations for parlays, an opponent-adjusted toggle, alerts on
+  the board (line moves, outlier books, injury designations), and a warning
+  when a player has changed teams.
+
+## Automation
+
+`dashboard/scripts/daily.sh` pulls lines, logs the baseline, grades last week,
+and on Tuesdays refreshes the season's nflverse tables and rebuilds the team
+table. Install it at 08:00 and 20:00 with `dashboard/scripts/install_launchd.sh`
+(macOS; cron is blocked without Full Disk Access) or `install_cron.sh`. It
+logs to `data/odds/automation.log`.
 
 ## Known limits
 

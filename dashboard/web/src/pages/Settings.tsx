@@ -56,6 +56,10 @@ export default function Settings() {
           </div>
           {err && <div className="banner err" style={{ marginTop: 10 }}>{err}</div>}
           {result && <pre style={{ marginTop: 10 }}>{[`${result.source}: ${result.props} prop rows (${result.matched} with player ids), ${result.games} game-line rows`, ...result.log].join("\n")}</pre>}
+          <div className="panel" style={{ background: "var(--bg-2)", marginTop: 10 }}>
+            <div className="panel-head"><b>Automation</b></div>
+            <div className="small muted"><code>dashboard/scripts/daily.sh</code> pulls lines, logs the baseline projection, grades last week, and on Tuesdays refreshes nflverse data and rebuilds the team table. Install it to run at 08:00 and 20:00 with <code>dashboard/scripts/install_launchd.sh</code> (macOS) or <code>install_cron.sh</code>. Output goes to <code>data/odds/automation.log</code>.</div>
+          </div>
           <div className="hint" style={{ marginTop: 10 }}>From a terminal or cron: <code>python -m dashboard.odds.pull --source espn</code> (add <code>--source oddsapi --markets …</code> for the multi-book feed).</div>
         </div>
         <div className="grid" style={{ alignContent: "start" }}>

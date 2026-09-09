@@ -1,0 +1,24 @@
+#!/bin/bash
+# macOS alternative to cron (cron needs Full Disk Access on recent macOS).
+# Installs a per-user launchd agent that runs daily.sh at 08:00 and 20:00.
+# Remove with: launchctl bootout gui/$(id -u)/com.nfl-predictor.dashboard; rm ~/Library/LaunchAgents/com.nfl-predictor.dashboard.plist
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+PLIST="$HOME/Library/LaunchAgents/com.nfl-predictor.dashboard.plist"
+mkdir -p "$HOME/Library/LaunchAgents"
+cat > "$PLIST" <<PL
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.nfl-predictor.dashboard</string>
+  <key>ProgramArguments</key><array><string>/bin/bash</string><string>$ROOT/dashboard/scripts/daily.sh</string></array>
+  <key>WorkingDirectory</key><string>$ROOT</string>
+  <key>StartCalendarInterval</key><array>
+    <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>0</integer></dict>
+  </array>
+  <key>StandardOutPath</key><string>$ROOT/data/odds/automation.log</string>
+  <key>StandardErrorPath</key><string>$ROOT/data/odds/automation.log</string>
+</dict></plist>
+PL
+launchctl bootout "gui/$(id -u)/com.nfl-predictor.dashboard" 2>/dev/null
+launchctl bootstrap "gui/$(id -u)" "$PLIST" && echo "installed: $PLIST" && launchctl print "gui/$(id -u)/com.nfl-predictor.dashboard" | grep -E "state|program" | head -3

@@ -7,6 +7,7 @@ import Research from "./pages/Research";
 import Settings from "./pages/Settings";
 import Teams from "./pages/Teams";
 import Matchups from "./pages/Matchups";
+import Results from "./pages/Results";
 import Coaches from "./pages/Coaches";
 import { MetaProvider, useMeta } from "./state";
 
@@ -25,6 +26,7 @@ function Shell() {
           <NavLink to="/teams">Teams</NavLink>
           <NavLink to="/coaches">Coaches</NavLink>
           <NavLink to="/predictions">Predictions</NavLink>
+          <NavLink to="/results">Results</NavLink>
           <NavLink to="/settings">Settings</NavLink>
         </nav>
         <div className="spacer" />
@@ -42,6 +44,7 @@ function Shell() {
           <Route path="/teams" element={<Teams />} />
           <Route path="/coaches" element={<Coaches />} />
           <Route path="/predictions" element={<Predictions />} />
+          <Route path="/results" element={<Results />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>
       </main>
