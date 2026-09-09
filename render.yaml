@@ -29,9 +29,9 @@ services:
       - key: NFL_DATA_DIR
         value: /opt/render/project/src/data
       - key: CACHE_REPO
-        value: henrykanaskie/nfl_predictor
+        value: henrykanaskie/aggregateAnalytics
       - key: ODDS_REPO
-        value: henrykanaskie/nfl_predictor
+        value: henrykanaskie/aggregateAnalytics
       - key: ODDS_REF
         value: main
       # How many days of snapshots this host keeps; older ones are deleted

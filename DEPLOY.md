@@ -84,5 +84,5 @@ build minutes.
     pip install -e ".[dev,dashboard]"
     python scripts/fetch_cache.py            # or run ingest.py yourself
     (cd dashboard/web && npm ci && npm run build)
-    SITE_PASSWORD=x ODDS_REPO=henrykanaskie/nfl_predictor \
+    SITE_PASSWORD=x ODDS_REPO=henrykanaskie/aggregateAnalytics \
       uvicorn dashboard.api.app:app --port 8017
