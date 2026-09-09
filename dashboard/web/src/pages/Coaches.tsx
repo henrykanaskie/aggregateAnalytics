@@ -52,6 +52,8 @@ export default function Coaches() {
   const allMetrics = (prof?.metrics ?? meta?.team_metrics ?? []).filter((m) => sides.includes(m.side));
   const metrics = allMetrics.filter((m) => m.side === side);
   const fp = useMemo(() => (prof?.fingerprint ?? []).filter((f) => f.side === side && f.seasons >= 2), [prof, side]);
+  // Only worth a column when the seasons actually came from more than one job.
+  const mixed = Object.keys(prof?.season_roles ?? {}).length > 1;
   const shown = useMemo(() => list.filter((c) => (!onlyActive || c.current_team) && (!q || c.coach.toLowerCase().includes(q.toLowerCase()))), [list, onlyActive, q]);
   // A coordinator's scatter axes have to come from his own side, or the
   // selector offers him metrics his page cannot plot.
@@ -100,7 +102,7 @@ export default function Coaches() {
                 <div className="panel-head">
                   <div>
                     <h2>{prof.coach}</h2>
-                    <div className="muted small">{prof.role_label} · {prof.current_team ? <>2026: <Link to={`/teams?team=${prof.current_team}`}><TeamTag abbr={prof.current_team} name /></Link> · </> : null}{prof.seasons.length} seasons · {prof.seasons.reduce((a, s) => a + s.win, 0)}-{prof.seasons.reduce((a, s) => a + s.loss, 0)} · teams {[...new Set(prof.seasons.map((s) => s.team))].join(", ")}</div>
+                    <div className="muted small">{prof.role_label} · {prof.current_team ? <>2026: <Link to={`/teams?team=${prof.current_team}`}><TeamTag abbr={prof.current_team} name /></Link> · </> : null}{prof.seasons.length} seasons{mixed ? ` (${Object.entries(prof.season_roles).map(([r, n]) => `${n} as ${r}`).join(", ")})` : ""} · {prof.seasons.reduce((a, s) => a + s.win, 0)}-{prof.seasons.reduce((a, s) => a + s.loss, 0)} · teams {[...new Set(prof.seasons.map((s) => s.team))].join(", ")}</div>
                     {prof.also.filter((a) => a.role !== role).length > 0 && (
                       <div className="hint" style={{ marginTop: 4 }}>Also{" "}
                         {prof.also.filter((a) => a.role !== role).map((a, i) => (
@@ -114,6 +116,7 @@ export default function Coaches() {
                 {prof.attribution === "season" && (
                   <div className="hint" style={{ marginBottom: 8 }}>
                     Coordinator tenures are dated by season, not by game: the source lists each season's final staff, so a mid-season hire owns the whole year and the man he replaced owns none of it. These are the team's full-season numbers.
+                    {(prof.season_roles.HC ?? 0) > 0 && <> His {prof.season_roles.HC} season{prof.season_roles.HC === 1 ? "" : "s"} as a head coach {prof.season_roles.HC === 1 ? "is" : "are"} counted here too: a head coach answers for this side of the ball as much as a coordinator does. The <b>Job</b> column says which is which.</>}
                   </div>
                 )}
                 <h3 style={{ marginBottom: 6 }}>Tendency fingerprint</h3>
@@ -158,9 +161,11 @@ export default function Coaches() {
                 <div className="panel-head"><h3>Season by season · {side === "off" ? "offense" : "defense"}</h3><span className="hint">rank shown small; green/red = top/bottom quarter where direction matters · <span className="scroll-hint">scroll sideways for all {metrics.length} metrics</span></span></div>
                 <div className="tbl-wrap">
                   <table className="tbl wide">
-                    <thead><tr><th className="left">Season</th><th className="left">Team</th><th>W-L</th><th>PPG</th>{metrics.map((m) => <th key={m.key} title={m.note || undefined}>{m.label}</th>)}</tr></thead>
+                    <thead><tr><th className="left">Season</th><th className="left">Team</th>{mixed && <th className="left">Job</th>}<th>W-L</th><th>PPG</th>{metrics.map((m) => <th key={m.key} title={m.note || undefined}>{m.label}</th>)}</tr></thead>
                     <tbody>{prof.seasons.slice().reverse().map((s) => (
-                      <tr key={`${s.season}-${s.team}`}><td className="left">{s.season}</td><td className="left"><TeamTag abbr={s.team} /></td><td className="num muted">{s.win}-{s.loss}</td><td className="num muted">{fmtStat(s.ppg, "dec1")}</td>
+                      <tr key={`${s.season}-${s.team}`}><td className="left">{s.season}</td><td className="left"><TeamTag abbr={s.team} /></td>
+                        {mixed && <td className="left"><span className={`chip tiny ${s.held === role ? "" : "on"}`}>{s.held}</span></td>}
+                        <td className="num muted">{s.win}-{s.loss}</td><td className="num muted">{fmtStat(s.ppg, "dec1")}</td>
                         {metrics.map((m) => { const v = s[m.key] as number | null; const r = s[`${m.key}_rank`] as number | null; return <td key={m.key} className={`num ${rankClass(r, s.n_teams, m.good)}`} title={r ? `rank ${r} of ${s.n_teams}` : ""}>{v === null || v === undefined ? "–" : <>{fmtStat(v, m.fmt as any)} <span className="faint tiny">{r}</span></>}</td>; })}
                       </tr>
                     ))}</tbody>

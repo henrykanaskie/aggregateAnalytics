@@ -229,6 +229,60 @@ def role_seasons(role: str) -> pl.DataFrame:
     return coordinator_seasons().filter(pl.col("role") == role) if have_coordinators() else coordinators()
 
 
+def accountable_all(role: str) -> pl.DataFrame:
+    """:func:`accountable_seasons` for everyone who holds ``role``, in one pass.
+
+    The list and the profile have to agree: a sidebar that says two years next
+    to a page that shows six is worse than either number alone.
+    """
+    if role not in ROLE_SIDES:
+        raise ValueError(f"unknown role {role!r}; expected one of {ROLES}")
+    hc = coach_seasons().with_columns(pl.lit("HC").alias("held"))
+    if role == "HC":
+        return hc
+    own = role_seasons(role)
+    holders = set(_current_teams(role))
+    if own.is_empty():
+        # No coordinator table, or nobody has held the job long enough to be in
+        # it: there is no membership to attach head-coaching seasons to.
+        return own
+    own = own.with_columns(pl.lit(role).alias("held"))
+    names = set(own["coach"].to_list()) | holders
+    extra = (hc.filter(pl.col("coach").is_in(list(names)))
+             .join(own.select("coach", "season", "team"), on=["coach", "season", "team"], how="anti"))
+    return own if extra.is_empty() else pl.concat([own, extra], how="diagonal")
+
+
+def accountable_seasons(name: str, role: str) -> pl.DataFrame:
+    """Every season in which this person answered for ``role``'s side of the
+    ball, tagged in ``held`` with the job he held that year.
+
+    A coordinator's record is not only his coordinator seasons. A head coach
+    owns both sides of his team, so the offenses an ex-head-coach ran are part
+    of what he is as an offensive coordinator, and a page that shows only the
+    new title calls a twenty-year man a first-year hire. 118 of the
+    coordinators in the table have head-coaching history behind them.
+
+    Head-coach profiles are deliberately *not* the mirror image. A season
+    spent running someone else's offense is evidence about that offense, but
+    it is not a season of his team, which is what the head-coach page is for.
+
+    A season can appear under both jobs -- a coordinator promoted to interim
+    head coach in November is in the head-coach table for the games he took
+    over and in the coordinator table for the whole year. That is one season
+    of evidence, not two, so the coordinator row wins: it covers the full
+    season rather than the tail of it.
+
+    Holding the role is still what gets you a page. Head-coaching seasons are
+    supporting evidence for a coordinator, not a way for every head coach in
+    the league to turn up under OC.
+    """
+    everyone = accountable_all(role)
+    if everyone.is_empty():
+        return everyone
+    return everyone.filter(pl.col("coach") == name).sort("season")
+
+
 def current_staff(season: int = CURRENT_SEASON) -> dict[str, dict[str, str]]:
     """``{team: {"HC": name, "OC": name, "DC": name}}`` for one season, with
     absent roles simply left out."""
@@ -253,13 +307,19 @@ def _current_teams(role: str, season: int = CURRENT_SEASON) -> dict[str, str]:
 def staff_list(role: str = "HC") -> list[dict]:
     """One row per person who has held ``role``, most recent first.
 
+    Counted over :func:`accountable_all`, so the years and record here are the
+    ones his profile will show -- head-coaching seasons included for a
+    coordinator who used to be one.
+
     Someone hired for a season the tendency table has not reached yet has no
     numbers, but he does have the job: leaving him out makes the "this season"
     filter quietly wrong every spring, and worst for coordinators, who turn
     over hardest. Those rows carry ``has_history: False`` and zeroed counters
     so the page can say what they are instead of fetching an empty profile.
+    A first-time coordinator who used to be a head coach is *not* one of them:
+    he has years of evidence, and :func:`accountable_all` already carries it.
     """
-    cs = role_seasons(role)
+    cs = accountable_all(role)
     cur = _current_teams(role)
     if cs.is_empty():
         return [_no_history_row(role, person, team) for person, team in sorted(cur.items())]
@@ -309,26 +369,47 @@ def roles_held(name: str) -> list[dict]:
     return out
 
 
+def _career_rates(name: str, seasons: pl.DataFrame) -> dict:
+    """Weighted career totals across the seasons on a profile, each counted the
+    way its job was dated.
+
+    A head-coaching season is the games he actually coached, so a man fired in
+    October carries ten games and not seventeen. A coordinator season is the
+    team's whole year, because that is the only resolution the staff source
+    has. Summing numerators and denominators rather than averaging the seasons
+    means a full year outweighs a half one either way.
+    """
+    reg = team_games().filter(pl.col("season_type") == "REG")
+    parts: list[pl.DataFrame] = []
+    co = seasons.filter(pl.col("held") != "HC").select("season", "team").unique()
+    if not co.is_empty():
+        parts.append(reg.join(co, on=["season", "team"], how="semi"))
+    hc = seasons.filter(pl.col("held") == "HC").select("season", "team").unique()
+    if not hc.is_empty():
+        cg = coach_games().filter((pl.col("coach") == name) & (pl.col("season_type") == "REG"))
+        parts.append(cg.join(hc, on=["season", "team"], how="semi").select(reg.columns))
+    if not parts:
+        return {}
+    combined = parts[0] if len(parts) == 1 else pl.concat(parts, how="vertical")
+    return rates(combined.with_columns(pl.lit(name).alias("coach")), ["coach"]).to_dicts()[0]
+
+
 def staff_profile(name: str, role: str = "HC") -> dict | None:
     """Tendency fingerprint for one person in one role.
 
     The fingerprint is the mean league percentile of each metric across his
     seasons (1.0 = top of the league every year), restricted to the sides of
-    the ball the role is answerable for.
+    the ball the role is answerable for. "His seasons" is
+    :func:`accountable_seasons`, so a coordinator who used to be a head coach
+    brings those years with him; ``held`` on each season says which job it was,
+    and ``season_roles`` counts them.
     """
-    cs = role_seasons(role).filter(pl.col("coach") == name)
+    cs = accountable_seasons(name, role)
     if cs.is_empty():
         return None
     seasons = cs.to_dicts()
     sides = ROLE_SIDES[role]
-    if role == "HC":
-        career = rates(coach_games().filter((pl.col("coach") == name) & (pl.col("season_type") == "REG")), ["coach"]).to_dicts()[0]
-    else:
-        # A coordinator's career number is the weighted total of the team-seasons
-        # he ran, so a 17-game year outweighs a half one he inherited.
-        pairs = cs.select("season", "team").unique()
-        tg = team_games().filter(pl.col("season_type") == "REG").join(pairs, on=["season", "team"], how="semi")
-        career = rates(tg.with_columns(pl.lit(name).alias("coach")), ["coach"]).to_dicts()[0]
+    career = _career_rates(name, cs)
     fingerprint = []
     for m in METRICS:
         if m.side not in sides:
@@ -347,6 +428,8 @@ def staff_profile(name: str, role: str = "HC") -> dict | None:
         "coach": name, "role": role, "role_label": ROLE_LABEL[role], "sides": list(sides),
         "attribution": ROLE_ATTRIBUTION[role], "current_team": _current_teams(role).get(name),
         "seasons": seasons, "career": career, "fingerprint": fingerprint, "also": roles_held(name),
+        "season_roles": {r: sum(1 for s in seasons if s["held"] == r) for r in ROLES
+                         if any(s["held"] == r for s in seasons)},
     }
 
 

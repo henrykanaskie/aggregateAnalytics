@@ -168,6 +168,66 @@ def test_a_coordinator_is_only_graded_on_his_own_side():
 
 
 @pytest.mark.needs_data
+def test_a_coordinator_brings_his_head_coaching_seasons_with_him():
+    """The whole reason an ex-head-coach's page was wrong: it showed only the
+    seasons under his newest title, so a man with twenty years of offenses read
+    as a first-year hire."""
+    if not coaches_mod.have_coordinators():
+        pytest.skip("coordinator table not fetched")
+    hc_names = set(coaches_mod.coach_seasons()["coach"].to_list())
+    oc = coaches_mod.role_seasons("OC")
+    both = [n for n in oc["coach"].unique().to_list() if n in hc_names]
+    if not both:
+        pytest.skip("nobody in this cache has held both jobs")
+    name = both[0]
+    own = oc.filter(pl.col("coach") == name).height
+    acc = coaches_mod.accountable_seasons(name, "OC")
+    assert acc.height > own
+    assert set(acc["held"].unique().to_list()) == {"OC", "HC"}
+
+
+@pytest.mark.needs_data
+def test_a_season_held_under_both_jobs_is_counted_once():
+    """A coordinator promoted to interim head coach is in both tables for that
+    year. It is one season of evidence."""
+    if not coaches_mod.have_coordinators():
+        pytest.skip("coordinator table not fetched")
+    for role in ("OC", "DC"):
+        acc = coaches_mod.accountable_all(role)
+        if acc.is_empty():
+            continue
+        keys = acc.select("coach", "season", "team")
+        assert keys.height == keys.unique().height, f"{role} double-counts a season"
+
+
+@pytest.mark.needs_data
+def test_holding_the_role_is_what_gets_you_a_page():
+    """Head-coaching seasons are supporting evidence for a coordinator, not a
+    door for every head coach in the league to appear under OC."""
+    if not coaches_mod.have_coordinators():
+        pytest.skip("coordinator table not fetched")
+    oc_names = set(coaches_mod.role_seasons("OC")["coach"].to_list()) | set(
+        n for n, _ in coaches_mod._current_teams("OC").items())
+    pure_hc = [n for n in coaches_mod.coach_seasons()["coach"].unique().to_list() if n not in oc_names]
+    assert pure_hc, "expected at least one head coach who never held OC"
+    assert coaches_mod.accountable_seasons(pure_hc[0], "OC").is_empty()
+    assert coaches_mod.staff_profile(pure_hc[0], "OC") is None
+
+
+@pytest.mark.needs_data
+def test_the_list_agrees_with_the_profile():
+    """A sidebar saying two years beside a page showing six is worse than
+    either number on its own."""
+    if not coaches_mod.have_coordinators():
+        pytest.skip("coordinator table not fetched")
+    rows = [r for r in coaches_mod.staff_list("OC") if r["has_history"]][:25]
+    for r in rows:
+        prof = coaches_mod.staff_profile(r["coach"], "OC")
+        assert prof is not None
+        assert r["seasons"] == len({s["season"] for s in prof["seasons"]}), r["coach"]
+
+
+@pytest.mark.needs_data
 def test_head_coach_profile_still_spans_both_sides():
     prof = coaches_mod.staff_profile(coaches_mod.coach_seasons()["coach"][0], "HC")
     assert prof["attribution"] == "game"
