@@ -50,6 +50,16 @@ export function pctColor(pct: number | null | undefined, good?: string | null): 
  * A tint rather than coloured text: these tables are dense and wide, and a
  * fixed alpha keeps the number readable in every band and both themes.
  */
+/** The rank as a reader expects it. The tables rank by value, 1 = highest,
+ *  which for "EPA allowed" or "sacks taken" makes 1 the worst in the league.
+ *  Where lower is better the shown rank counts from the best instead, so 1 is
+ *  always the best where "best" means anything, and the highest value where
+ *  it does not (pass rate, blitz rate). Colour is worked out from the raw
+ *  rank and the direction, so it needs no such flip. */
+export function shownRank(rank: number | null | undefined, n: number | null | undefined, good?: string | null): number | null {
+  if (rank === null || rank === undefined) return null;
+  return good === "low" && n ? n - rank + 1 : rank;
+}
 export function rankTint(rank: number | null | undefined, n: number | null | undefined, good?: string | null): string | undefined {
   const b = band(oriented(pctile(rank, n), good));
   return b ? mix(token(b), 0.3) : undefined;

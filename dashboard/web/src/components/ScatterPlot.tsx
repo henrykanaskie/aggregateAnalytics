@@ -190,11 +190,13 @@ export default function ScatterPlot({ dots, xLabel, yLabel, xFmt = (v) => String
         </ScatterChart>
       </ResponsiveContainer>
       {quadrants && (
+        // What each corner means, in words. Faint and behind the pointer so
+        // the dots stay the chart; the axis titles still say what is measured.
         <>
-          <div className="faint tiny" style={{ position: "absolute", left: 70, top: 26 }}>{quadrants[0]}</div>
-          <div className="faint tiny" style={{ position: "absolute", right: 30, top: 26 }}>{quadrants[1]}</div>
-          <div className="faint tiny" style={{ position: "absolute", left: 70, bottom: 44 }}>{quadrants[2]}</div>
-          <div className="faint tiny" style={{ position: "absolute", right: 30, bottom: 44 }}>{quadrants[3]}</div>
+          <div className="quad" style={{ left: 70, top: 26 }}>{quadrants[0]}</div>
+          <div className="quad" style={{ right: 30, top: 26, textAlign: "right" }}>{quadrants[1]}</div>
+          <div className="quad" style={{ left: 70, bottom: 44 }}>{quadrants[2]}</div>
+          <div className="quad" style={{ right: 30, bottom: 44, textAlign: "right" }}>{quadrants[3]}</div>
         </>
       )}
     </div>

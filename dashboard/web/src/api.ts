@@ -175,7 +175,7 @@ export const api4 = {
 };
 
 // --- projections, grading, teammates, correlations, adjustment, alerts -------------
-export interface Proj { value: number; base: number; median: number; sd: number; factor: number; factor_ctx: { allowed: number; league: number; rank: number | null; games: number; season: number } | null; n: number; low: number; high: number; p_over: number | null; edge: number | null; model_version: string; }
+export interface Proj { value: number; base: number; median: number; sd: number; factor: number; factor_ctx: { allowed: number; league: number; rank: number | null; n_teams?: number | null; games: number; season: number } | null; n: number; low: number; high: number; p_over: number | null; edge: number | null; model_version: string; }
 export interface Alert { kind: "move" | "outlier" | "injury"; severity: number; player_id: string | null; player: string; team: string | null; market: string | null; market_label: string | null; game_id: string | null; title: string; detail: string; at?: string | null; }
 export interface Teammate { player_id: string; name: string; position: string; games_with: number; games_without: number; eligible: string[]; }
 export interface TeammatePresence { teammates: Teammate[]; presence: Record<string, string[]>; since?: number; }

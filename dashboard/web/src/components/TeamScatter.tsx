@@ -4,6 +4,8 @@ import { fmtStat } from "../lib/format";
 import { useMeta } from "../state";
 import { Field } from "./common";
 import ScatterPlot from "./ScatterPlot";
+import { shownRank } from "../lib/rank";
+import { describeQuadrants } from "../lib/quadrants";
 
 const PRESETS: { label: string; x: string; y: string }[] = [
   { label: "Pace vs volume", x: "sec_per_play", y: "plays_pg" },
@@ -28,16 +30,13 @@ export default function TeamScatter({ league, highlight = [], onPick, defaultX =
     id: t.team as string, label: t.team as string, x: t[x] as number | null, y: t[y] as number | null,
     image: teamByAbbr.get(t.team as string)?.team_logo_espn ?? null, sub: league.coaches[t.team as string],
     highlight: highlight.includes(t.team as string), muted: highlight.length > 0 && !highlight.includes(t.team as string),
-    extra: { [`${mx?.label ?? x} rank`]: (t[`${x}_rank`] as number) ?? null, [`${my?.label ?? y} rank`]: (t[`${y}_rank`] as number) ?? null },
+    extra: { [`${mx?.label ?? x} rank`]: shownRank(t[`${x}_rank`] as number | null, t.n_teams, mx?.good), [`${my?.label ?? y} rank`]: shownRank(t[`${y}_rank`] as number | null, t.n_teams, my?.good) },
   })), [league, x, y, highlight, teamByAbbr, mx, my]);
   const f = (m?: TeamMetric) => (v: number) => fmtStat(v, (m?.fmt ?? "dec1") as any);
-  // Pace is seconds between snaps, so the low end of the axis is the fast
-  // offense. These read the axis direction, not the word "pace": they were
-  // the other way round, and captioned the fast corner "slow".
-  const lo = (m?: TeamMetric) => (m?.key === "sec_per_play" ? "fast" : `low ${m?.label.toLowerCase() ?? ""}`);
-  const hi = (m?: TeamMetric) => (m?.key === "sec_per_play" ? "slow" : `high ${m?.label.toLowerCase() ?? ""}`);
   const pace = (m?: TeamMetric) => (m?.key === "sec_per_play" ? " (higher = slower)" : "");
-  const quads: [string, string, string, string] = [`${lo(mx)} · ${hi(my)}`, `${hi(mx)} · ${hi(my)}`, `${lo(mx)} · ${lo(my)}`, `${hi(mx)} · ${lo(my)}`];
+  // What each corner means, read against the league averages the dashed
+  // lines mark (lib/quadrants.ts knows each metric's high and low side).
+  const quads = describeQuadrants(x, y, mx?.label ?? x, my?.label ?? y);
   const opts = league.metrics;
   return (
     <div>

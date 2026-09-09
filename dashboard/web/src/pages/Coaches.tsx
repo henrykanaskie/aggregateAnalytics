@@ -8,9 +8,10 @@ import { fmtStat } from "../lib/format";
 import { useSticky } from "../lib/sticky";
 import { useQuery } from "../lib/useQuery";
 import { useMeta } from "../state";
-import { barFill, oriented, PCT_LEGEND, rankTint } from "../lib/rank";
+import { PCT_LEGEND, barFill, oriented, rankTint, shownRank } from "../lib/rank";
 import ScatterPlot from "../components/ScatterPlot";
 import { fmtStat as fmtS } from "../lib/format";
+import { describeQuadrants } from "../lib/quadrants";
 
 const ROLES: { v: CoachRoleKey; l: string }[] = [{ v: "HC", l: "Head coaches" }, { v: "OC", l: "OCs" }, { v: "DC", l: "DCs" }];
 // A coordinator is only answerable for his own side of the ball, so the side
@@ -163,8 +164,8 @@ export default function Coaches() {
                     <Field label="Y"><select className="input" value={ay} onChange={(e) => setSy(e.target.value)}>{axisMetrics.map((m) => <option key={m.key} value={m.key}>{m.side === "def" ? "DEF · " : ""}{m.label}</option>)}</select></Field>
                   </div>
                 </div>
-                {(() => { const mx = axisMetrics.find((m) => m.key === ax), my = axisMetrics.find((m) => m.key === ay); const dots = prof.seasons.filter((s) => answersFor(s.held, mx?.side ?? "off") && answersFor(s.held, my?.side ?? "off")).map((s) => ({ id: `${s.season}-${s.team}`, label: `${s.season} ${s.team}`, x: s[ax] as number | null, y: s[ay] as number | null, sub: `${s.win}-${s.loss}`, extra: { [`${mx?.label ?? ax} rank`]: (s[`${ax}_rank`] as number) ?? null, [`${my?.label ?? ay} rank`]: (s[`${ay}_rank`] as number) ?? null } })); return <ScatterPlot dots={dots} xLabel={`${mx?.label ?? ax}${ax === "sec_per_play" ? " (higher = slower)" : ""}`} yLabel={`${my?.label ?? ay}${ay === "sec_per_play" ? " (higher = slower)" : ""}`} xFmt={(v) => fmtS(v, (mx?.fmt ?? "dec1") as any)} yFmt={(v) => fmtS(v, (my?.fmt ?? "dec1") as any)} showLabels="all" height={300} />; })()}
-                <div className="hint">Each dot is one of his seasons; the dashed lines are his own career averages. A tight cluster is an identity, a drift is a coach who changed.</div>
+                {(() => { const mx = axisMetrics.find((m) => m.key === ax), my = axisMetrics.find((m) => m.key === ay); const dots = prof.seasons.filter((s) => answersFor(s.held, mx?.side ?? "off") && answersFor(s.held, my?.side ?? "off")).map((s) => ({ id: `${s.season}-${s.team}`, label: `${s.season} ${s.team}`, x: s[ax] as number | null, y: s[ay] as number | null, sub: `${s.win}-${s.loss}`, extra: { [`${mx?.label ?? ax} rank`]: shownRank(s[`${ax}_rank`] as number | null, s.n_teams, mx?.good), [`${my?.label ?? ay} rank`]: shownRank(s[`${ay}_rank`] as number | null, s.n_teams, my?.good) } })); return <ScatterPlot dots={dots} xLabel={`${mx?.label ?? ax}${ax === "sec_per_play" ? " (higher = slower)" : ""}`} yLabel={`${my?.label ?? ay}${ay === "sec_per_play" ? " (higher = slower)" : ""}`} xFmt={(v) => fmtS(v, (mx?.fmt ?? "dec1") as any)} yFmt={(v) => fmtS(v, (my?.fmt ?? "dec1") as any)} quadrants={describeQuadrants(ax, ay, mx?.label ?? ax, my?.label ?? ay)} showLabels="all" height={300} />; })()}
+                <div className="hint">Each dot is one of his seasons; the dashed lines are his own career averages, so the corner notes read relative to his norm, not the league's. A tight cluster is an identity, a drift is a coach who changed.</div>
               </div>
               <div className="panel">
                 <div className="panel-head"><h3>Season by season · {side === "off" ? "offense" : "defense"}{mixed ? ` · ${seasonsThisSide.length} of ${prof.seasons.length} seasons answer for it` : ""}</h3><span className="hint">shaded by league percentile: {PCT_LEGEND} · <span className="scroll-hint">scroll sideways for all {metrics.length} metrics</span></span></div>
@@ -175,7 +176,7 @@ export default function Coaches() {
                       <tr key={`${s.season}-${s.team}`}><td className="left">{s.season}</td><td className="left"><TeamTag abbr={s.team} /></td>
                         {mixed && <td className="left"><span className={`chip tiny ${s.held === role ? "" : "on"}`}>{s.held}</span></td>}
                         <td className="num muted">{s.win}-{s.loss}</td><td className="num muted">{fmtStat(s.ppg, "dec1")}</td>
-                        {metrics.map((m) => { const v = s[m.key] as number | null; const r = s[`${m.key}_rank`] as number | null; return <td key={m.key} className="num" style={{ background: rankTint(r, s.n_teams, m.good) }} title={r ? `rank ${r} of ${s.n_teams}` : ""}>{v === null || v === undefined ? "–" : <>{fmtStat(v, m.fmt as any)} <span className="faint tiny">{r}</span></>}</td>; })}
+                        {metrics.map((m) => { const v = s[m.key] as number | null; const r = s[`${m.key}_rank`] as number | null; return <td key={m.key} className="num" style={{ background: rankTint(r, s.n_teams, m.good) }} title={r ? `rank ${shownRank(r, s.n_teams, m.good)} of ${s.n_teams}` : ""}>{v === null || v === undefined ? "–" : <>{fmtStat(v, m.fmt as any)} <span className="faint tiny">{shownRank(r, s.n_teams, m.good)}</span></>}</td>; })}
                       </tr>
                     ))}</tbody>
                   </table>

@@ -73,7 +73,7 @@ def dvp_factor(position: str | None, stat: str, defense: str | None, season: int
     if not league or allowed is None:
         return 1.0, None
     f = min(FACTOR_CLIP[1], max(FACTOR_CLIP[0], allowed / league))
-    return f, {"allowed": allowed, "league": league, "rank": row.get(f"{key}_rank"), "games": row.get("games"), "season": season}
+    return f, {"allowed": allowed, "league": league, "rank": row.get(f"{key}_rank"), "n_teams": row.get("n_teams"), "games": row.get("games"), "season": season}
 
 
 def project_rows(rows: list[dict], season: int, week: int, dvp_season: int | None = None) -> None:

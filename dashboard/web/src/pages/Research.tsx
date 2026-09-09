@@ -22,6 +22,7 @@ import Splits from "../components/PbpSplits";
 import MatchupPanel from "../components/MatchupPanel";
 import InjuryPanel from "../components/InjuryPanel";
 import { importantStats } from "../lib/focus";
+import { shownRank } from "../lib/rank";
 import TeammatesPanel from "../components/TeammatesPanel";
 import CorrelationsPanel from "../components/CorrelationsPanel";
 import PlayerScatter from "../components/PlayerScatter";
@@ -297,7 +298,7 @@ function PredictionSlot({ playerId, market, line, proj, statFmt }: { playerId: s
           <span className="pill">baseline</span> projects <b className="num">{proj.value}</b> <span className="muted">(50% band {proj.low}–{proj.high})</span>
           {line !== null && proj.edge !== null && <> · vs line <span className="num">{line}</span> <span className={`num ${proj.edge > 0 ? "over" : "under"}`}>{proj.edge > 0 ? "+" : ""}{proj.edge}</span></>}
           {proj.p_over !== null && <> · P(over) <b className="num">{Math.round(proj.p_over * 100)}%</b></>}
-          <div className="hint">Recency-weighted mean of the last {proj.n} games ({proj.base}){proj.factor !== 1 && proj.factor_ctx ? <> × {proj.factor} for the opponent (allows {proj.factor_ctx.allowed.toFixed(1)} vs league {proj.factor_ctx.league.toFixed(1)}, rank {proj.factor_ctx.rank})</> : null}. A reference, not a model.</div>
+          <div className="hint">Recency-weighted mean of the last {proj.n} games ({proj.base}){proj.factor !== 1 && proj.factor_ctx ? <> × {proj.factor} for the opponent (allows {proj.factor_ctx.allowed.toFixed(1)} vs league {proj.factor_ctx.league.toFixed(1)}, {proj.factor_ctx.rank ? `${shownRank(proj.factor_ctx.rank, proj.factor_ctx.n_teams ?? 32, "low")} of ${proj.factor_ctx.n_teams ?? 32} stingiest` : "unranked"})</> : null}. A reference, not a model.</div>
         </div>
       )}
       {mine.length === 0 && !proj && <div className="hint">When the model logs a row to <code>data/derived/prop_predictions.parquet</code> for this player and market, it shows here next to the line. See the Predictions page for the schema.</div>}

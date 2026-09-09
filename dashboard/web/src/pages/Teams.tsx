@@ -10,7 +10,7 @@ import { useQuery } from "../lib/useQuery";
 import { useMeta } from "../state";
 import TeamScatter from "../components/TeamScatter";
 import UsageTree from "../components/UsageTree";
-import { PCT_LEGEND, rankTint } from "../lib/rank";
+import { PCT_LEGEND, rankTint, shownRank } from "../lib/rank";
 import DvpTable from "../components/DvpTable";
 
 export default function Teams() {
@@ -30,7 +30,7 @@ export default function Teams() {
   // Newest season the coordinator scrape has for this team; it can trail the
   // schedule, so the header labels it rather than passing it off as "now".
   const staff = (data?.coordinators ?? [])[0];
-  const trend = useMemo(() => (data?.seasons ?? []).slice().reverse().map((s) => ({ season: s.season, v: s[metric] as number | null, rank: s[`${metric}_rank`] as number | null })), [data, metric]);
+  const trend = useMemo(() => (data?.seasons ?? []).slice().reverse().map((s) => ({ season: s.season, v: s[metric] as number | null, rank: shownRank(s[`${metric}_rank`] as number | null, s.n_teams, mdef?.good) })), [data, metric, mdef?.good]);
   const gameTrend = useMemo(() => (data?.games ?? []).filter((g) => g.season >= (data?.seasons[0]?.season ?? 0) - 1).map((g) => ({ label: `${g.season} W${g.week} ${g.home ? "vs" : "@"} ${g.opponent}`, v: g[metric] as number | null })), [data, metric]);
   const teams = (meta?.teams ?? []).filter((t) => !["OAK", "SD", "STL", "LAR"].includes(t.team_abbr));
   const active = mdef?.key ?? metric;   // what is actually charted, sorted and highlighted
@@ -114,7 +114,7 @@ export default function Teams() {
                     <tr key={s.season}><td className="left">{s.season}</td><td className="left small muted">{coach?.coach ?? ""}</td>
                       <td className="left small muted">{cord ? <Link to={`/coaches?role=${side === "off" ? "OC" : "DC"}&coach=${encodeURIComponent(cord)}`}>{cord}</Link> : ""}</td>
                       <td className="num muted">{s.games}</td>
-                      {metrics.map((m) => { const v = s[m.key] as number | null; const r = s[`${m.key}_rank`] as number | null; return <td key={m.key} className="num" style={{ background: rankTint(r, s.n_teams, m.good) }} title={r ? `rank ${r} of ${s.n_teams}` : ""}>{v === null || v === undefined ? "–" : <>{fmtStat(v, m.fmt as any)} <span className="faint tiny">{r}</span></>}</td>; })}
+                      {metrics.map((m) => { const v = s[m.key] as number | null; const r = s[`${m.key}_rank`] as number | null; return <td key={m.key} className="num" style={{ background: rankTint(r, s.n_teams, m.good) }} title={r ? `rank ${shownRank(r, s.n_teams, m.good)} of ${s.n_teams}` : ""}>{v === null || v === undefined ? "–" : <>{fmtStat(v, m.fmt as any)} <span className="faint tiny">{shownRank(r, s.n_teams, m.good)}</span></>}</td>; })}
                     </tr>
                   ); })}
                 </tbody>
@@ -151,7 +151,7 @@ export default function Teams() {
               {sortedLeague.map((t) => (
                 <tr key={t.team as string} className={`clickable ${t.team === team ? "hl" : ""}`} onClick={() => setSp({ team: t.team as string })}>
                   <td className="left"><TeamTag abbr={t.team as string} /></td><td className="left small muted">{league?.coaches[t.team as string] ?? ""}</td>
-                  {metrics.map((m) => { const v = t[m.key] as number | null; const r = t[`${m.key}_rank`] as number | null; return <td key={m.key} className="num" style={{ background: rankTint(r, t.n_teams, m.good) }} title={r ? `rank ${r} of ${t.n_teams}` : ""}>{v === null || v === undefined ? "–" : fmtStat(v, m.fmt as any)}</td>; })}
+                  {metrics.map((m) => { const v = t[m.key] as number | null; const r = t[`${m.key}_rank`] as number | null; return <td key={m.key} className="num" style={{ background: rankTint(r, t.n_teams, m.good) }} title={r ? `rank ${shownRank(r, t.n_teams, m.good)} of ${t.n_teams}` : ""}>{v === null || v === undefined ? "–" : fmtStat(v, m.fmt as any)}</td>; })}
                 </tr>
               ))}
             </tbody>

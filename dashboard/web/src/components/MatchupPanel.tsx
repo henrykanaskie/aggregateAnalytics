@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api3, Dvp, Matchup, TeamMetric } from "../api";
 import { fmtStat } from "../lib/format";
-import { PCT_LEGEND, rankTint } from "../lib/rank";
+import { PCT_LEGEND, rankTint, shownRank } from "../lib/rank";
 import { TeamTag } from "./common";
 import { teamFocus } from "../lib/focus";
 
@@ -40,7 +40,7 @@ export default function MatchupPanel({ team, opponent, position, focus = false }
             const v = side.season[k] as number | null; const r = side.season[`${k}_rank`] as number | null; const l4 = side.last4?.[k] ?? null;
             if (v === null || v === undefined) return null;
             const cls = hot ? (hot.includes(k) ? "focus-row" : "dim") : "";
-            return <tr key={k} className={cls}><td className="left" title={m.note || undefined}>{m.label}</td><td className="num">{fmtStat(v, m.fmt as any)}</td><td className="num" style={{ background: rankTint(r, side.season.n_teams, m.good) }}>{r ?? "–"}</td><td className="num muted">{fmtStat(l4, m.fmt as any)}</td></tr>;
+            return <tr key={k} className={cls}><td className="left" title={m.note || undefined}>{m.label}</td><td className="num">{fmtStat(v, m.fmt as any)}</td><td className="num" style={{ background: rankTint(r, side.season.n_teams, m.good) }}>{shownRank(r, side.season.n_teams, m.good) ?? "–"}</td><td className="num muted">{fmtStat(l4, m.fmt as any)}</td></tr>;
           })}
         </tbody>
       </table></div>
@@ -51,12 +51,12 @@ export default function MatchupPanel({ team, opponent, position, focus = false }
     <div>
       {d && d.season_row && (
         <div style={{ marginBottom: 10 }}>
-          <div className="small" style={{ marginBottom: 4 }}><TeamTag abbr={opponent} /> <b>vs {d.position}s</b> <span className="hint">per game allowed, {d.season} · rank 1 = most allowed</span></div>
+          <div className="small" style={{ marginBottom: 4 }}><TeamTag abbr={opponent} /> <b>vs {d.position}s</b> <span className="hint">per game allowed, {d.season} · rank 1 = fewest allowed; green = generous to {d.position}s</span></div>
           <div className="tbl-wrap"><table className="tbl compact">
             <thead><tr><th className="left">Stat</th><th>Per game</th><th>Rank</th><th>Last 4</th></tr></thead>
             <tbody>
               {d.stats.map((k) => { const v = d.season_row![k] as number; const r = d.season_row![`${k}_rank`] as number; const n = d.season_row!.n_teams;
-                return <tr key={k}><td className="left">{d.labels[k]}</td><td className="num">{v.toFixed(1)}</td><td className="num" style={{ background: rankTint(r, n) }}>{r}</td><td className="num muted">{d.last4 ? d.last4[k].toFixed(1) : "–"}</td></tr>; })}
+                return <tr key={k}><td className="left">{d.labels[k]}</td><td className="num">{v.toFixed(1)}</td><td className="num" style={{ background: rankTint(r, n) }}>{shownRank(r, n, "low")}</td><td className="num muted">{d.last4 ? d.last4[k].toFixed(1) : "–"}</td></tr>; })}
             </tbody>
           </table></div>
           {d.log.length > 0 && (
@@ -70,7 +70,7 @@ export default function MatchupPanel({ team, opponent, position, focus = false }
       )}
       <Block side={data.team} keys={tf ? [...new Set([...tf.off, ...OFF])] : OFF} title="offense" hot={tf?.off} />
       <Block side={data.opponent} keys={tf ? [...new Set([...tf.def, ...DEF])] : DEF} title="defense" hot={tf?.def} />
-      <div className="hint">Ranks are among 32 teams in the season shown, 1 = highest value; shading is the percentile the good way round, {PCT_LEGEND}.</div>
+      <div className="hint">Ranks are among 32 teams in the season shown: 1 = best where one direction is better, else the highest value; shading is the percentile the good way round, {PCT_LEGEND}.</div>
     </div>
   );
 }
