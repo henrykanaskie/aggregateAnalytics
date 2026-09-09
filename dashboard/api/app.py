@@ -237,7 +237,11 @@ def data_version() -> str:
     return h.hexdigest()[:16]
 
 
-@app.get("/api/health")
+# HEAD as well as GET: uptime monitors default to HEAD, and FastAPI does not
+# add it to a GET route the way Starlette does, so a monitor pointed here was
+# told 405 and counted the site as down while it was up. The auth exemption
+# is by path, so this needs no cookie either way.
+@app.api_route("/api/health", methods=["GET", "HEAD"])
 def health():
     # The commit this process was built from, so "did the push deploy?" is
     # one curl from outside the password. Render sets the variable; locally
