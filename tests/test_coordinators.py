@@ -158,3 +158,24 @@ def test_missing_cache_is_survivable():
     """The dashboard predates this table and has to serve without it."""
     assert isinstance(coaches_mod.have_coordinators(), bool)
     assert coaches_mod.role_seasons("HC").height > 0
+
+
+def test_a_table_that_arrives_after_boot_is_picked_up(tmp_path, monkeypatch):
+    """The failure this guards against is silent and lasts for the life of the
+    process: an API server that starts while the scrape is still running --
+    which is the normal order, since the weekly refresh writes this file long
+    after the app is up -- used to memoise "there is no table" and go on
+    telling every visitor to run a command they had already run.
+    """
+    missing = tmp_path / "coordinators.parquet"
+    monkeypatch.setattr(coaches_mod, "dataset_path", lambda name: missing)
+    coaches_mod._read_coordinators.cache_clear()
+    assert coaches_mod.have_coordinators() is False
+
+    pl.DataFrame({"season": pl.Series([2026], dtype=pl.Int32), "team": ["KC"], "role": ["OC"],
+                  "coach": ["Someone Named"], "title": ["Offensive coordinator"],
+                  "slot": pl.Series([0], dtype=pl.Int32)}).write_parquet(missing)
+    monkeypatch.setattr(coaches_mod, "scan", lambda name: pl.scan_parquet(missing))
+    assert coaches_mod.have_coordinators() is True
+    assert coaches_mod.coordinators()["coach"].to_list() == ["Someone Named"]
+    coaches_mod._read_coordinators.cache_clear()

@@ -33,7 +33,7 @@ from statistics import mean
 
 import polars as pl
 
-from nfl.data import is_cached, scan
+from nfl.data import dataset_path, scan
 
 from ..config import CURRENT_SEASON
 from .team import METRICS, rates, team_games, with_ranks
@@ -127,15 +127,41 @@ def current_coaches(season: int = CURRENT_SEASON) -> dict[str, str]:
 # ---------------------------------------------------------------------------
 
 
+#: The shape :func:`coordinators` promises when the scrape has not run.
+_NO_COORDINATORS = pl.DataFrame(schema={"season": pl.Int32, "team": pl.Utf8, "role": pl.Utf8,
+                                        "coach": pl.Utf8, "title": pl.Utf8, "slot": pl.Int32})
+
+
 @lru_cache(maxsize=1)
+def _read_coordinators(stamp: float) -> pl.DataFrame:
+    """Load the table, memoised on the file's mtime rather than on nothing.
+
+    ``stamp`` is unused inside, and that is the entire point: it is the cache
+    key, so a refreshed file is a different call and the stale frame is
+    dropped.
+    """
+    return (
+        scan("coordinators").collect()
+        .filter(pl.col("coach").is_not_null())
+        .select("season", "team", "role", "coach", "title", "slot")
+    )
+
+
 def coordinators() -> pl.DataFrame:
-    """Named OCs and DCs per team-season, or an empty frame if the cache has
-    not been fetched yet.
+    """Named OCs and DCs per team-season, or an empty frame if the scrape has
+    not run.
 
     Missing is not an error: the rest of the dashboard predates this table and
     has to keep working without it. :func:`have_coordinators` is the check the
     API surfaces so the page can say *why* the OC and DC tabs are empty rather
     than showing a coachless league.
+
+    The absence is deliberately *not* memoised, and the file is keyed on its
+    mtime. Caching "there is no table" pins it for the life of the process: a
+    server that boots while the scrape is still running, or before it has ever
+    run, would go on telling every visitor to run a command they had already
+    run, until someone thought to restart it. Both orders happen -- the weekly
+    refresh writes this file long after the API is up.
 
     Rows whose ``coach`` is null are verified vacancies -- a season the team
     listed no coordinator because the head coach did the job -- and they are
@@ -143,14 +169,10 @@ def coordinators() -> pl.DataFrame:
     it is how :func:`data_handling.fetch_coordinators.build` distinguishes
     "nobody held the title" from "we could not read the page".
     """
-    if not is_cached("coordinators"):
-        return pl.DataFrame(schema={"season": pl.Int32, "team": pl.Utf8, "role": pl.Utf8,
-                                    "coach": pl.Utf8, "title": pl.Utf8, "slot": pl.Int32})
-    return (
-        scan("coordinators").collect()
-        .filter(pl.col("coach").is_not_null())
-        .select("season", "team", "role", "coach", "title", "slot")
-    )
+    path = dataset_path("coordinators")
+    if not path.exists():
+        return _NO_COORDINATORS
+    return _read_coordinators(path.stat().st_mtime)
 
 
 def have_coordinators() -> bool:
@@ -171,13 +193,7 @@ def team_season_records() -> pl.DataFrame:
 
 
 @lru_cache(maxsize=1)
-def coordinator_seasons() -> pl.DataFrame:
-    """Coordinator x season x team, with the team's full-season tendencies.
-
-    Unlike :func:`coach_seasons`, the numbers here are the *team's* season, not
-    a subset of its games: the source dates a coordinator to a season and no
-    finer. Co-coordinators both appear, and both carry the same season.
-    """
+def _build_coordinator_seasons(stamp: float) -> pl.DataFrame:
     co = coordinators()
     if co.is_empty():
         return co
@@ -186,6 +202,21 @@ def coordinator_seasons() -> pl.DataFrame:
         .join(team_season_records(), on=["season", "team"], how="left")
         .sort(["coach", "season"])
     )
+
+
+def coordinator_seasons() -> pl.DataFrame:
+    """Coordinator x season x team, with the team's full-season tendencies.
+
+    Unlike :func:`coach_seasons`, the numbers here are the *team's* season, not
+    a subset of its games: the source dates a coordinator to a season and no
+    finer. Co-coordinators both appear, and both carry the same season.
+
+    Memoised on the same mtime as :func:`coordinators`, so a table that arrives
+    after boot is picked up here too rather than leaving the derived frame
+    behind the one it was built from.
+    """
+    path = dataset_path("coordinators")
+    return _build_coordinator_seasons(path.stat().st_mtime if path.exists() else 0.0)
 
 
 def role_seasons(role: str) -> pl.DataFrame:
