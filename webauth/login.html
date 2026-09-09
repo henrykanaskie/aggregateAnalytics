@@ -1,7 +1,7 @@
 <!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sign in</title>
+<title>Password</title>
 <style>
   :root { color-scheme: light dark;
           --ink: #1c2230; --muted: #6b7280; --rule: #cfcdc4; --ground: #f6f5f1;
@@ -29,12 +29,12 @@
 </style>
 <form id="f" autocomplete="off">
   <h1>nfl_predictor</h1>
-  <p>Private dashboard. Enter the site password.</p>
+  <p>Private. Enter the password you were given.</p>
   <label>Password
     <input id="pw" type="password" name="password" autocomplete="current-password" required autofocus>
   </label>
   <div class="err" id="err" aria-live="polite"></div>
-  <button id="go" type="submit">Sign in</button>
+  <button id="go" type="submit">Open</button>
 </form>
 <script>
   var f = document.getElementById('f'), pw = document.getElementById('pw'),
@@ -48,7 +48,7 @@
         body: JSON.stringify({ password: pw.value })
       });
       if (r.status === 204) { window.location.replace('/'); return; }
-      var msg = 'Sign-in failed.';
+      var msg = 'That did not work.';
       try { msg = (await r.json()).detail || msg; } catch (_) {}
       err.textContent = msg;
       pw.select();

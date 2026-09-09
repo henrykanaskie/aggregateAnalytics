@@ -1,17 +1,17 @@
 # webauth: the site password
 
-A login page and a session cookie, inside the FastAPI app. No host
-middleware, no proxy config. One shared password from an environment
-variable.
+One password. Anyone you give it to can open the site; anyone else sees a
+password box and nothing behind it. No accounts, no usernames, no host
+middleware. The password comes from an environment variable.
 
 ## Try it now (placeholder UI)
 
     pip install -e ".[dev,web]"
     SITE_PASSWORD=hut-hut uvicorn webauth.mock_app:app --port 8017
 
-Open http://127.0.0.1:8017. You land on `/login`; sign in; you see the latest
-week from `track_record/predictions.csv` (or labelled example rows if it has
-not been exported). "Sign out" clears the cookie.
+Open http://127.0.0.1:8017. You are sent to `/password`; enter it; you see the
+latest week from `track_record/predictions.csv` (or labelled example rows if it
+has not been exported). "Sign out" clears the cookie so the box comes back.
 
 ## Migrating to `dashboard/`
 
@@ -23,26 +23,31 @@ Three edits, none of them in the data layer.
     from webauth import auth_router, require_session
 
     app = FastAPI(dependencies=[Depends(require_session)])   # gates every route
-    app.include_router(auth_router)                          # /login, /api/auth/*
+    app.include_router(auth_router)                          # /password, /api/auth/*
 
-If the UI bundle is mounted with `StaticFiles`, leave it. Mounts are not
-routes, so the bundle stays public and every `/api/*` route is gated. If the
-SPA's `index.html` is served by a catch-all *route*, that is gated too, which
-is fine: an unauthenticated visitor gets a 401 and the fetch wrapper below
-sends them to `/login`.
+Then make sure the page itself goes through a route, not only a mount. A
+`StaticFiles` mount is not a route and is never gated. Keep the mount for
+the hashed assets and serve `index.html` from a catch-all:
+
+    app.mount("/assets", StaticFiles(directory="dashboard/ui/dist/assets"))
+
+    @app.get("/{path:path}", include_in_schema=False)
+    async def spa(path: str):
+        return FileResponse("dashboard/ui/dist/index.html")
+
+Now a stranger who opens any URL is redirected to `/password` before a byte
+of the app is served. (If you had `StaticFiles(..., html=True)` mounted at
+`/`, this replaces it.)
 
 **2. The frontend's fetch wrapper** (wherever `/api/` calls are made): on a
-401, go to the login page.
+401, go to the password box. This covers a cookie that expired mid-session.
 
-    if (res.status === 401) { window.location.replace('/login'); return; }
+    if (res.status === 401) { window.location.replace('/password'); return; }
 
-The login page is served by the router, so the SPA does not need a Login
-route of its own. Add one later if you want it inside the app shell.
-
-**3. Somewhere in Settings**, a sign-out control:
+**3. Somewhere in Settings**, a way to forget the password on this browser:
 
     await fetch('/api/auth/logout', { method: 'POST' });
-    window.location.replace('/login');
+    window.location.replace('/password');
 
 Then delete `webauth/mock_app.py`; nothing else imports it.
 

@@ -1,14 +1,20 @@
-"""Session-cookie login behind one shared password. No middleware.
+"""One shared password in front of the whole site. No accounts, no middleware.
 
 How it works
 ------------
-``POST /api/auth/login`` with ``{"password": ...}`` sets an HttpOnly cookie
-holding a signed expiry. :func:`require_session` is a FastAPI dependency that
-verifies the cookie; attach it app-wide with
+``GET /password`` is the box you type the password into. ``POST
+/api/auth/login`` with ``{"password": ...}`` checks it and sets an HttpOnly
+cookie holding a signed expiry, so the browser is not asked again for
+``SESSION_DAYS``. :func:`require_session` is a FastAPI dependency that verifies
+the cookie; attach it app-wide with
 ``FastAPI(dependencies=[Depends(require_session)])`` and every route is gated
-except the ones this module exempts. Static mounts are not routes, so the built
-UI bundle stays public; that is fine, because every byte of data is behind
-``/api/*``.
+except the ones this module exempts.
+
+A stranger sees nothing but the password box: a browser navigation without a
+valid cookie is redirected to ``/password``; a ``fetch`` from the app gets a
+401 with an ``X-Login-Url`` header. Serve ``index.html`` through a *route* so
+that redirect covers it; a ``StaticFiles`` mount is not a route and is not
+gated, which is fine for hashed assets and wrong for the page itself.
 
 Configuration (environment)
 ---------------------------
@@ -38,7 +44,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 
 COOKIE = "nfl_session"
-LOGIN_PATH = "/login"
+LOGIN_PATH = "/password"
 EXEMPT_PREFIXES = ("/api/auth/", LOGIN_PATH, "/healthz")
 
 MAX_FAILURES = 10          # per client address ...
@@ -101,9 +107,12 @@ async def require_session(request: Request) -> None:
     if not _password():
         raise HTTPException(503, "Site password is not configured. Set SITE_PASSWORD.")
     if not is_authenticated(request):
-        raise HTTPException(
-            401, "Login required.", headers={"X-Login-Url": LOGIN_PATH}
-        )
+        if request.method == "GET" and "text/html" in request.headers.get("accept", ""):
+            # A person in a browser: send them to the password box, not to
+            # a JSON error. HTTPException carries the status and headers
+            # straight through, so no exception handler needs registering.
+            raise HTTPException(303, headers={"Location": LOGIN_PATH})
+        raise HTTPException(401, "Password required.", headers={"X-Login-Url": LOGIN_PATH})
 
 
 # --- throttle -------------------------------------------------------------------

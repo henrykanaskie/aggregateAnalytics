@@ -94,7 +94,7 @@ INDEX_HTML = """<!doctype html>
   function s(n, d) { return (n >= 0 ? '+' : '') + n.toFixed(d); }
   async function load() {
     var r = await fetch('/api/board');
-    if (r.status === 401) { window.location.replace('/login'); return; }
+    if (r.status === 401) { window.location.replace('/password'); return; }
     var b = await r.json();
     document.getElementById('title').textContent = 'Week ' + b.week + ' predictions';
     document.getElementById('sub').textContent = b.rows.length + ' games, ' +
@@ -111,7 +111,7 @@ INDEX_HTML = """<!doctype html>
   }
   document.getElementById('out').addEventListener('click', async function () {
     await fetch('/api/auth/logout', { method: 'POST' });
-    window.location.replace('/login');
+    window.location.replace('/password');
   });
   load();
 </script>
@@ -119,8 +119,8 @@ INDEX_HTML = """<!doctype html>
 
 
 def create_app() -> FastAPI:
-    # The one line that gates everything. Static mounts are not routes, so a
-    # built UI bundle mounted with StaticFiles stays public; the data does not.
+    # The one line that gates everything. `/` below is a route, so a stranger
+    # is redirected to the password box before seeing any of the page.
     app = FastAPI(title="nfl_predictor (placeholder)", dependencies=[Depends(require_session)])
     app.include_router(auth_router)
 
