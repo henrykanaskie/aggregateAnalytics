@@ -39,8 +39,8 @@ jobs:
         run: bash scripts/pull_lines.sh
       - name: Commit the snapshot
         run: |
-          git config user.name "lines-bot"
-          git config user.email "lines-bot@users.noreply.github.com"
+          git config user.name "Henry Kanaskie"
+          git config user.email "howenkan13@gmail.com"
           git add data/odds
           if git diff --cached --quiet; then
             echo "no new snapshot"; exit 0

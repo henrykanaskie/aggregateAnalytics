@@ -53,8 +53,8 @@ jobs:
         run: bash scripts/push_cache.sh
       - name: Commit derived tables and grades
         run: |
-          git config user.name "stats-bot"
-          git config user.email "stats-bot@users.noreply.github.com"
+          git config user.name "Henry Kanaskie"
+          git config user.email "howenkan13@gmail.com"
           # Separate adds on purpose: one `git add` over both paths stages
           # neither when data/odds/graded is absent, which it is until the
           # first week grades.
