@@ -1,0 +1,37 @@
+name: deploy
+
+# Ask Render for a build on every code push, without depending on Render's
+# own GitHub integration. That integration is bound to the repository as it
+# was when the service was created, and it went quiet when the repo was
+# renamed; the Deploy Hook is a plain URL and does not care. The ignored paths
+# mirror buildFilter in render.yaml, so a lines snapshot still does not build.
+#
+# Needs the RENDER_DEPLOY_HOOK secret (service Settings, "Deploy Hook").
+# Without it the job says so and exits; nothing else changes.
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "data/odds/**"
+      - "track_record/**"
+      - "tests/**"
+      - "ROADMAP.md"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: true
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Redeploy Render
+        env:
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$HOOK" ]; then
+            echo "::warning::RENDER_DEPLOY_HOOK is not set; add the service's Deploy Hook URL as a repository secret and pushes will deploy."
+            exit 0
+          fi
+          curl -fsS -X POST "$HOOK" && echo "asked Render to build ${GITHUB_SHA::7}"

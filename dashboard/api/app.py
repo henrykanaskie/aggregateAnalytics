@@ -239,7 +239,10 @@ def data_version() -> str:
 
 @app.get("/api/health")
 def health():
-    return {"ok": True}
+    # The commit this process was built from, so "did the push deploy?" is
+    # one curl from outside the password. Render sets the variable; locally
+    # it is simply absent.
+    return {"ok": True, "commit": os.environ.get("RENDER_GIT_COMMIT")}
 
 
 @app.get("/api/meta")
