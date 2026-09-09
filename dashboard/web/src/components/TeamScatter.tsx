@@ -31,8 +31,12 @@ export default function TeamScatter({ league, highlight = [], onPick, defaultX =
     extra: { [`${mx?.label ?? x} rank`]: (t[`${x}_rank`] as number) ?? null, [`${my?.label ?? y} rank`]: (t[`${y}_rank`] as number) ?? null },
   })), [league, x, y, highlight, teamByAbbr, mx, my]);
   const f = (m?: TeamMetric) => (v: number) => fmtStat(v, (m?.fmt ?? "dec1") as any);
-  const lo = (m?: TeamMetric) => (m?.key === "sec_per_play" ? "slow" : `low ${m?.label.toLowerCase() ?? ""}`);
-  const hi = (m?: TeamMetric) => (m?.key === "sec_per_play" ? "fast" : `high ${m?.label.toLowerCase() ?? ""}`);
+  // Pace is seconds between snaps, so the low end of the axis is the fast
+  // offense. These read the axis direction, not the word "pace": they were
+  // the other way round, and captioned the fast corner "slow".
+  const lo = (m?: TeamMetric) => (m?.key === "sec_per_play" ? "fast" : `low ${m?.label.toLowerCase() ?? ""}`);
+  const hi = (m?: TeamMetric) => (m?.key === "sec_per_play" ? "slow" : `high ${m?.label.toLowerCase() ?? ""}`);
+  const pace = (m?: TeamMetric) => (m?.key === "sec_per_play" ? " (higher = slower)" : "");
   const quads: [string, string, string, string] = [`${lo(mx)} · ${hi(my)}`, `${hi(mx)} · ${hi(my)}`, `${lo(mx)} · ${lo(my)}`, `${hi(mx)} · ${lo(my)}`];
   const opts = league.metrics;
   return (
@@ -43,7 +47,7 @@ export default function TeamScatter({ league, highlight = [], onPick, defaultX =
         <Field label="Y axis"><select className="input" value={y} onChange={(e) => setY(e.target.value)}>{opts.map((m) => <option key={m.key} value={m.key}>{m.side === "def" ? "DEF · " : ""}{m.label}</option>)}</select></Field>
         <span className="hint" style={{ alignSelf: "center" }}>{league.season} regular season · dashed lines are league averages · hover a logo</span>
       </div>
-      <ScatterPlot dots={dots} xLabel={`${mx?.label ?? x}${mx?.key === "sec_per_play" ? " (higher = slower)" : ""}`} yLabel={my?.label ?? y} xFmt={f(mx)} yFmt={f(my)} quadrants={quads} onPick={onPick} showLabels="all" imageSize={26} />
+      <ScatterPlot dots={dots} xLabel={`${mx?.label ?? x}${pace(mx)}`} yLabel={`${my?.label ?? y}${pace(my)}`} xFmt={f(mx)} yFmt={f(my)} quadrants={quads} onPick={onPick} showLabels="all" imageSize={26} />
       {(mx?.note || my?.note) && <div className="hint">{mx?.note ? `${mx.label}: ${mx.note}. ` : ""}{my?.note ? `${my.label}: ${my.note}.` : ""}</div>}
     </div>
   );
