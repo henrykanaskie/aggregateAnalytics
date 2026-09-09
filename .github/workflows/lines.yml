@@ -28,7 +28,11 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install -e ".[web]"
+      - run: pip install -e ".[dashboard]"
+      - name: Fetch the tables the puller needs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/fetch_cache.py --only _static schedules player_stats_week
       - name: Pull lines
         env:
           ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}

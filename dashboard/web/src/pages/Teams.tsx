@@ -1,0 +1,140 @@
+import { chartTheme } from "../lib/theme";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
+import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { api2, LeagueTendencies, TeamMetric, TeamTendencies } from "../api";
+import { Banner, Field, Seg, Spinner, TeamTag } from "../components/common";
+import { fmtStat } from "../lib/format";
+import { useMeta } from "../state";
+import UsageTree from "../components/UsageTree";
+import DvpTable from "../components/DvpTable";
+
+export const rankClass = (rank: number | null | undefined, n: number | null | undefined, good: string) => {
+  if (!rank || !n || good === "none") return "";
+  const pct = 1 - (rank - 1) / (n - 1);
+  const isGood = good === "high" ? pct : 1 - pct;
+  return isGood >= 0.75 ? "over" : isGood <= 0.25 ? "under" : "";
+};
+export const rankBg = (rank: number | null | undefined, n: number | null | undefined) => {
+  if (!rank || !n) return undefined;
+  const pct = 1 - (rank - 1) / (n - 1);
+  return `rgba(90,156,245,${(0.06 + pct * 0.34).toFixed(2)})`;
+};
+
+export default function Teams() {
+  const { meta } = useMeta();
+  const T = chartTheme();
+  const [sp, setSp] = useSearchParams();
+  const team = sp.get("team") ?? "";
+  const [data, setData] = useState<TeamTendencies | null>(null);
+  const [league, setLeague] = useState<LeagueTendencies | null>(null);
+  const [since, setSince] = useState(2012);
+  const [side, setSide] = useState<"off" | "def">("off");
+  const [metric, setMetric] = useState("pass_rate");
+  const [leagueSeason, setLeagueSeason] = useState<number | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => { if (team) { setErr(null); api2.teamTendencies(team, since).then(setData).catch((e) => setErr(String(e))); } }, [team, since]);
+  useEffect(() => { if (meta) api2.league(leagueSeason ?? meta.season - 1).then(setLeague).catch((e) => setErr(String(e))); }, [meta, leagueSeason]);
+  const metrics: TeamMetric[] = (data?.metrics ?? meta?.team_metrics ?? []).filter((m) => m.side === side);
+  const mdef = metrics.find((m) => m.key === metric) ?? metrics[0];
+  const trend = useMemo(() => (data?.seasons ?? []).slice().reverse().map((s) => ({ season: s.season, v: s[metric] as number | null, rank: s[`${metric}_rank`] as number | null })), [data, metric]);
+  const gameTrend = useMemo(() => (data?.games ?? []).filter((g) => g.season >= (data?.seasons[0]?.season ?? 0) - 1).map((g) => ({ label: `${g.season} W${g.week} ${g.home ? "vs" : "@"} ${g.opponent}`, v: g[metric] as number | null })), [data, metric]);
+  const teams = (meta?.teams ?? []).filter((t) => !["OAK", "SD", "STL", "LAR"].includes(t.team_abbr));
+  const sortedLeague = useMemo(() => (league?.teams ?? []).slice().sort((a, b) => ((b[metric] as number) ?? -1e9) - ((a[metric] as number) ?? -1e9)), [league, metric]);
+  if (meta && !meta.team_table_ready) return <Banner kind="warn">The team tendency table is not built yet. Run <code>python -m dashboard.stats.team</code> (about a minute) and reload.</Banner>;
+  return (
+    <div>
+      <div className="page-head"><div><h1>Team tendencies</h1><div className="muted small">Pass rate, pace, red zone, personnel, RB usage and defense, per season with league ranks and per game. Built from play-by-play, so every number is a countable thing.</div></div></div>
+      {err && <Banner kind="err">{err}</Banner>}
+      <div className="panel" style={{ marginBottom: 12 }}>
+        <div className="controls">
+          <Field label="Team"><select className="input" value={team} onChange={(e) => setSp({ team: e.target.value })}><option value="">League table only</option>{teams.map((t) => <option key={t.team_abbr} value={t.team_abbr}>{t.team_name}</option>)}</select></Field>
+          <Field label="Side"><Seg value={side} options={[{ v: "off", l: "Offense" }, { v: "def", l: "Defense" }]} onChange={(v) => { setSide(v); const first = (meta?.team_metrics ?? []).find((m) => m.side === v); if (first) setMetric(first.key); }} /></Field>
+          <Field label="Metric"><select className="input" value={mdef?.key ?? ""} onChange={(e) => setMetric(e.target.value)}>{metrics.map((m) => <option key={m.key} value={m.key}>{m.label}{m.since > 1999 ? ` (${m.since}+)` : ""}</option>)}</select></Field>
+          <Field label="Since"><input className="input num" type="number" min={1999} max={2026} value={since} onChange={(e) => setSince(Number(e.target.value))} /></Field>
+          {mdef?.note && <div className="hint" style={{ maxWidth: 380 }}>{mdef.note}</div>}
+        </div>
+      </div>
+      {team && !data && <div className="empty"><Spinner /></div>}
+      {team && data && (
+        <div className="grid" style={{ marginBottom: 14 }}>
+          <div className="panel">
+            <div className="panel-head">
+              <div style={{ display: "flex", gap: 10, alignItems: "center" }}><TeamTag abbr={team} name /> <span className="muted small">head coach {data.current_coach ? <Link to={`/coaches?coach=${encodeURIComponent(data.current_coach)}`}>{data.current_coach}</Link> : "–"}</span></div>
+              <span className="hint">coaches by season: {data.coaches.slice(0, 8).map((c) => `${c.season} ${c.coach.split(" ").slice(-1)[0]}`).join(" · ")}</span>
+            </div>
+            <div className="grid grid-2">
+              <div>
+                <div className="small muted"><b>{mdef?.label}</b> by season (line) · rank in bubbles</div>
+                <ResponsiveContainer width="100%" height={200}>
+                  <LineChart data={trend} margin={{ top: 10, right: 10, left: -14, bottom: 0 }}>
+                    <CartesianGrid stroke={T.grid} vertical={false} />
+                    <XAxis dataKey="season" tick={{ fill: T.tick, fontSize: 10 }} tickLine={false} axisLine={{ stroke: T.axis }} />
+                    <YAxis tick={{ fill: T.tick, fontSize: 10 }} tickLine={false} axisLine={false} domain={["auto", "auto"]} tickFormatter={(v) => fmtStat(v, mdef?.fmt as any)} />
+                    <Tooltip contentStyle={T.tooltip} formatter={(v: any, _n, p: any) => [`${fmtStat(v, mdef?.fmt as any)} (rank ${p.payload.rank})`, mdef?.label]} />
+                    <Line type="monotone" dataKey="v" stroke={T.accent} strokeWidth={2} dot={{ r: 3 }} isAnimationActive={false} connectNulls />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+              <div>
+                <div className="small muted"><b>{mdef?.label}</b> game by game, last two seasons</div>
+                <ResponsiveContainer width="100%" height={200}>
+                  <LineChart data={gameTrend} margin={{ top: 10, right: 10, left: -14, bottom: 0 }}>
+                    <CartesianGrid stroke={T.grid} vertical={false} />
+                    <XAxis dataKey="label" tick={{ fill: T.tick, fontSize: 9 }} tickLine={false} axisLine={{ stroke: T.axis }} interval="preserveStartEnd" />
+                    <YAxis tick={{ fill: T.tick, fontSize: 10 }} tickLine={false} axisLine={false} domain={["auto", "auto"]} tickFormatter={(v) => fmtStat(v, mdef?.fmt as any)} />
+                    <Tooltip contentStyle={T.tooltip} formatter={(v: any) => [fmtStat(v, mdef?.fmt as any), mdef?.label]} />
+                    <Line type="monotone" dataKey="v" stroke={T.over} strokeWidth={1.6} dot={{ r: 2 }} isAnimationActive={false} connectNulls />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+          <div className="panel">
+            <div className="panel-head"><h3>{team} by season · {side === "off" ? "offense" : "defense"}</h3><span className="hint">value with league rank; green/red = top/bottom quarter where direction matters · <span className="scroll-hint">scroll sideways for all {metrics.length} metrics</span></span></div>
+            <div className="tbl-wrap">
+              <table className="tbl wide">
+                <thead><tr><th className="left">Season</th><th className="left">Coach</th><th>G</th>{metrics.map((m) => <th key={m.key} className={m.key === metric ? "over" : ""} onClick={() => setMetric(m.key)} title={m.note || undefined}>{m.label}</th>)}</tr></thead>
+                <tbody>
+                  {data.seasons.map((s) => { const coach = data.coaches.find((c) => c.season === s.season); return (
+                    <tr key={s.season}><td className="left">{s.season}</td><td className="left small muted">{coach?.coach ?? ""}</td><td className="num muted">{s.games}</td>
+                      {metrics.map((m) => { const v = s[m.key] as number | null; const r = s[`${m.key}_rank`] as number | null; return <td key={m.key} className={`num ${rankClass(r, s.n_teams, m.good)}`} title={r ? `rank ${r} of ${s.n_teams}` : ""}>{v === null || v === undefined ? "–" : <>{fmtStat(v, m.fmt as any)} <span className="faint tiny">{r}</span></>}</td>; })}
+                    </tr>
+                  ); })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+      {team && data && (
+        <div className="grid grid-2" style={{ marginBottom: 14 }}>
+          <div className="panel"><UsageTree team={team} season={data.seasons[0]?.season ?? (meta?.season ?? 2026) - 1} /></div>
+          <div className="panel"><DvpTable season={league?.season ?? (meta?.season ?? 2026) - 1} highlight={team} onPick={(t) => setSp({ team: t })} /></div>
+        </div>
+      )}
+      {!team && (
+        <div className="panel" style={{ marginBottom: 14 }}><DvpTable season={league?.season ?? (meta?.season ?? 2026) - 1} onPick={(t) => setSp({ team: t })} /></div>
+      )}
+      <div className="panel">
+        <div className="panel-head">
+          <h3>League table · {league?.season}</h3>
+          <Field label="Season"><input className="input num" type="number" min={1999} max={(meta?.season ?? 2026) - 1} value={leagueSeason ?? league?.season ?? ""} onChange={(e) => setLeagueSeason(Number(e.target.value))} /></Field>
+        </div>
+        <div className="tbl-wrap" style={{ maxHeight: 640 }}>
+          <table className="tbl wide">
+            <thead><tr><th className="left">Team</th><th className="left">Coach</th>{metrics.map((m) => <th key={m.key} className={m.key === metric ? "over" : ""} onClick={() => setMetric(m.key)} title={m.note || undefined}>{m.label}</th>)}</tr></thead>
+            <tbody>
+              {sortedLeague.map((t) => (
+                <tr key={t.team as string} className={`clickable ${t.team === team ? "hl" : ""}`} onClick={() => setSp({ team: t.team as string })}>
+                  <td className="left"><TeamTag abbr={t.team as string} /></td><td className="left small muted">{league?.coaches[t.team as string] ?? ""}</td>
+                  {metrics.map((m) => { const v = t[m.key] as number | null; const r = t[`${m.key}_rank`] as number | null; return <td key={m.key} className={`num ${rankClass(r, t.n_teams, m.good)}`} style={{ background: m.key === metric ? rankBg(r, t.n_teams) : undefined }}>{v === null || v === undefined ? "–" : fmtStat(v, m.fmt as any)}</td>; })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
