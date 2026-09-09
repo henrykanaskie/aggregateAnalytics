@@ -7,7 +7,7 @@
 # table pushes do rebuild, which is a handful of times a week.
 services:
   - type: web
-    name: nfl-predictor
+    name: aggregateanalytics
     runtime: python
     plan: free
     buildCommand: bash scripts/build.sh

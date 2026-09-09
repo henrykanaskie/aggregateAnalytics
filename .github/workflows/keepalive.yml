@@ -18,8 +18,8 @@ name: keepalive
 #
 # Set the repository variable SITE_URL to the site's origin (Settings ->
 # Secrets and variables -> Actions -> Variables), e.g.
-# https://nfl-predictor.onrender.com. Without it this exits without pinging,
-# so a fork or a clone does not hammer someone else's host.
+# https://aggregateanalytics.onrender.com. Without it this exits without
+# pinging, so a fork or a clone does not hammer someone else's host.
 #
 # /api/health is exempt from the password (webauth/auth.py EXEMPT_PREFIXES),
 # so no token is needed here.
