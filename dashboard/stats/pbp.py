@@ -156,7 +156,18 @@ DIMS: list[Dim] = [
 DIM_BY_KEY = {d.key: d for d in DIMS}
 
 
-@lru_cache(maxsize=128)
+#: How many players' play histories to hold. Each entry is that player's whole
+#: career of plays with FTN charting, participation and weather joined on, and
+#: nothing ever releases one, so this number sets a memory floor. Measured on
+#: the 512 MB host: warming one game's matchup fills 16 entries and takes the
+#: process from 316 MB to 530 MB, and 128 entries reached 680 MB, which is an
+#: OOM kill and a cold restart. The frames cost ~110ms to rebuild, so a small
+#: cache is the right trade: it covers the player being looked at and the ones
+#: either side of them, and lets the rest go.
+PLAYS_CACHE = 16
+
+
+@lru_cache(maxsize=PLAYS_CACHE)
 def player_plays(player_id: str) -> pl.DataFrame:
     """Every play the player rushed, was targeted or threw on, with charting
     columns attached where they exist."""
