@@ -35,16 +35,20 @@ export default function PlayerScatter({ playerId, position, statKey, season, nam
   useEffect(() => { if (pos) api6.scatterPlayers(yr, pos, 1).then((d) => setRows(d.rows)).catch(() => setRows([])); }, [pos, yr]);
   const sx = statByKey.get(x), sy = statByKey.get(y);
   const perGame = (k: string) => statByKey.get(k)?.fmt === "int" || ["passing_epa", "rushing_epa", "receiving_epa", "fantasy_points", "fantasy_points_ppr"].includes(k);
-  const TOP = 32;     // dots drawn
-  const PEERS = 50;   // the field they, and the average lines, are read against
+  const PEERS = 50;   // the field drawn, and what the average lines are read against
 
   // Two problems with charting the whole position. It is 188 receivers, so 188
   // remote headshots and an unreadable cloud of faces; and most of them are
   // bench players whose presence drags the "position average" down to a number
   // no starter is ever measured against. So the field is the 50 most-used at
   // the position, ranked by fantasy points because that cohort should not move
-  // when the axes do. The dots are the top of that field by the charted stat,
-  // plus this player wherever he lands, and every dot is named: only he keeps
+  // when the axes do.
+  //
+  // All fifty are drawn. An earlier cut to the top 32 by the charted stat kept
+  // the labels apart, but it also meant the dots and the dashed averages were
+  // different populations: the lines said "the field" while the chart showed
+  // its upper half, so every average looked low against what was on screen.
+  // Plus this player wherever he lands, and every dot is named: only he keeps
   // a face, since finding him is what the chart is for.
   const { dots, avg, me, missing, gaps } = useMemo(() => {
     const plottable = (r: ScatterRow) => r[x] !== null && r[y] !== null;
@@ -53,7 +57,8 @@ export default function PlayerScatter({ playerId, position, statKey, season, nam
     const used = [...eligible].sort((a, b) => ((b.fantasy_points_ppr as number) ?? -Infinity) - ((a.fantasy_points_ppr as number) ?? -Infinity));
     const field = used.slice(0, PEERS);
     const mean = (k: string) => (field.length ? field.reduce((a, r) => a + (r[k] as number), 0) / field.length : null);
-    const top = [...field].sort((a, b) => ((b[y] as number) ?? -Infinity) - ((a[y] as number) ?? -Infinity)).slice(0, TOP);
+    // Sorted by the charted stat so the draw order is stable, not to cut it.
+    const top = [...field].sort((a, b) => ((b[y] as number) ?? -Infinity) - ((a[y] as number) ?? -Infinity));
     // Whoever the page is about is on the chart, top of the field or not, over
     // the games bar or not. Searching a player and not finding him is the one
     // outcome this chart must never produce.
@@ -86,7 +91,7 @@ export default function PlayerScatter({ playerId, position, statKey, season, nam
         <Field label="X axis"><StatPicker value={x} onChange={setX} position={pos} /></Field>
         <Field label="Y axis"><StatPicker value={y} onChange={setY} position={pos} /></Field>
         <Field label="Min games"><input className="input num" type="number" min={1} max={20} value={minG} onChange={(e) => setMinG(Number(e.target.value))} /></Field>
-        <span className="hint" style={{ alignSelf: "center" }}>top {TOP} by this stat among the {avg.n} most-used {pos}s{dots.length > TOP ? ", plus this one" : ""} · dashed lines average those {avg.n} · counting stats are per game, rates from season totals · click a dot to open that player</span>
+        <span className="hint" style={{ alignSelf: "center" }}>the {avg.n} most-used {pos}s{dots.length > avg.n ? ", plus this one" : ""} · dashed lines average the same {avg.n} · counting stats are per game, rates from season totals · click a dot to open that player</span>
       </div>
       {missing === "season" && <div className="banner info">{name ?? "This player"} has no {yr} season on record, so there is nothing to place on this chart. Pick another season.</div>}
       {missing === "stat" && <div className="banner info">{name ?? "This player"} has no {gaps.map((k) => statByKey.get(k)?.label ?? k).join(" and no ")} recorded for {yr}, so there is no point to place. Change that axis to see him.</div>}
