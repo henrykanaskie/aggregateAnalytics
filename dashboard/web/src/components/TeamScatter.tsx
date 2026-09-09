@@ -41,7 +41,10 @@ export default function TeamScatter({ league, highlight = [], onPick, defaultX =
   return (
     <div>
       <div className="controls" style={{ marginBottom: 6 }}>
-        <Field label="Preset"><select className="input" value="" onChange={(e) => { const p = PRESETS.find((q) => q.label === e.target.value); if (p) { setX(p.x); setY(p.y); } }}><option value="">Choose…</option>{PRESETS.map((p) => <option key={p.label} value={p.label}>{p.label}</option>)}</select></Field>
+        {/* Shows the preset the axes currently match, so a pick stays visible
+            and a hand-picked pair that happens to be a preset is named too;
+            anything else reads as custom. */}
+        <Field label="Preset"><select className="input" value={PRESETS.find((p) => p.x === x && p.y === y)?.label ?? ""} onChange={(e) => { const p = PRESETS.find((q) => q.label === e.target.value); if (p) { setX(p.x); setY(p.y); } }}><option value="">Custom…</option>{PRESETS.map((p) => <option key={p.label} value={p.label}>{p.label}</option>)}</select></Field>
         <Field label="X axis"><select className="input" value={x} onChange={(e) => setX(e.target.value)}>{opts.map((m) => <option key={m.key} value={m.key}>{m.side === "def" ? "DEF · " : ""}{m.label}</option>)}</select></Field>
         <Field label="Y axis"><select className="input" value={y} onChange={(e) => setY(e.target.value)}>{opts.map((m) => <option key={m.key} value={m.key}>{m.side === "def" ? "DEF · " : ""}{m.label}</option>)}</select></Field>
         <span className="hint" style={{ alignSelf: "center" }}>{league.season} regular season · dashed lines are league averages · hover a logo</span>
