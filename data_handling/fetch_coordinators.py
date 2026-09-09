@@ -304,13 +304,35 @@ def save(df: pl.DataFrame, log=print) -> Path:
     return CACHE
 
 
+def seasons_to_fetch(asked: list[int], end: int, cached: bool) -> list[int]:
+    """Which seasons a run should actually cover.
+
+    A named season is a *refresh*: :func:`save` merges it into the archive and
+    leaves the rest alone. That only works if there is an archive. The weekly
+    job asks for the current season on a CI runner whose cache came from the
+    release, which will not carry this table until the first run has uploaded
+    one -- so the first run has nothing to merge into, and taking the argument
+    at face value would leave one season on disk and ship exactly that: no
+    history, no fingerprints, every coordinator a rookie. Backfill instead.
+    """
+    if not asked:
+        return list(range(FIRST_SEASON, end + 1))
+    if cached:
+        return sorted(set(asked))
+    return list(range(FIRST_SEASON, max(max(asked), end) + 1))
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("seasons", nargs="*", type=int, help="seasons to fetch (default: all since 1999)")
     ap.add_argument("--end", type=int, default=None, help="last season when none are listed")
     a = ap.parse_args()
     from dashboard.config import CURRENT_SEASON
-    seasons = a.seasons or list(range(FIRST_SEASON, (a.end or CURRENT_SEASON) + 1))
+    end = a.end or CURRENT_SEASON
+    seasons = seasons_to_fetch(a.seasons, end, CACHE.exists())
+    if a.seasons and seasons != sorted(set(a.seasons)):
+        print(f"no archive at {CACHE}, so there is nothing to merge {a.seasons} into: "
+              f"backfilling {seasons[0]}-{seasons[-1]} instead")
     print(f"fetching coordinators for {len(seasons)} season(s)")
     save(build(seasons))
 

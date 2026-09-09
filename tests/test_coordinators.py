@@ -8,7 +8,7 @@ team that will go missing. The profile tests need the parquet cache.
 import polars as pl
 import pytest
 
-from data_handling.fetch_coordinators import clean_name, page_title, parse_staff
+from data_handling.fetch_coordinators import clean_name, page_title, parse_staff, seasons_to_fetch
 from dashboard.stats import coaches as coaches_mod
 
 
@@ -88,6 +88,27 @@ def test_page_titles_follow_the_franchise_of_the_day(team, season, expected):
     """A relocation renames the article, so asking for the current name would
     quietly return nothing for every season before the move."""
     assert page_title(team, season) == expected
+
+
+# --- what a run actually covers --------------------------------------------
+
+def test_a_named_season_is_a_refresh_when_there_is_an_archive():
+    assert seasons_to_fetch([2026], 2026, cached=True) == [2026]
+
+
+def test_the_first_run_backfills_instead_of_shipping_one_season():
+    """The weekly job asks for the current season on a runner whose cache came
+    from the release. Until a run has uploaded this table there is nothing to
+    merge into, and honouring the argument would publish a single season: no
+    history, no fingerprints, every coordinator a first-year hire.
+    """
+    got = seasons_to_fetch([2026], 2026, cached=False)
+    assert got[0] == 1999 and got[-1] == 2026
+    assert len(got) == 28
+
+
+def test_no_argument_means_the_whole_archive():
+    assert seasons_to_fetch([], 2026, cached=True) == list(range(1999, 2027))
 
 
 # --- the profiles built on top ---------------------------------------------
