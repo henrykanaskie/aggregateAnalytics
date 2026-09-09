@@ -5,7 +5,7 @@ import { useMeta } from "../state";
 import { Field } from "./common";
 import ScatterPlot from "./ScatterPlot";
 import { shownRank } from "../lib/rank";
-import { describeQuadrants } from "../lib/quadrants";
+import { axisEnds, describeQuadrants } from "../lib/quadrants";
 
 const PRESETS: { label: string; x: string; y: string }[] = [
   { label: "Pace vs volume", x: "sec_per_play", y: "plays_pg" },
@@ -49,7 +49,7 @@ export default function TeamScatter({ league, highlight = [], onPick, defaultX =
         <Field label="Y axis"><select className="input" value={y} onChange={(e) => setY(e.target.value)}>{opts.map((m) => <option key={m.key} value={m.key}>{m.side === "def" ? "DEF · " : ""}{m.label}</option>)}</select></Field>
         <span className="hint" style={{ alignSelf: "center" }}>{league.season} regular season · dashed lines are league averages · hover a logo</span>
       </div>
-      <ScatterPlot dots={dots} xLabel={`${mx?.label ?? x}${pace(mx)}`} yLabel={`${my?.label ?? y}${pace(my)}`} xFmt={f(mx)} yFmt={f(my)} quadrants={quads} onPick={onPick} showLabels="all" imageSize={26} />
+      <ScatterPlot dots={dots} xLabel={`${mx?.label ?? x}${pace(mx)}`} yLabel={`${my?.label ?? y}${pace(my)}`} xFmt={f(mx)} yFmt={f(my)} quadrants={quads} xEnds={axisEnds(x, mx?.label ?? x)} yEnds={axisEnds(y, my?.label ?? y)} onPick={onPick} showLabels="all" imageSize={26} />
       {(mx?.note || my?.note) && <div className="hint">{mx?.note ? `${mx.label}: ${mx.note}. ` : ""}{my?.note ? `${my.label}: ${my.note}.` : ""}</div>}
     </div>
   );

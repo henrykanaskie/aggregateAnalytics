@@ -148,6 +148,12 @@ const reading = (key: string, label: string, high: boolean): string => {
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
+/** The two ends of an axis in the same words the corners use, for the
+ *  arrows drawn beside it: "← plays fast … plays slow →". */
+export function axisEnds(key: string, label: string): { low: string; high: string } {
+  return { low: reading(key, label, false), high: reading(key, label, true) };
+}
+
 /**
  * Four corner descriptions for a scatter of `x` against `y`, in draw order:
  * top-left (low x, high y), top-right (high, high), bottom-left (low, low),

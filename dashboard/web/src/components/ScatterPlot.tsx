@@ -10,6 +10,9 @@ interface Props {
   // better. A chart showing a trimmed field has to pass the full population's
   // average, or the line reads as the league when it is only the top of it.
   xAvg?: number | null; yAvg?: number | null;
+  // What each end of an axis means, in words, drawn with arrows beside the
+  // axis so the reader does not have to work it out from the numbers.
+  xEnds?: { low: string; high: string }; yEnds?: { low: string; high: string };
   xGoodHigh?: boolean | null; yGoodHigh?: boolean | null; onPick?: (id: string) => void; title?: string;
 }
 
@@ -94,7 +97,7 @@ const sameSides = (a: Record<string, Side>, b: Record<string, Side>) => {
 
 /** Teams or players as dots (logos / headshots) on two metrics, with league
  *  averages as crosshairs. Highlighted dots draw larger and labelled. */
-export default function ScatterPlot({ dots, xLabel, yLabel, xFmt = (v) => String(v), yFmt = (v) => String(v), height = 380, imageSize = 22, showLabels = "highlight", quadrants, onPick, xAvg, yAvg }: Props) {
+export default function ScatterPlot({ dots, xLabel, yLabel, xFmt = (v) => String(v), yFmt = (v) => String(v), height = 380, imageSize = 22, showLabels = "highlight", quadrants, onPick, xAvg, yAvg, xEnds, yEnds }: Props) {
   const T = chartTheme();
   const [hover, setHover] = useState<string | null>(null);
   // Filled while rendering, read after: `shape` below is the only place the
@@ -189,6 +192,17 @@ export default function ScatterPlot({ dots, xLabel, yLabel, xFmt = (v) => String
           <Scatter data={data} shape={shape} isAnimationActive={false} />
         </ScatterChart>
       </ResponsiveContainer>
+      {yEnds && (
+        // Up the left edge: the top margin above the plot, and the bottom
+        // margin beside the X axis title, which is centred and short.
+        <>
+          <div className="axis-end" style={{ left: 8, top: 4 }}>↑ {yEnds.high}</div>
+          <div className="axis-end" style={{ left: 8, bottom: 4 }}>↓ {yEnds.low}</div>
+        </>
+      )}
+      {xEnds && (
+        <div className="axis-ends"><span>← {xEnds.low}</span><span>{xEnds.high} →</span></div>
+      )}
       {quadrants && (
         // What each corner means, in words. Faint and behind the pointer so
         // the dots stay the chart; the axis titles still say what is measured.

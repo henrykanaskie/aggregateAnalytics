@@ -6,7 +6,7 @@ import { useMeta } from "../state";
 import { Field } from "./common";
 import ScatterPlot from "./ScatterPlot";
 import StatPicker from "./StatPicker";
-import { describeQuadrants } from "../lib/quadrants";
+import { axisEnds, describeQuadrants } from "../lib/quadrants";
 
 const PAIR: Record<string, [string, string]> = {
   QB: ["attempts", "passing_yards"], RB: ["carries", "rushing_yards"], WR: ["targets", "receiving_yards"], TE: ["targets", "receiving_yards"],
@@ -115,7 +115,7 @@ export default function PlayerScatter({ playerId, position, statKey, season, nam
       {missing === "season" && <div className="banner info">{name ?? "This player"} has no {yr} season on record, so there is nothing to place on this chart. Pick another season.</div>}
       {missing === "stat" && <div className="banner info">{name ?? "This player"} has no {gaps.map((k) => statByKey.get(k)?.label ?? k).join(" and no ")} recorded for {yr}, so there is no point to place. Change that axis to see him.</div>}
       {me && (me.games as number) < minG && <div className="hint" style={{ marginBottom: 6 }}>Shown despite {me.games as number} games, under the {minG}-game minimum: the minimum trims the field, never the player you are looking at.</div>}
-      {rows === null ? <div className="hint">loading…</div> : <ScatterPlot dots={dots} xLabel={axis(x, sx)} yLabel={axis(y, sy)} xFmt={fx} yFmt={fy} xAvg={avg.x} yAvg={avg.y} quadrants={describeQuadrants(x, y, sx?.label ?? x, sy?.label ?? y)} onPick={(id) => nav(`/research?player=${id}`)} showLabels="some" imageSize={24} height={400} />}
+      {rows === null ? <div className="hint">loading…</div> : <ScatterPlot dots={dots} xLabel={axis(x, sx)} yLabel={axis(y, sy)} xFmt={fx} yFmt={fy} xAvg={avg.x} yAvg={avg.y} quadrants={describeQuadrants(x, y, sx?.label ?? x, sy?.label ?? y)} xEnds={axisEnds(x, sx?.label ?? x)} yEnds={axisEnds(y, sy?.label ?? y)} onPick={(id) => nav(`/research?player=${id}`)} showLabels="some" imageSize={24} height={400} />}
     </div>
   );
 }
