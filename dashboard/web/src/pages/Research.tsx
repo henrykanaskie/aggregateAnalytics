@@ -37,6 +37,8 @@ export default function Research() {
   const gamelog = useQuery<GameLog>(pid ? api.gamelog.url(pid, settings.since) : null);
   const playerLines = useQuery<PlayerLines>(pid ? api.playerLines.url(pid, undefined, undefined, settings.includeSample) : null);
   const player = bio.data, log = gamelog.data, lines = playerLines.data;
+  // The page is up once these three have landed; everything heavier waits.
+  const core = !!player && !!log && !!lines;
   const loading = bio.loading || gamelog.loading || playerLines.loading;
   const err = bio.error ?? gamelog.error ?? playerLines.error;
 
@@ -236,17 +238,17 @@ export default function Research() {
               <div className="panel"><GameLogTable rows={filtered} columns={columns} setColumns={setColumns} statKey={statKey} line={line} available={log?.available} position={player.position} picked={picked} onPick={(id) => setPicked((p) => (p === id ? null : id))} important={important} /></div>
               <div className="panel">
                 <div className="panel-head" data-tour="research-peers"><h3>Among {player.position}s · {stat?.label ?? statKey} vs the volume behind it</h3><span className="hint">the highlighted face is {player.name}; dashed lines average the position's most-used players, not its whole roster</span></div>
-                <Defer minHeight={300}><PlayerScatter playerId={pid} position={player.position} statKey={statKey} season={(meta?.season ?? 2026) - 1} name={player.name} /></Defer>
+                <Defer minHeight={300} when={core}><PlayerScatter playerId={pid} position={player.position} statKey={statKey} season={(meta?.season ?? 2026) - 1} name={player.name} /></Defer>
               </div>
               <div className="panel"><MiniCharts rows={filtered} keys={miniKeys} setKeys={setMiniKeys} available={log?.available} position={player.position} onFocus={chooseStat} /></div>
               <div className="panel">
                 <div className="panel-head"><h3>With / without teammates · {stat?.label ?? statKey}{line !== null ? ` vs ${line}` : ""}</h3></div>
-                <Defer minHeight={200}><TeammatesPanel playerId={pid} rows={rawRows} statKey={statKey} stat={stat} line={line} active={gameFilter?.key ?? null} onFilter={(ids, label, key) => setGameFilter(ids && label ? { ids: new Set(ids), label, key: key ?? label } : null)} /></Defer>
+                <Defer minHeight={200} when={core}><TeammatesPanel playerId={pid} rows={rawRows} statKey={statKey} stat={stat} line={line} active={gameFilter?.key ?? null} onFilter={(ids, label, key) => setGameFilter(ids && label ? { ids: new Set(ids), label, key: key ?? label } : null)} /></Defer>
               </div>
-              <div className="panel"><Defer minHeight={220}><Splits playerId={pid} statKey={statKey} position={player.position} since={settings.since} /></Defer></div>
+              <div className="panel"><Defer minHeight={220} when={core}><Splits playerId={pid} statKey={statKey} position={player.position} since={settings.since} /></Defer></div>
               <div className="panel">
                 <div className="panel-head"><h3>Same-game correlations · {stat?.label ?? statKey}</h3></div>
-                <Defer minHeight={160}><CorrelationsPanel playerId={pid} statKey={statKey} statLabel={stat?.label ?? statKey} /></Defer>
+                <Defer minHeight={160} when={core}><CorrelationsPanel playerId={pid} statKey={statKey} statLabel={stat?.label ?? statKey} /></Defer>
               </div>
             </div>
             <div className="grid" style={{ gap: 14, alignContent: "start" }}>
@@ -265,13 +267,13 @@ export default function Research() {
               </div>
               <div className="panel">
                 <div className="panel-head"><h3>Matchup · team tendencies</h3></div>
-                <Defer minHeight={240}><MatchupPanel team={player.team} opponent={lines?.game ? (lines.game.home_team === player.team ? lines.game.away_team : lines.game.home_team) : null} position={player.position} focus={settings.focus} /></Defer>
+                <Defer minHeight={240} when={core}><MatchupPanel team={player.team} opponent={lines?.game ? (lines.game.home_team === player.team ? lines.game.away_team : lines.game.home_team) : null} position={player.position} focus={settings.focus} /></Defer>
               </div>
               <div className="panel">
                 <div className="panel-head"><h3>Injuries</h3></div>
-                <Defer minHeight={160}><InjuryPanel playerId={pid} team={player.team} opponent={lines?.game ? (lines.game.home_team === player.team ? lines.game.away_team : lines.game.home_team) : null} /></Defer>
+                <Defer minHeight={160} when={core}><InjuryPanel playerId={pid} team={player.team} opponent={lines?.game ? (lines.game.home_team === player.team ? lines.game.away_team : lines.game.home_team) : null} /></Defer>
               </div>
-              <PredictionSlot playerId={pid} market={market} line={line} proj={marketRow?.proj ?? null} statFmt={stat?.fmt} />
+              <Defer minHeight={120} when={core}><PredictionSlot playerId={pid} market={market} line={line} proj={marketRow?.proj ?? null} statFmt={stat?.fmt} /></Defer>
             </div>
           </div>
         </div>
@@ -286,7 +288,9 @@ function PredictionSlot({ playerId, market, line, proj, statFmt }: { playerId: s
   useEffect(() => {
     if (!meta) return;
     let alive = true;
-    api.predictions(meta.season, meta.week).then((d) => alive && setRows(d.props.filter((p) => p.player_id === playerId))).catch(() => alive && setRows([]));
+    // One player's rows, not the week's file: the slot used to download
+    // every logged prop prediction to show the handful that were his.
+    api.predictions(meta.season, meta.week, playerId).then((d) => alive && setRows(d.props.filter((p) => p.player_id === playerId))).catch(() => alive && setRows([]));
     return () => { alive = false; };
   }, [meta, playerId]);
   const mine = rows.filter((p) => !market || p.market === market);

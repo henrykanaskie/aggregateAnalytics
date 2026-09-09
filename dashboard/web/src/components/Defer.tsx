@@ -12,13 +12,17 @@ import { useEffect, useRef, useState } from "react";
  * mechanism. `rootMargin` gives it a screen of warning, which is enough to
  * have loaded by the time it is scrolled into view.
  */
-export default function Defer({ children, minHeight = 160, rootMargin = "600px", delay = 1200 }:
-  { children: React.ReactNode; minHeight?: number; rootMargin?: string; delay?: number }) {
+export default function Defer({ children, minHeight = 160, rootMargin = "600px", delay = 1200, when = true }:
+  { children: React.ReactNode; minHeight?: number; rootMargin?: string; delay?: number; when?: boolean }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const [shown, setShown] = useState(false);
 
+  // `when` false holds the panel back even in view and even past the timer:
+  // a research page fires sixteen requests at once, and on a small host the
+  // three it needs to paint were queuing behind the heavy ones below. The
+  // page passes "the game log is in", so those start once there is a page.
   useEffect(() => {
-    if (shown) return;
+    if (shown || !when) return;
     const el = ref.current;
     // Scrolling to it is the fast path, not the only path. An observer that
     // never fires -- no IntersectionObserver, a tab rendered offscreen, a panel
@@ -35,7 +39,7 @@ export default function Defer({ children, minHeight = 160, rootMargin = "600px",
     }, { rootMargin });
     io.observe(el);
     return () => { io.disconnect(); window.clearTimeout(timer); };
-  }, [shown, rootMargin, delay]);
+  }, [shown, rootMargin, delay, when]);
 
   return <div ref={ref} style={shown ? undefined : { minHeight }}>{shown ? children : null}</div>;
 }

@@ -19,7 +19,7 @@ const RELATED: Record<string, string> = {
 
 /** The player among position peers for a season: Y = the current stat, X = the volume behind it. */
 export default function PlayerScatter({ playerId, position, statKey, season, name }: { playerId: string; position: string; statKey: string; season: number; name?: string }) {
-  const { statByKey } = useMeta();
+  const { statByKey, teamByAbbr } = useMeta();
   const nav = useNavigate();
   const pos = ["FB", "HB"].includes(position) ? "RB" : ["QB", "RB", "WR", "TE"].includes(position) ? position : null;
   const [rows, setRows] = useState<ScatterRow[] | null>(null);
@@ -47,13 +47,11 @@ export default function PlayerScatter({ playerId, position, statKey, season, nam
   const perGame = (k: string) => statByKey.get(k)?.fmt === "int" || ["passing_epa", "rushing_epa", "receiving_epa", "fantasy_points", "fantasy_points_ppr"].includes(k);
   const PEERS = 50;    // the field drawn, and what the average lines are read against
   // Named on the chart; the rest name themselves on hover. Naming all fifty
-  // put forty of the labels on top of another, which is why this is a count
-  // and not everything. Ten rather than more because the labels sit above the
-  // dot with no collision avoidance and the crowding grows with the number:
-  // measured here, ten leaves two pairs touching and twelve leaves four.
-  // Lowering it further does not reach zero, because two players with nearly
-  // the same season are two dots in the same place whatever the count is.
-  const LABELS = 10;
+  // put forty of the labels on top of one another, which is why this is a
+  // count and not everything. Twenty-five is the half of the field a reader
+  // is likely to be looking for; ScatterPlot's placement pass moves each
+  // label to a free side of its dot, which is what makes that many legible.
+  const LABELS = 25;
 
   // Two problems with charting the whole position. It is 188 receivers, so 188
   // remote headshots and an unreadable cloud of faces; and most of them are
@@ -96,10 +94,13 @@ export default function PlayerScatter({ playerId, position, statKey, season, nam
         // `top` is sorted by the charted stat, so these are the leaders in it.
         id: r.player_id, label: shortName(r.name), labelled: i < LABELS, x: r[x] as number | null, y: r[y] as number | null,
         image: r.player_id === playerId ? r.headshot : null,
+        // Team colour on the marker, so a dot with no room for a name still
+        // says who it is at a glance.
+        color: teamByAbbr.get(r.team as string)?.team_color ?? null,
         sub: `${r.team} · ${r.games} g`, highlight: r.player_id === playerId,
       })),
     };
-  }, [rows, x, y, playerId, minG]);
+  }, [rows, x, y, playerId, minG, teamByAbbr]);
   if (!pos) return <div className="hint">Peer scatter is available for QB, RB, WR and TE.</div>;
   const fx = (v: number) => fmtStat(v, sx?.fmt), fy = (v: number) => fmtStat(v, sy?.fmt);
   const axis = (k: string, s?: { label: string }) => `${s?.label ?? k}${perGame(k) ? " per game" : ""}`;
@@ -115,7 +116,7 @@ export default function PlayerScatter({ playerId, position, statKey, season, nam
       {missing === "season" && <div className="banner info">{name ?? "This player"} has no {yr} season on record, so there is nothing to place on this chart. Pick another season.</div>}
       {missing === "stat" && <div className="banner info">{name ?? "This player"} has no {gaps.map((k) => statByKey.get(k)?.label ?? k).join(" and no ")} recorded for {yr}, so there is no point to place. Change that axis to see him.</div>}
       {me && (me.games as number) < minG && <div className="hint" style={{ marginBottom: 6 }}>Shown despite {me.games as number} games, under the {minG}-game minimum: the minimum trims the field, never the player you are looking at.</div>}
-      {rows === null ? <div className="hint">loading…</div> : <ScatterPlot dots={dots} xLabel={axis(x, sx)} yLabel={axis(y, sy)} xFmt={fx} yFmt={fy} xAvg={avg.x} yAvg={avg.y} quadrants={describeQuadrants(x, y, sx?.label ?? x, sy?.label ?? y)} xEnds={axisEnds(x, sx?.label ?? x)} yEnds={axisEnds(y, sy?.label ?? y)} onPick={(id) => nav(`/research?player=${id}`)} showLabels="some" imageSize={24} height={400} />}
+      {rows === null ? <div className="hint">loading…</div> : <ScatterPlot dots={dots} xLabel={axis(x, sx)} yLabel={axis(y, sy)} xFmt={fx} yFmt={fy} xAvg={avg.x} yAvg={avg.y} quadrants={describeQuadrants(x, y, sx?.label ?? x, sy?.label ?? y)} xEnds={axisEnds(x, sx?.label ?? x)} yEnds={axisEnds(y, sy?.label ?? y)} onPick={(id) => nav(`/research?player=${id}`)} showLabels="some" imageSize={24} height={520} />}
     </div>
   );
 }

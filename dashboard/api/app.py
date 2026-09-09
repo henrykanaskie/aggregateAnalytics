@@ -780,10 +780,14 @@ def schedule_api(season: int = CURRENT_SEASON, week: int | None = None):
 
 
 @app.get("/api/predictions")
-def predictions_api(season: int = CURRENT_SEASON, week: int | None = None):
+def predictions_api(season: int = CURRENT_SEASON, week: int | None = None, player_id: str | None = None):
+    """``player_id`` narrows the prop rows to one player: the research page
+    shows a single slot and was pulling the whole week's file for it."""
     week = _week_default(season, week)
     games = predictions.game_predictions(season, week)
     props = predictions.prop_predictions(season, week)
+    if player_id and not props.is_empty():
+        props = props.filter(pl.col("player_id") == player_id)
     return {
         "season": season, "week": week,
         "games": records(games) if not games.is_empty() else [],

@@ -33,7 +33,6 @@ export default function TeamScatter({ league, highlight = [], onPick, defaultX =
     extra: { [`${mx?.label ?? x} rank`]: shownRank(t[`${x}_rank`] as number | null, t.n_teams, mx?.good), [`${my?.label ?? y} rank`]: shownRank(t[`${y}_rank`] as number | null, t.n_teams, my?.good) },
   })), [league, x, y, highlight, teamByAbbr, mx, my]);
   const f = (m?: TeamMetric) => (v: number) => fmtStat(v, (m?.fmt ?? "dec1") as any);
-  const pace = (m?: TeamMetric) => (m?.key === "sec_per_play" ? " (higher = slower)" : "");
   // What each corner means, read against the league averages the dashed
   // lines mark (lib/quadrants.ts knows each metric's high and low side).
   const quads = describeQuadrants(x, y, mx?.label ?? x, my?.label ?? y);
@@ -49,7 +48,7 @@ export default function TeamScatter({ league, highlight = [], onPick, defaultX =
         <Field label="Y axis"><select className="input" value={y} onChange={(e) => setY(e.target.value)}>{opts.map((m) => <option key={m.key} value={m.key}>{m.side === "def" ? "DEF · " : ""}{m.label}</option>)}</select></Field>
         <span className="hint" style={{ alignSelf: "center" }}>{league.season} regular season · dashed lines are league averages · hover a logo</span>
       </div>
-      <ScatterPlot dots={dots} xLabel={`${mx?.label ?? x}${pace(mx)}`} yLabel={`${my?.label ?? y}${pace(my)}`} xFmt={f(mx)} yFmt={f(my)} quadrants={quads} xEnds={axisEnds(x, mx?.label ?? x)} yEnds={axisEnds(y, my?.label ?? y)} onPick={onPick} showLabels="all" imageSize={26} />
+      <ScatterPlot dots={dots} xLabel={mx?.label ?? x} yLabel={my?.label ?? y} xFmt={f(mx)} yFmt={f(my)} quadrants={quads} xEnds={axisEnds(x, mx?.label ?? x)} yEnds={axisEnds(y, my?.label ?? y)} onPick={onPick} showLabels="all" imageSize={26} height={480} />
       {(mx?.note || my?.note) && <div className="hint">{mx?.note ? `${mx.label}: ${mx.note}. ` : ""}{my?.note ? `${my.label}: ${my.note}.` : ""}</div>}
     </div>
   );

@@ -101,7 +101,7 @@ export const api = {
   board: ep<Board>()((o: { season?: number; week?: number; market?: string[]; book?: string; include_sample?: boolean; scale?: number; form?: boolean }) => `/api/odds/board${qs(o)}`),
   games: ep<GamesResponse>()((season?: number, week?: number, includeSample = false) => `/api/odds/games${qs({ season, week, include_sample: includeSample })}`),
   schedule: ep<ScheduleGame[]>()((season?: number, week?: number) => `/api/schedule${qs({ season, week })}`),
-  predictions: ep<PredictionsResponse>()((season?: number, week?: number) => `/api/predictions${qs({ season, week })}`),
+  predictions: ep<PredictionsResponse>()((season?: number, week?: number, player_id?: string) => `/api/predictions${qs({ season, week, player_id })}`),
   status: ep<OddsStatus>()(() => "/api/odds/status"),
   teamPlayers: ep<{ player_id: string; name: string; position: string; games: number; ppr: number; headshot: string | null }[]>()((team: string, season: number) => `/api/teams/${team}/players${qs({ season })}`),
   pull: async (body: Record<string, any>) => {

@@ -53,12 +53,18 @@ h2 { font-size: 15px; }
 h3 { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
 .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .muted { color: var(--muted); }
-.axis-end { position: absolute; font-size: 10.5px; color: var(--muted); pointer-events: none; }
-.axis-ends { display: flex; justify-content: space-between; gap: 12px; padding: 2px 24px 0 64px; font-size: 10.5px; color: var(--muted); }
-.axis-ends span { max-width: 48%; }
-.axis-ends span:last-child { text-align: right; }
-.axis-ends .means, .axis-end .means { display: block; font-size: 9.5px; opacity: 0.8; }
-.quad { position: absolute; max-width: 200px; font-size: 10px; line-height: 1.3; color: var(--muted); white-space: pre-line; background: color-mix(in srgb, var(--panel) 72%, transparent); padding: 3px 6px; border-radius: 6px; pointer-events: none; }
+.axis-x { display: flex; justify-content: center; align-items: baseline; gap: 12px; padding: 0 24px 0 78px; font-size: 12px; color: var(--text); }
+.axis-y { position: absolute; left: 2px; width: 16px; pointer-events: none; }
+.axis-y-inner { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%) rotate(-90deg); transform-origin: center; white-space: nowrap; display: flex; align-items: baseline; gap: 12px; font-size: 12px; color: var(--text); }
+.axis-end { font-size: 10.5px; color: var(--muted); }
+.quad { position: absolute; max-width: 260px; font-size: 10px; line-height: 1.25; color: var(--muted); white-space: nowrap; pointer-events: none; }
+.quad.in { padding: 1px 4px; border-radius: 5px; background: color-mix(in srgb, var(--panel) 85%, transparent); border: 1px solid var(--border); color: var(--text); opacity: 0.8; }
+.quad-legend { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; margin-top: 8px; }
+.quad-card { padding: 6px 8px; border-radius: 8px; background: var(--bg-2); border-left: 2px solid var(--border-2); min-width: 0; }
+.quad-head { font-size: 11px; font-weight: 600; color: var(--text); }
+.quad-arrow { display: inline-block; width: 16px; color: var(--accent); }
+.quad-body { font-size: 11px; line-height: 1.35; color: var(--muted); margin-top: 2px; padding-left: 16px; }
+@media (max-width: 720px) { .quad-legend { grid-template-columns: 1fr; } }
 .faint { color: var(--faint); }
 .small { font-size: 12px; }
 .tiny { font-size: 11.5px; }

@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CartesianGrid, ReferenceLine, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis, ZAxis } from "recharts";
 import { chartTheme } from "../lib/theme";
+import type { Quadrant } from "../lib/quadrants";
 
-export interface Dot { id: string; label: string; x: number | null; y: number | null; image?: string | null; sub?: string; highlight?: boolean; muted?: boolean; labelled?: boolean; extra?: Record<string, string | number | null>; }
+export interface Dot { id: string; label: string; x: number | null; y: number | null; image?: string | null; sub?: string; highlight?: boolean; muted?: boolean; labelled?: boolean; color?: string | null; extra?: Record<string, string | number | null>; }
 interface Props {
   dots: Dot[]; xLabel: string; yLabel: string; xFmt?: (v: number) => string; yFmt?: (v: number) => string;
-  height?: number; imageSize?: number; showLabels?: "all" | "some" | "highlight" | "none"; quadrants?: [string, string, string, string]; // TL, TR, BL, BR
+  height?: number; imageSize?: number; showLabels?: "all" | "some" | "highlight" | "none"; quadrants?: [Quadrant, Quadrant, Quadrant, Quadrant]; // TL, TR, BL, BR
   // The crosshairs are the mean of what is plotted unless the caller knows
   // better. A chart showing a trimmed field has to pass the full population's
   // average, or the line reads as the league when it is only the top of it.
@@ -34,12 +35,11 @@ const LINE = 11;   // cap height plus a little, for the box a label occupies
  *  collide or dodge collisions that were never there. */
 const measure = (() => {
   let ctx: CanvasRenderingContext2D | null | undefined;
-  return (text: string): number => {
-    if (ctx === undefined) {
-      ctx = typeof document === "undefined" ? null : document.createElement("canvas").getContext("2d");
-      if (ctx) ctx.font = FONT;
-    }
-    return ctx ? ctx.measureText(text).width : text.length * 6;
+  return (text: string, font: string = FONT): number => {
+    if (ctx === undefined) ctx = typeof document === "undefined" ? null : document.createElement("canvas").getContext("2d");
+    if (!ctx) return text.length * 6;
+    ctx.font = font;
+    return ctx.measureText(text).width;
   };
 })();
 
@@ -65,29 +65,56 @@ function labelAt(side: Side, cx: number, cy: number, r: number, w: number): { x:
 
 const overlaps = (a: Box, b: Box) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 
+// The chart's margins and the Y axis width, shared with the overlays that
+// have to know where the plot area starts and ends.
+const M = { top: 30, right: 24, bottom: 24, left: 22 };
+const Y_AXIS_W = 56;
+const X_TICKS_H = 30;
+const CORNER_FONT = "500 10px system-ui, -apple-system, 'Segoe UI', sans-serif";
+
+/** Where a corner tag would sit inside the plot, or null when a dot or a
+ *  name is already there: then it goes in the margin instead. */
+function cornerInside(i: number, text: string, width: number, height: number, busy: Box[]): Box | null {
+  const w = measure(text, CORNER_FONT) + 8, h = 14, pad = 6;
+  const x0 = M.left + Y_AXIS_W + pad, x1 = width - M.right - pad - w;
+  const y0 = M.top + pad, y1 = height - M.bottom - X_TICKS_H - pad - h;
+  const box: Box = i === 0 ? { x: x0, y: y0, w, h } : i === 1 ? { x: x1, y: y0, w, h } : i === 2 ? { x: x0, y: y1, w, h } : { x: x1, y: y1, w, h };
+  // A little breathing room: a name brushing the tag reads as a collision.
+  const roomy = { x: box.x - 6, y: box.y - 4, w: box.w + 12, h: box.h + 8 };
+  return busy.some((b) => overlaps(b, roomy)) ? null : box;
+}
+
 /**
  * Greedy placement: each label takes the first side that is still clear, and
  * whatever it takes is off the table for the rest. Highlighted dots go first
  * so the one the reader came for is never the one pushed somewhere odd, and
  * the rest follow the caller's order, which is the order they matter in.
  *
- * Four sides is enough for the crowding a scatter actually produces, and when
- * it is not, the label goes above anyway: a name in the wrong place still
- * reads, a missing one is just gone.
+ * A label with no clear side is left off rather than written over another:
+ * with twenty-five names in a field whose leaders cluster, the forced ones
+ * were an unreadable pile, and every dot still names itself on hover. Only
+ * a highlighted dot is always named, above itself if it must be.
  */
-function placeLabels(dots: Dot[], pos: Map<string, { cx: number; cy: number; r: number }>, wanted: (d: Dot) => boolean): Record<string, Side> {
+function placeLabels(dots: Dot[], pos: Map<string, { cx: number; cy: number; r: number }>, wanted: (d: Dot) => boolean): { sides: Record<string, Side>; boxes: Box[] } {
   const order = dots.filter(wanted).sort((a, b) => Number(!!b.highlight) - Number(!!a.highlight));
+  // Other labels are a hard rule: two names never share pixels. Dots are a
+  // preference: a side that also clears every marker is taken first, and
+  // only if no side does may a name sit over a neighbour's dot. Making dots
+  // a hard rule too left a crowded field with one name on it.
+  const markers: Box[] = [...pos.values()].map((p) => ({ x: p.cx - p.r, y: p.cy - p.r, w: p.r * 2, h: p.r * 2 }));
   const taken: Box[] = [];
   const out: Record<string, Side> = {};
   for (const d of order) {
     const p = pos.get(d.id);
     if (!p) continue;
     const w = measure(d.label);
-    const free = SIDES.find((side) => !taken.some((t) => overlaps(t, labelAt(side, p.cx, p.cy, p.r, w).box)));
+    const clear = (side: Side, of: Box[]) => !of.some((t) => overlaps(t, labelAt(side, p.cx, p.cy, p.r, w).box));
+    const free = SIDES.find((side) => clear(side, taken) && clear(side, markers)) ?? SIDES.find((side) => clear(side, taken));
+    if (!free && !d.highlight) continue;
     out[d.id] = free ?? "top";
     taken.push(labelAt(out[d.id], p.cx, p.cy, p.r, w).box);
   }
-  return out;
+  return { sides: out, boxes: [...taken, ...markers] };
 }
 
 const sameSides = (a: Record<string, Side>, b: Record<string, Side>) => {
@@ -104,6 +131,9 @@ export default function ScatterPlot({ dots, xLabel, yLabel, xFmt = (v) => String
   // pixel position of a dot is known, and it is known one dot at a time.
   const pos = useRef(new Map<string, { cx: number; cy: number; r: number }>());
   const [sides, setSides] = useState<Record<string, Side>>({});
+  // Per corner, the box its tag occupies inside the plot, or null for the margin.
+  const [inside, setInside] = useState<(Box | null)[]>([null, null, null, null]);
+  const wrap = useRef<HTMLDivElement | null>(null);
   const data = useMemo(() => dots.filter((d) => d.x !== null && d.y !== null && !Number.isNaN(d.x) && !Number.isNaN(d.y)), [dots]);
   const mean = (pick: (d: Dot) => number) => (data.length ? data.reduce((a, d) => a + pick(d), 0) / data.length : 0);
   const mx = xAvg ?? mean((d) => d.x as number);
@@ -130,8 +160,13 @@ export default function ScatterPlot({ dots, xLabel, yLabel, xFmt = (v) => String
   // that only by calling `shape` again. Bailing out when the placements are
   // unchanged is what stops this looping on its own state update.
   useEffect(() => {
-    const next = placeLabels(data, pos.current, persistent);
+    const { sides: next, boxes } = placeLabels(data, pos.current, persistent);
     setSides((prev) => (sameSides(prev, next) ? prev : next));
+    if (quadrants && wrap.current) {
+      const { clientWidth: w, clientHeight: h } = wrap.current;
+      const nextIn = quadrants.map((q, i) => cornerInside(i, q.head, w, h, boxes));
+      setInside((prev) => (prev.every((b, i) => (b === null && nextIn[i] === null) || (b && nextIn[i] && b.x === nextIn[i]!.x && b.y === nextIn[i]!.y && b.w === nextIn[i]!.w)) ? prev : nextIn));
+    }
   });
 
   const shape = (props: any) => {
@@ -142,13 +177,17 @@ export default function ScatterPlot({ dots, xLabel, yLabel, xFmt = (v) => String
     // rather than a nominal one. Recorded at its resting size: hover inflates
     // the dot, and a layout that moved with the pointer would be worse than
     // the overlap it fixed.
-    pos.current.set(payload.id, { cx, cy, r: (payload.highlight ? imageSize * 1.5 : imageSize) / 2 });
+    // The radius actually drawn: a face at its resting size, a plain marker
+    // at its own few pixels, so the reserved circle is the visible one.
+    pos.current.set(payload.id, { cx, cy, r: payload.image ? (payload.highlight ? imageSize * 1.5 : imageSize) / 2 : payload.highlight ? 9 : 6 });
     const dim = payload.muted && !hl ? 0.55 : 1;
     // "some" lets the caller name the dots worth naming and leave the rest to
     // hover, which is the only readable option once a crowded field is plotted
     // whole: fifty labels at this size overlap forty of each other.
-    const label = showLabels === "all" || (showLabels === "highlight" && hl)
-      || (showLabels === "some" && (hl || !!payload.labelled));
+    // Hover and highlight always name the dot; anything else needs a place
+    // from the layout pass, which leaves out what would have overlapped.
+    const placed = payload.id in sides;
+    const label = hl || (showLabels === "all" && placed) || (showLabels === "some" && !!payload.labelled && placed);
     return (
       <g style={{ cursor: onPick ? "pointer" : "default" }} opacity={dim} onClick={() => onPick?.(payload.id)} onMouseEnter={() => setHover(payload.id)} onMouseLeave={() => setHover(null)}>
         {hl && <circle cx={cx} cy={cy} r={size / 2 + 4} fill="none" stroke={T.accent} strokeWidth={2} />}
@@ -159,22 +198,25 @@ export default function ScatterPlot({ dots, xLabel, yLabel, xFmt = (v) => String
             <image href={payload.image} x={cx - size / 2} y={cy - size / 2} width={size} height={size} clipPath={`url(#clip-${payload.id})`} preserveAspectRatio="xMidYMid slice" />
           </>
         ) : (
-          <circle cx={cx} cy={cy} r={hl ? 7 : 5} fill={hl ? T.accent : T.muted} stroke={T.tooltip.background as string} strokeWidth={1.5} />
+          <circle cx={cx} cy={cy} r={hl ? 7 : 5.5} fill={hl ? T.accent : payload.color ?? T.muted} stroke={T.tooltip.background as string} strokeWidth={1.5} />
         )}
         {label && (() => {
           const at = labelAt(sides[payload.id] ?? "top", cx, cy, size / 2, measure(payload.label));
-          return <text x={at.x} y={at.y} textAnchor={at.anchor} fontSize={11} fontWeight={600} fill={T.text}>{payload.label}</text>;
+          return <text x={at.x} y={at.y} textAnchor={at.anchor} fontSize={hl ? 11 : 10} fontWeight={hl ? 700 : 500} fill={hl ? T.text : T.muted}>{payload.label}</text>;
         })()}
       </g>
     );
   };
   return (
-    <div style={{ position: "relative" }}>
+    <div>
+      {/* The plot and everything drawn over it measure against this box
+          alone; the title row and the legend below sit outside it. */}
+      <div style={{ position: "relative" }} ref={wrap}>
       <ResponsiveContainer width="100%" height={height}>
-        <ScatterChart margin={{ top: 22, right: 24, bottom: 34, left: 8 }}>
+        <ScatterChart margin={M}>
           <CartesianGrid stroke={T.grid} strokeDasharray="2 4" />
-          <XAxis type="number" dataKey="x" domain={[x0, x1]} tick={{ fill: T.tick, fontSize: 11 }} tickFormatter={xFmt} tickLine={false} axisLine={{ stroke: T.axis }} label={{ value: xLabel, position: "insideBottom", offset: -18, fill: T.text, fontSize: 12.5, fontWeight: 600 }} />
-          <YAxis type="number" dataKey="y" domain={[y0, y1]} tick={{ fill: T.tick, fontSize: 11 }} tickFormatter={yFmt} tickLine={false} axisLine={false} width={56} label={{ value: yLabel, angle: -90, position: "insideLeft", offset: 12, fill: T.text, fontSize: 12.5, fontWeight: 600, style: { textAnchor: "middle" } }} />
+          <XAxis type="number" dataKey="x" domain={[x0, x1]} tick={{ fill: T.tick, fontSize: 11 }} tickFormatter={xFmt} tickLine={false} axisLine={{ stroke: T.axis }} />
+          <YAxis type="number" dataKey="y" domain={[y0, y1]} tick={{ fill: T.tick, fontSize: 11 }} tickFormatter={yFmt} tickLine={false} axisLine={false} width={Y_AXIS_W} />
           <ZAxis range={[60, 60]} />
           <ReferenceLine x={mx} stroke={T.muted} strokeDasharray="4 4" label={{ value: `avg ${xFmt(mx)}`, position: "top", fill: T.muted, fontSize: 10 }} />
           <ReferenceLine y={my} stroke={T.muted} strokeDasharray="4 4" label={{ value: `avg ${yFmt(my)}`, position: "right", fill: T.muted, fontSize: 10 }} />
@@ -192,31 +234,46 @@ export default function ScatterPlot({ dots, xLabel, yLabel, xFmt = (v) => String
           <Scatter data={data} shape={shape} isAnimationActive={false} />
         </ScatterChart>
       </ResponsiveContainer>
-      {yEnds && (
-        // Up the left edge: the top margin above the plot, and the bottom
-        // margin beside the X axis title, which is centred and short.
-        <>
-          <div className="axis-end" style={{ left: 8, top: 4 }} title={yEnds.highMeans}>↑ {yEnds.high}</div>
-          <div className="axis-end" style={{ left: 8, bottom: 4 }} title={yEnds.lowMeans}>↓ {yEnds.low}</div>
-        </>
-      )}
-      {xEnds && (
-        <div className="axis-ends">
-          <span>← {xEnds.low}{xEnds.lowMeans && <span className="means">{xEnds.lowMeans}</span>}</span>
-          <span>{xEnds.high} →{xEnds.highMeans && <span className="means">{xEnds.highMeans}</span>}</span>
+      {/* The Y axis title, rotated up the left gutter with the two ends of
+          the axis either side of it, so the arrows sit against the title
+          rather than in the corners. Rotated text reads upward, so the low
+          end comes first. */}
+      <div className="axis-y" style={{ top: M.top, bottom: M.bottom + X_TICKS_H }}>
+        <div className="axis-y-inner">
+          {yEnds && <span className="axis-end" title={yEnds.lowMeans}>← {yEnds.low}</span>}
+          <b>{yLabel}</b>
+          {yEnds && <span className="axis-end" title={yEnds.highMeans}>{yEnds.high} →</span>}
         </div>
-      )}
+      </div>
       {quadrants && (
-        // What each corner means, in words. Faint and behind the pointer so
-        // the dots stay the chart; the axis titles still say what is measured.
+        // A short tag for each corner: inside the plot when that corner is
+        // clear of dots and names, in the margin above or below it otherwise.
+        // The reading in full is in the legend below, laid out the same way.
         <>
-          {/* Inset past the axes: the Y axis and its title take the first
-              ~70px, the X ticks and title the last ~56px. */}
-          <div className="quad" style={{ left: 92, top: 34 }}>{quadrants[0]}</div>
-          <div className="quad" style={{ right: 44, top: 34, textAlign: "right" }}>{quadrants[1]}</div>
-          <div className="quad" style={{ left: 92, bottom: 64 }}>{quadrants[2]}</div>
-          <div className="quad" style={{ right: 44, bottom: 64, textAlign: "right" }}>{quadrants[3]}</div>
+          {inside[0] ? <div className="quad in" style={{ left: inside[0].x, top: inside[0].y }}>{quadrants[0].head}</div> : <div className="quad" style={{ left: 86, top: 6 }}>↖ {quadrants[0].head}</div>}
+          {inside[1] ? <div className="quad in" style={{ left: inside[1].x, top: inside[1].y }}>{quadrants[1].head}</div> : <div className="quad" style={{ right: 24, top: 6, textAlign: "right" }}>{quadrants[1].head} ↗</div>}
+          {inside[2] ? <div className="quad in" style={{ left: inside[2].x, top: inside[2].y }}>{quadrants[2].head}</div> : <div className="quad" style={{ left: 86, bottom: 4 }}>↙ {quadrants[2].head}</div>}
+          {inside[3] ? <div className="quad in" style={{ left: inside[3].x, top: inside[3].y }}>{quadrants[3].head}</div> : <div className="quad" style={{ right: 24, bottom: 4, textAlign: "right" }}>{quadrants[3].head} ↘</div>}
         </>
+      )}
+      </div>
+      {/* The X axis title under the plot with its two ends either side. */}
+      <div className="axis-x">
+        {xEnds && <span className="axis-end" title={xEnds.lowMeans}>← {xEnds.low}</span>}
+        <b>{xLabel}</b>
+        {xEnds && <span className="axis-end" title={xEnds.highMeans}>{xEnds.high} →</span>}
+      </div>
+      {quadrants && (
+        // The four corners as a two-by-two legend in the chart's own layout:
+        // what the reader sees top-left on the plot is top-left here.
+        <div className="quad-legend">
+          {([["↖", quadrants[0]], ["↗", quadrants[1]], ["↙", quadrants[2]], ["↘", quadrants[3]]] as [string, Quadrant][]).map(([arrow, q]) => (
+            <div key={arrow} className="quad-card">
+              <div className="quad-head"><span className="quad-arrow">{arrow}</span>{q.head}</div>
+              {q.body && <div className="quad-body">{q.body}</div>}
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );

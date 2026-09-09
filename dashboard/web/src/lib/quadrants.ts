@@ -168,7 +168,8 @@ export function axisEnds(key: string, label: string): AxisEnds {
  * bottom-right (high x, low y). A pairing with a hand-written interpretation
  * gets that; any other gets its two readings joined.
  */
-export function describeQuadrants(x: string, y: string, xLabel: string, yLabel: string): [string, string, string, string] {
+export interface Quadrant { head: string; body: string }
+export function describeQuadrants(x: string, y: string, xLabel: string, yLabel: string): [Quadrant, Quadrant, Quadrant, Quadrant] {
   const direct = PAIRS[`${x}|${y}`];
   const swapped = direct ? undefined : PAIRS[`${y}|${x}`];
   const pair = (xh: boolean, yh: boolean): string | undefined => {
@@ -180,11 +181,11 @@ export function describeQuadrants(x: string, y: string, xLabel: string, yLabel: 
   // pairing with a hand-written line uses it, since it says what the two do
   // *together*; every other pairing gets each side's consequence, which is
   // the meaning of the combination whenever the two do not interact.
-  const corner = (xh: boolean, yh: boolean): string => {
-    const head = `${cap(reading(x, xLabel, xh))}, ${reading(y, yLabel, yh)}.`;
+  const corner = (xh: boolean, yh: boolean): Quadrant => {
+    const head = `${cap(reading(x, xLabel, xh))}, ${reading(y, yLabel, yh)}`;
     const p = pair(xh, yh);
     const body = p ? cap(p) : [means(x, xh), means(y, yh)].filter(Boolean).map((t) => cap(t!)).join(". ");
-    return body ? `${head}\n${body}${body.endsWith(".") ? "" : "."}` : head;
+    return { head, body: body && !body.endsWith(".") ? `${body}.` : body };
   };
   return [corner(false, true), corner(true, true), corner(false, false), corner(true, false)];
 }
