@@ -34,6 +34,13 @@ services:
         value: henrykanaskie/nfl_predictor
       - key: ODDS_REF
         value: main
+      # How many days of snapshots this host keeps; older ones are deleted
+      # as new pulls arrive, so 512 MB never has to scan a season of lines.
+      # Ten days spans the current week and the one just graded. Lower it and
+      # grading loses played games, whose lines only exist in the snapshots
+      # taken before kickoff (ESPN drops a game's odds once it is final).
+      - key: ODDS_KEEP_DAYS
+        value: "10"
       - key: SITE_PASSWORD
         sync: false
       - key: ODDS_API_KEY
