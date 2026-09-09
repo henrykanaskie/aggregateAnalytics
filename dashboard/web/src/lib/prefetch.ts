@@ -1,4 +1,4 @@
-import { api, api2, api3, api4, api5, apiGet, Meta } from "../api";
+import { api, api2, api3, api4, api5, apiGet, Meta, ScheduleGame } from "../api";
 import { isFresh } from "./cache";
 import { readSticky } from "./sticky";
 import type { Settings } from "../state";
@@ -68,4 +68,13 @@ export function warmAll(meta: Meta, settings: Settings): void {
   urls.push(api.status.url());
 
   warm(urls);
+
+  // Every game on the slate, so picking one is a render rather than a two
+  // second wait. The schedule has to land first, since it is what says which
+  // games exist; the request below is the same one already queued above, so it
+  // attaches to that rather than making a second.
+  const matchupWeek = week("matchups.week");
+  apiGet<ScheduleGame[]>(api.schedule.url(meta.season, matchupWeek))
+    .then((games) => warm(games.map((g) => api4.gameMatchup.url(g.game_id, settings.includeSample))))
+    .catch(() => {});
 }

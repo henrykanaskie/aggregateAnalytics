@@ -1,8 +1,9 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, api4, Angle, DefPlayer, GameMatchup, MatchupSideFull, ScheduleGame, TeamMetric } from "../api";
 import { Banner, Field, Headshot, SampleBanner, Spinner, TeamTag } from "../components/common";
 import { fmtLine, fmtOdds, fmtPct, fmtSpread, fmtStat } from "../lib/format";
+import { warm } from "../lib/prefetch";
 import { useSticky } from "../lib/sticky";
 import { useQuery } from "../lib/useQuery";
 import { useMeta } from "../state";
@@ -19,6 +20,9 @@ export default function Matchups() {
   const [week, setWeek] = useSticky<number | null>("matchups.week", null);
   const { data: schedule } = useQuery<ScheduleGame[]>(meta ? api.schedule.url(meta.season, week ?? meta.week) : null);
   const games = schedule ?? [];
+  // Warming the whole slate here as well as at startup, so changing the week
+  // loads that week's games rather than only the one that gets clicked.
+  useEffect(() => { if (schedule) warm(schedule.map((g) => api4.gameMatchup.url(g.game_id, settings.includeSample))); }, [schedule, settings.includeSample]);
   const { data, loading, error: err } = useQuery<GameMatchup>(gameId ? api4.gameMatchup.url(gameId, settings.includeSample) : null);
   const weeks = Array.from({ length: 22 }, (_, i) => i + 1);
   if (meta && !meta.team_table_ready) return <Banner kind="warn">The team tendency table is not built yet. Run <code>python -m dashboard.stats.team</code> and reload.</Banner>;

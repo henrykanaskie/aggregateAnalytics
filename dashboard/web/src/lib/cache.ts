@@ -31,6 +31,14 @@ const TTL: [RegExp, number][] = [
   [/^\/api\/meta\b/, 10 * MINUTE],
 ];
 const DEFAULT_TTL = 60 * MINUTE;   // historical stats only move on ingest
+
+// What to give up first when the mirror is full. Browsers disagree wildly on
+// the localStorage ceiling: measured at 48MB in Chrome, a few MB in Safari. So
+// rather than assume one number, mirror everything and let the views that are
+// cheapest to rebuild be the first to go. A week of matchups is 3.3MB and the
+// API rebuilds one in ~200ms once warm; the board is what the app opens on.
+const CHEAP_TO_REBUILD = /^\/api\/matchups\//;
+const rank = (url: string) => (CHEAP_TO_REBUILD.test(url) ? 0 : 1);
 const ttlFor = (url: string) => TTL.find(([re]) => re.test(url))?.[1] ?? DEFAULT_TTL;
 
 // --- localStorage mirror ----------------------------------------------------
@@ -75,21 +83,27 @@ function flush(): void {
     try { raw = `${e.at}|${JSON.stringify(e.data)}`; } catch { continue; }
     if (raw.length > MAX_ENTRY) { try { s.removeItem(PREFIX + url); } catch {} continue; }
     try { s.setItem(PREFIX + url, raw); }
-    catch { evict(s); try { s.setItem(PREFIX + url, raw); } catch {} }
+    catch { evict(s, raw.length * 2); try { s.setItem(PREFIX + url, raw); } catch {} }
   }
   queued.clear();
 }
 
-// Quota is per origin and small. Drop the oldest half of what we mirrored.
-function evict(s: Storage): void {
-  const rows: [string, number][] = [];
+/** Make room for `need` characters, cheapest-to-rebuild and oldest first. */
+function evict(s: Storage, need: number): void {
+  const rows: { k: string; rank: number; at: number; size: number }[] = [];
   for (let i = 0; i < s.length; i++) {
     const k = s.key(i);
     if (!k?.startsWith(PREFIX)) continue;
-    rows.push([k, Number(s.getItem(k)?.split("|", 1)[0]) || 0]);
+    const raw = s.getItem(k) ?? "";
+    rows.push({ k, rank: rank(k.slice(PREFIX.length)), at: Number(raw.split("|", 1)[0]) || 0, size: raw.length });
   }
-  rows.sort((a, b) => a[1] - b[1]);
-  for (const [k] of rows.slice(0, Math.max(1, Math.ceil(rows.length / 2)))) { try { s.removeItem(k); } catch {} }
+  rows.sort((a, b) => a.rank - b.rank || a.at - b.at);
+  let freed = 0;
+  for (const r of rows) {
+    try { s.removeItem(r.k); } catch {}
+    freed += r.size;
+    if (freed >= need) return;
+  }
 }
 
 // Keys are build-scoped, so a deploy would otherwise leave the previous build's
