@@ -192,7 +192,7 @@ def alerts(rows: list[dict], season: int, week: int, scale: float = 1.0) -> list
                 out.append({"kind": "move", "severity": 2 if abs(mv) >= 2 * thr else 1, "player_id": r["player_id"], "player": r["player_name"],
                             "team": r["team"], "market": r["market"], "market_label": r["market_label"], "game_id": r["game_id"],
                             "title": f"{r['player_name']} {r['market_label']} moved {'+' if mv > 0 else ''}{mv} at {b['title']}",
-                            "detail": f"opened {b['open_line']}, now {b['line']}"})
+                            "detail": f"opened {b['open_line']}, now {b['line']}", "at": _when(b.get("last_update"))})
         if r.get("outliers"):
             for bk in r["outliers"]:
                 b = next((x for x in r["books"] if x["book"] == bk), None)
@@ -200,16 +200,28 @@ def alerts(rows: list[dict], season: int, week: int, scale: float = 1.0) -> list
                     out.append({"kind": "outlier", "severity": 1, "player_id": r["player_id"], "player": r["player_name"], "team": r["team"],
                                 "market": r["market"], "market_label": r["market_label"], "game_id": r["game_id"],
                                 "title": f"{b['title']} is {'+' if (b['delta'] or 0) > 0 else ''}{b['delta']} off consensus on {r['player_name']} {r['market_label']}",
-                                "detail": f"{b['line']} vs consensus {r['consensus']} across {r['n_books']} books"})
+                                "detail": f"{b['line']} vs consensus {r['consensus']} across {r['n_books']} books", "at": _when(b.get("last_update"))})
         i = inj.get(r["player_id"] or "")
         if i and r["player_id"] not in seen_inj:
             seen_inj.add(r["player_id"])
             status = i["report_status"]
             out.append({"kind": "injury", "severity": 2 if status in ("Out", "Doubtful") else 1, "player_id": r["player_id"], "player": r["player_name"],
                         "team": r["team"], "market": None, "market_label": None, "game_id": r["game_id"],
-                        "title": f"{r['player_name']} is {status}", "detail": f"{i.get('report_primary_injury') or ''} · {i.get('practice_status') or ''}".strip(" ·")})
-    out.sort(key=lambda a: (-a["severity"], a["kind"], a["player"] or ""))
+                        "title": f"{r['player_name']} is {status}", "detail": f"{i.get('report_primary_injury') or ''} · {i.get('practice_status') or ''}".strip(" ·"),
+                        "at": _when(i.get("date_modified"))})
+    # Newest first: a move is news when it happens, and a big one from last
+    # Thursday should not sit above a small one from this morning. Ties, and
+    # anything the feed did not stamp, fall back to loudest first.
+    out.sort(key=lambda a: (a["at"] or "", a["severity"]), reverse=True)
     return out
+
+
+def _when(v) -> str | None:
+    """A feed's update stamp as an ISO string, or None. ESPN gives the moment
+    the book last changed the line; the injury table gives date_modified."""
+    if v is None or v == "":
+        return None
+    return v if isinstance(v, str) else v.isoformat()
 
 
 # --- league-wide player scatter --------------------------------------------------

@@ -37,18 +37,21 @@ export function applyScale(board: Board | null, scale: number): Scaled {
     for (const b of books) {
       const mv = b.moved;
       if (mv === null || mv === undefined || move <= 0 || Math.abs(mv) < move) continue;
-      alerts.push({ ...of, kind: "move", severity: Math.abs(mv) >= 2 * move ? 2 : 1,
+      alerts.push({ ...of, kind: "move", severity: Math.abs(mv) >= 2 * move ? 2 : 1, at: b.last_update,
         title: `${r.player_name} ${r.market_label} moved ${mv > 0 ? "+" : ""}${mv} at ${b.title}`,
         detail: `opened ${b.open_line}, now ${b.line}` });
     }
     for (const b of books) {
       if (!b.flag) continue;
-      alerts.push({ ...of, kind: "outlier", severity: 1,
+      alerts.push({ ...of, kind: "outlier", severity: 1, at: b.last_update,
         title: `${b.title} is ${(b.delta ?? 0) > 0 ? "+" : ""}${b.delta} off consensus on ${r.player_name} ${r.market_label}`,
         detail: `${b.line} vs consensus ${r.consensus} across ${r.n_books} books` });
     }
   }
-  // Same order the API sends: loudest first, then by kind, then by player.
-  alerts.sort((a, b) => b.severity - a.severity || (a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : 0) || a.player.localeCompare(b.player));
+  // Same order the API sends: newest first, by the feed's own stamp of when
+  // the book last touched the line (or the injury report was filed), with
+  // the loudest first among ties and anything unstamped at the end.
+  const when = (a: Alert) => (a.at ? Date.parse(a.at) || 0 : 0);
+  alerts.sort((a, b) => when(b) - when(a) || b.severity - a.severity || a.player.localeCompare(b.player));
   return { rows, alerts };
 }

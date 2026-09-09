@@ -5,7 +5,7 @@ import { Field, SampleBanner, Seg, SourceNote, Spinner } from "../components/com
 import { readSticky, useSticky } from "../lib/sticky";
 import { applyScale } from "../lib/outliers";
 import { useQuery } from "../lib/useQuery";
-import { fmtDelta, fmtLine, fmtOdds, fmtPct } from "../lib/format";
+import { fmtDate, fmtDelta, fmtLine, fmtOdds, fmtPct } from "../lib/format";
 import { useMeta } from "../state";
 
 type SortKey = "spread" | "consensus" | "l5" | "l10" | "season" | "avg" | "player" | "moved" | "edge" | "pover";
@@ -36,7 +36,7 @@ function AlertsPanel({ alerts, onPick }: { alerts: import("../api").Alert[]; onP
         <div className="grid grid-3" style={{ maxHeight: 260, overflow: "auto" }}>
           {shown.slice(0, 60).map((a, i) => (
             <div key={i} className="tile clickable" onClick={() => onPick(a)} style={{ borderLeft: `3px solid var(--${a.kind === "injury" ? "under" : a.kind === "move" ? "push" : "accent"})` }}>
-              <div className="k">{a.kind}{a.severity >= 2 ? " · big" : ""}{a.team ? ` · ${a.team}` : ""}</div>
+              <div className="k">{a.kind}{a.severity >= 2 ? " · big" : ""}{a.team ? ` · ${a.team}` : ""}{a.at ? <span className="faint"> · {fmtDate(a.at)}</span> : null}</div>
               <div className="small" style={{ fontWeight: 600 }}>{a.title}</div>
               <div className="tiny muted">{a.detail}</div>
             </div>
