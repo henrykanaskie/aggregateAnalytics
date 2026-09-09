@@ -9,9 +9,9 @@ GitHub Release, where the commit history is the audit trail.
 
 | piece | where it runs | when | what it does |
 |---|---|---|---|
-| `lines.yml` | GitHub Actions | 4x/day (~6am, noon, 6pm, 11pm ET) | `scripts/pull_lines.sh`, commits `data/odds/` |
+| `lines.yml` | GitHub Actions | 4x/day (~6am, noon, 6pm, 11pm ET) | fetches the three tables the puller needs, runs `dashboard.odds.pull`, commits `data/odds/` |
 | `stats.yml` | GitHub Actions | Tuesday 6am ET | refreshes the current season in the parquet cache, rebuilds `data/derived/`, uploads the cache to the `data-cache` Release, commits `data/derived/` |
-| `scripts/build.sh` | Render, on deploy | code or derived-table pushes | `pip install`, `scripts/fetch_cache.py` pulls the cache from the Release |
+| `scripts/build.sh` | Render, on deploy | code or derived-table pushes | `pip install`, `scripts/fetch_cache.py` pulls the cache from the Release, `npm run build` for the SPA |
 | `data_handling/sync_odds.py` | inside the app | on wake, every 30 min | pulls new `data/odds/` files from GitHub, so lines commits never need a rebuild |
 | `webauth/` | inside the app | every request | the password |
 
@@ -22,23 +22,19 @@ build minutes.
 
 ## First-time setup, in order
 
-1. **Push the dashboard**, then point the two seams at it: `PULL_CMD` in
-   `scripts/pull_lines.sh` and `DERIVE_CMD` in `scripts/refresh_stats.sh`.
-   Until then both scripts exit cleanly doing nothing, so the workflows stay
-   green on the placeholder.
-2. **Seed the cache.** Actions tab, `stats`, Run workflow, tick `full`. It
+1. **Seed the cache.** Actions tab, `stats`, Run workflow, tick `full`. It
    ingests 1999 to now (expect 20 to 40 minutes), uploads one tar per dataset
    to a Release tagged `data-cache`, and commits `data/derived/`.
-3. **Secrets in GitHub**: `ODDS_API_KEY` if the dashboard's Odds API provider
-   is used. The ESPN provider needs none.
-4. **Render**: New, Blueprint, pick the repo. It reads `render.yaml`. When
+2. **Secrets in GitHub**: `ODDS_API_KEY` if you want The Odds API's
+   multi-book prices. With it set, `scripts/pull_lines.sh` pulls both
+   providers; without it, ESPN only. ESPN needs no key.
+3. **Render**: New, Blueprint, pick the repo. It reads `render.yaml`. When
    prompted, set `SITE_PASSWORD`. Set `GH_TOKEN` (a fine-grained token with
    read access to contents and releases) only if the repo is private;
    `fetch_cache.py` and `sync_odds.py` both read it.
-5. **Start command**: once the dashboard is in, change `startCommand` in
-   `render.yaml` from the placeholder to `uvicorn dashboard.api.app:app
-   --host 0.0.0.0 --port $PORT`, and add `sync_odds.install(app)` next to the
-   password lines in `dashboard/api/app.py`. That is the whole migration.
+4. **Frontend build**: `scripts/build.sh` runs `npm ci` and `npm run build`
+   in `dashboard/web/` on every deploy, so `dist/` never needs committing.
+   `render.yaml` pins `NODE_VERSION`.
 
 ## What free costs you
 
@@ -55,7 +51,8 @@ build minutes.
 
 ## Running it locally
 
-    pip install -e ".[dev,web]"
+    pip install -e ".[dev,dashboard]"
     python scripts/fetch_cache.py            # or run ingest.py yourself
+    (cd dashboard/web && npm ci && npm run build)
     SITE_PASSWORD=x ODDS_REPO=henrykanaskie/nfl_predictor \
-      uvicorn webauth.mock_app:app --port 8017
+      uvicorn dashboard.api.app:app --port 8017

@@ -4,58 +4,21 @@ One password. Anyone you give it to can open the site; anyone else sees a
 password box and nothing behind it. No accounts, no usernames, no host
 middleware. The password comes from an environment variable.
 
-## Try it now (placeholder UI)
+## Where it is wired
 
-    pip install -e ".[dev,web]"
-    SITE_PASSWORD=hut-hut uvicorn webauth.mock_app:app --port 8017
+`dashboard/api/app.py` constructs the app with the gate and includes the
+auth router before any route, so `/password` wins over the SPA catch-all.
+`dashboard/web/src/api.ts` sends a 401 to the password box, and the Settings
+page has "Sign out". Nothing else in the dashboard knows the gate exists.
 
-Open http://127.0.0.1:8017. You are sent to `/password`; enter it; you see the
-latest week from `track_record/predictions.csv` (or labelled example rows if it
-has not been exported). "Sign out" clears the cookie so the box comes back.
+## Run it locally
 
-## Migrating to `dashboard/`
+    pip install -e ".[dev,dashboard]"
+    (cd dashboard/web && npm ci && npm run build)
+    SITE_PASSWORD=hut-hut uvicorn dashboard.api.app:app --port 8017
 
-Three edits, none of them in the data layer.
-
-**1. `dashboard/api/app.py`**, where the app is constructed:
-
-    from fastapi import Depends, FastAPI
-    from webauth import auth_router, require_session
-
-    app = FastAPI(dependencies=[Depends(require_session)])   # gates every route
-    app.include_router(auth_router)                          # /password, /api/auth/*
-
-Then make sure the page itself goes through a route, not only a mount. A
-`StaticFiles` mount is not a route and is never gated. Keep the mount for
-the hashed assets and serve `index.html` from a catch-all:
-
-    app.mount("/assets", StaticFiles(directory="dashboard/ui/dist/assets"))
-
-    @app.get("/{path:path}", include_in_schema=False)
-    async def spa(path: str):
-        return FileResponse("dashboard/ui/dist/index.html")
-
-Now a stranger who opens any URL is redirected to `/password` before a byte
-of the app is served. (If you had `StaticFiles(..., html=True)` mounted at
-`/`, this replaces it.)
-
-**2. The frontend's fetch wrapper** (wherever `/api/` calls are made): on a
-401, go to the password box. This covers a cookie that expired mid-session.
-
-    if (res.status === 401) { window.location.replace('/password'); return; }
-
-**3. Somewhere in Settings**, a way to forget the password on this browser:
-
-    await fetch('/api/auth/logout', { method: 'POST' });
-    window.location.replace('/password');
-
-**4. Odds sync**, next to the password lines, so the deployed app picks up
-snapshots the lines workflow commits without a rebuild:
-
-    from data_handling import sync_odds
-    sync_odds.install(app)
-
-Then delete `webauth/mock_app.py`; nothing else imports it.
+Open http://127.0.0.1:8017: you are sent to `/password`; enter it; the
+dashboard loads. Settings has "Sign out", which clears the cookie.
 
 ## Environment
 

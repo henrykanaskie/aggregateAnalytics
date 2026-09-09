@@ -10,10 +10,6 @@ DERIVE_CMD="python -m dashboard.stats.team"     # <- the dashboard's derived-tab
 echo "+ refresh ${SEASON} in the cache"
 python data_handling/ingest.py --start "$SEASON" --end "$SEASON" --refresh
 
-if [ -d dashboard ]; then
-  mkdir -p data/derived
-  echo "+ $DERIVE_CMD"
-  $DERIVE_CMD
-else
-  echo "dashboard/ is not in the repo yet; skipping derived tables."
-fi
+mkdir -p data/derived
+echo "+ $DERIVE_CMD"
+$DERIVE_CMD

@@ -45,7 +45,7 @@ from pydantic import BaseModel
 
 COOKIE = "nfl_session"
 LOGIN_PATH = "/password"
-EXEMPT_PREFIXES = ("/api/auth/", LOGIN_PATH, "/healthz")
+EXEMPT_PREFIXES = ("/api/auth/", LOGIN_PATH, "/healthz", "/api/health")
 
 MAX_FAILURES = 10          # per client address ...
 FAILURE_WINDOW = 15 * 60   # ... within this many seconds -> 429

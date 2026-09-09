@@ -1,18 +1,35 @@
-"""The site password gate.
+"""The site password gate, on the dashboard app and on a minimal app.
 
-The dependency and the auth routes will be lifted into the real dashboard
-unchanged, so their behaviour is what is pinned here: fail closed without a
-password, 401 on API routes until login, the cookie round-trips, logout
-revokes it, and the throttle bites.
+The minimal app pins the dependency's own behaviour without needing the
+parquet cache; the dashboard checks prove it is actually wired in there.
 """
 
 import pytest
+from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
-from webauth import auth
-from webauth.mock_app import create_app, latest_week
+from webauth import auth, auth_router, require_session
 
 PW = "hut-hut"
+
+
+def _minimal() -> FastAPI:
+    app = FastAPI(dependencies=[Depends(require_session)])
+    app.include_router(auth_router)
+
+    @app.get("/api/thing")
+    async def thing() -> dict:
+        return {"secret": 42}
+
+    @app.get("/api/health")
+    async def health() -> dict:
+        return {"ok": True}
+
+    @app.get("/{path:path}")
+    async def spa(path: str) -> dict:
+        return {"page": path or "index"}
+
+    return app
 
 
 @pytest.fixture
@@ -20,23 +37,23 @@ def client(monkeypatch):
     monkeypatch.setenv("SITE_PASSWORD", PW)
     monkeypatch.delenv("SESSION_SECRET", raising=False)
     auth.reset_throttle()
-    return TestClient(create_app())
+    return TestClient(_minimal())
 
 
 # --- fail closed --------------------------------------------------------------
 
 def test_unconfigured_password_refuses_everything(monkeypatch):
     monkeypatch.delenv("SITE_PASSWORD", raising=False)
-    c = TestClient(create_app())
-    assert c.get("/api/board").status_code == 503
+    c = TestClient(_minimal())
+    assert c.get("/api/thing").status_code == 503
     assert c.post("/api/auth/login", json={"password": ""}).status_code == 503
-    assert c.get("/healthz").status_code == 200          # exempt, so a host can probe it
+    assert c.get("/api/health").status_code == 200        # the host's probe stays open
 
 
 # --- the gate -----------------------------------------------------------------
 
 def test_api_is_401_before_login(client):
-    r = client.get("/api/board")
+    r = client.get("/api/thing")
     assert r.status_code == 401
     assert r.headers["X-Login-Url"] == "/password"
 
@@ -46,7 +63,7 @@ def test_browser_navigation_is_redirected_to_the_password_box(client):
     box rather than shown a JSON error. Nothing of the page is served."""
     r = client.get("/", headers={"Accept": "text/html,*/*"}, follow_redirects=False)
     assert r.status_code == 303 and r.headers["location"] == "/password"
-    r = client.get("/api/board", headers={"Accept": "text/html"}, follow_redirects=False)
+    r = client.get("/research/abc", headers={"Accept": "text/html"}, follow_redirects=False)
     assert r.status_code == 303
 
 
@@ -62,16 +79,16 @@ def test_wrong_password_is_401_and_sets_no_cookie(client):
     assert auth.COOKIE not in r.cookies
 
 
-def test_login_sets_cookie_and_opens_the_api(client):
+def test_login_sets_cookie_and_opens_everything(client):
     r = client.post("/api/auth/login", json={"password": PW})
     assert r.status_code == 204
     assert auth.COOKIE in r.cookies
-    assert client.get("/api/board").status_code == 200
-    assert client.get("/").status_code == 200
+    assert client.get("/api/thing").json() == {"secret": 42}
+    assert client.get("/", headers={"Accept": "text/html"}).json() == {"page": "index"}
     assert client.get("/api/auth/me").json() == {"authenticated": True}
 
 
-def test_logged_in_visitor_to_login_page_is_sent_home(client):
+def test_logged_in_visitor_to_password_page_is_sent_home(client):
     client.post("/api/auth/login", json={"password": PW})
     r = client.get("/password", follow_redirects=False)
     assert r.status_code == 303 and r.headers["location"] == "/"
@@ -80,7 +97,7 @@ def test_logged_in_visitor_to_login_page_is_sent_home(client):
 def test_logout_revokes(client):
     client.post("/api/auth/login", json={"password": PW})
     assert client.post("/api/auth/logout").status_code == 204
-    assert client.get("/api/board").status_code == 401
+    assert client.get("/api/thing").status_code == 401
 
 
 # --- the token ----------------------------------------------------------------
@@ -123,26 +140,35 @@ def test_throttle_after_repeated_failures(client):
     for _ in range(auth.MAX_FAILURES):
         assert client.post("/api/auth/login", json={"password": "no"}).status_code == 401
     assert client.post("/api/auth/login", json={"password": "no"}).status_code == 429
-    # And the right password is locked out too until the window passes.
     assert client.post("/api/auth/login", json={"password": PW}).status_code == 429
 
 
-# --- the placeholder board ----------------------------------------------------
+# --- wired into the real dashboard ----------------------------------------------
 
-def test_board_labels_example_rows_when_log_absent(client, monkeypatch, tmp_path):
-    monkeypatch.setattr("webauth.mock_app.TRACK_CSV", tmp_path / "missing.csv")
-    client.post("/api/auth/login", json={"password": PW})
-    b = client.get("/api/board").json()
-    assert b["example"] is True
-    assert all(r["game_id"].startswith("2026_01_EXAMPLE") for r in b["rows"])
+@pytest.fixture
+def dashboard_client(monkeypatch):
+    monkeypatch.setenv("SITE_PASSWORD", PW)
+    monkeypatch.delenv("ODDS_REPO", raising=False)         # sync is a no-op in tests
+    auth.reset_throttle()
+    from dashboard.api.app import app
+    return TestClient(app)
 
 
-def test_latest_week_keeps_earliest_log_per_game():
-    rows = [
-        {"season": "2026", "week": "1", "game_id": "g", "logged_at": "2026-09-08 22:00:00"},
-        {"season": "2026", "week": "1", "game_id": "g", "logged_at": "2026-09-08 20:00:00"},
-        {"season": "2025", "week": "18", "game_id": "old", "logged_at": "2026-01-01 00:00:00"},
-    ]
-    out = latest_week(rows)
-    assert [r["game_id"] for r in out] == ["g"]
-    assert out[0]["logged_at"] == "2026-09-08 20:00:00"
+def test_dashboard_api_is_gated(dashboard_client):
+    assert dashboard_client.get("/api/meta").status_code == 401
+    assert dashboard_client.get("/api/players?q=x").status_code == 401
+    assert dashboard_client.post("/api/odds/pull", json={"source": "espn"}).status_code == 401
+
+
+def test_dashboard_password_box_and_health_are_open(dashboard_client):
+    assert dashboard_client.get("/password").status_code == 200
+    assert dashboard_client.get("/api/health").json() == {"ok": True}
+
+
+def test_dashboard_browser_visit_is_redirected(dashboard_client):
+    r = dashboard_client.get("/research", headers={"Accept": "text/html"}, follow_redirects=False)
+    # 303 when the built SPA is present (catch-all route); 404 without it.
+    # Either way, nothing of the app is served.
+    assert r.status_code in (303, 404)
+    if r.status_code == 303:
+        assert r.headers["location"] == "/password"

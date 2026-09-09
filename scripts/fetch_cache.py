@@ -66,6 +66,8 @@ def main() -> int:
     ap.add_argument("--dest", type=Path,
                     default=Path(os.environ.get("NFL_DATA_DIR", "data")))
     ap.add_argument("--tag", default=TAG)
+    ap.add_argument("--only", nargs="*", default=None,
+                    help="asset names without .tar, e.g. schedules _static")
     args = ap.parse_args()
 
     repo = _repo()
@@ -81,6 +83,8 @@ def main() -> int:
     total = 0
     for a in assets:
         if not a["name"].endswith(".tar"):
+            continue
+        if args.only is not None and a["name"][:-4] not in args.only:
             continue
         print(f"[get] {a['name']} ({a['size'] / 1e6:.0f} MB)")
         path = download(a, tmp)

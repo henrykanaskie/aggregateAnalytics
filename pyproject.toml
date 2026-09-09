@@ -10,10 +10,12 @@ dependencies = ["polars>=1.0", "nflreadpy", "scikit-learn>=1.4"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "fastapi>=0.110", "httpx>=0.27"]
-web = ["fastapi>=0.110", "uvicorn[standard]>=0.29"]
+# The props research dashboard (dashboard/). Kept separate so the model can
+# be installed without a web stack.
+dashboard = ["fastapi>=0.110", "uvicorn[standard]>=0.29", "requests>=2.31", "python-dotenv>=1.0"]
 
 [tool.setuptools.packages.find]
-include = ["nfl*", "data_handling*", "model*", "webauth*"]
+include = ["nfl*", "data_handling*", "model*", "dashboard*", "webauth*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -21,4 +23,7 @@ testpaths = ["tests"]
 # kept so a fresh clone can run the suite before installing anything.
 pythonpath = ["."]
 addopts = "-q"
-markers = ["needs_data: requires the parquet cache to be populated"]
+markers = [
+    "needs_data: requires the parquet cache to be populated",
+    "slow: takes more than a second",
+]
