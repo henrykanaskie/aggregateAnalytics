@@ -7,8 +7,9 @@
  * marks the selected chip, the focused row and every link, and a rank that
  * shared it looked selected. The number is what is coloured: a 91st-percentile
  * pass rate is green because it is a 91, whether or not passing that much is
- * a virtue. Direction, where a metric has one, is left to the label and the
- * note, so the same shade always means the same place in the league.
+ * a virtue. Where a metric is better low (EPA allowed, sacks taken), the
+ * percentile is taken the good way round first, so green always means good
+ * and never "the most of a bad thing".
  */
 
 /** 1 = the highest value in the league that season, 0 = the lowest. */
@@ -29,12 +30,18 @@ export function band(pct: number | null | undefined): Band | null {
 /** How to say the scale in a hint, so every page describes it the same way. */
 export const PCT_LEGEND = "red under 30, orange to 49, yellow to 69, purple to 89, green from 90";
 
+/** The percentile the good way round: for a metric that is better low, a
+ *  value at the bottom of the league is the top of this scale. */
+export function oriented(pct: number | null | undefined, good?: string | null): number | null | undefined {
+  return good === "low" && pct !== null && pct !== undefined ? 1 - pct : pct;
+}
+
 const token = (b: Band) => `var(--pct-${b})`;
 const mix = (t: string, alpha: number) => `color-mix(in srgb, ${t} ${Math.round(alpha * 100)}%, transparent)`;
 
 /** The solid colour for a percentile: bars, swatches, anything not carrying text. */
-export function pctColor(pct: number | null | undefined): string | undefined {
-  const b = band(pct);
+export function pctColor(pct: number | null | undefined, good?: string | null): string | undefined {
+  const b = band(oriented(pct, good));
   return b ? token(b) : undefined;
 }
 
@@ -43,12 +50,12 @@ export function pctColor(pct: number | null | undefined): string | undefined {
  * A tint rather than coloured text: these tables are dense and wide, and a
  * fixed alpha keeps the number readable in every band and both themes.
  */
-export function rankTint(rank: number | null | undefined, n: number | null | undefined): string | undefined {
-  const b = band(pctile(rank, n));
+export function rankTint(rank: number | null | undefined, n: number | null | undefined, good?: string | null): string | undefined {
+  const b = band(oriented(pctile(rank, n), good));
   return b ? mix(token(b), 0.3) : undefined;
 }
 
 /** Fill for a percentile bar. The bar's length is the percentile; the colour is its band. */
-export function barFill(pct: number | null | undefined): string {
-  return pctColor(pct) ?? "var(--border-2)";
+export function barFill(pct: number | null | undefined, good?: string | null): string {
+  return pctColor(pct, good) ?? "var(--border-2)";
 }

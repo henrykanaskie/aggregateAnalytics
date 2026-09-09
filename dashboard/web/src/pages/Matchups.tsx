@@ -177,7 +177,7 @@ function SideView({ s, metrics, labels }: { s: MatchupSideFull; metrics: TeamMet
     const m = mdefs.get(k); const row = block.season; if (!m || !row) return null;
     const v = row[k] as number | null; const r = row[`${k}_rank`] as number | null; const l4 = block.last4?.[k] ?? null;
     if (v === null || v === undefined) return null;
-    return <tr><td className="left" title={m.note || undefined}>{m.label}</td><td className="num">{fmtStat(v, m.fmt as any)}</td><td className="num" style={{ background: rankTint(r, row.n_teams) }}>{r}</td><td className="num muted">{fmtStat(l4, m.fmt as any)}</td></tr>;
+    return <tr><td className="left" title={m.note || undefined}>{m.label}</td><td className="num">{fmtStat(v, m.fmt as any)}</td><td className="num" style={{ background: rankTint(r, row.n_teams, m.good) }}>{r}</td><td className="num muted">{fmtStat(l4, m.fmt as any)}</td></tr>;
   };
   const groups: Record<string, DefPlayer[]> = { CB: [], S: [], LB: [], DL: [] };
   for (const p of s.defense_personnel) groups[p.group]?.push(p);

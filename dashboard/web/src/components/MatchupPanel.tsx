@@ -40,7 +40,7 @@ export default function MatchupPanel({ team, opponent, position, focus = false }
             const v = side.season[k] as number | null; const r = side.season[`${k}_rank`] as number | null; const l4 = side.last4?.[k] ?? null;
             if (v === null || v === undefined) return null;
             const cls = hot ? (hot.includes(k) ? "focus-row" : "dim") : "";
-            return <tr key={k} className={cls}><td className="left" title={m.note || undefined}>{m.label}</td><td className="num">{fmtStat(v, m.fmt as any)}</td><td className="num" style={{ background: rankTint(r, side.season.n_teams) }}>{r ?? "–"}</td><td className="num muted">{fmtStat(l4, m.fmt as any)}</td></tr>;
+            return <tr key={k} className={cls}><td className="left" title={m.note || undefined}>{m.label}</td><td className="num">{fmtStat(v, m.fmt as any)}</td><td className="num" style={{ background: rankTint(r, side.season.n_teams, m.good) }}>{r ?? "–"}</td><td className="num muted">{fmtStat(l4, m.fmt as any)}</td></tr>;
           })}
         </tbody>
       </table></div>
@@ -70,7 +70,7 @@ export default function MatchupPanel({ team, opponent, position, focus = false }
       )}
       <Block side={data.team} keys={tf ? [...new Set([...tf.off, ...OFF])] : OFF} title="offense" hot={tf?.off} />
       <Block side={data.opponent} keys={tf ? [...new Set([...tf.def, ...DEF])] : DEF} title="defense" hot={tf?.def} />
-      <div className="hint">Ranks are among 32 teams in the season shown, 1 = highest value; shading is the percentile, {PCT_LEGEND}.</div>
+      <div className="hint">Ranks are among 32 teams in the season shown, 1 = highest value; shading is the percentile the good way round, {PCT_LEGEND}.</div>
     </div>
   );
 }

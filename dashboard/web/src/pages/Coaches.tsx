@@ -8,7 +8,7 @@ import { fmtStat } from "../lib/format";
 import { useSticky } from "../lib/sticky";
 import { useQuery } from "../lib/useQuery";
 import { useMeta } from "../state";
-import { barFill, PCT_LEGEND, rankTint } from "../lib/rank";
+import { barFill, oriented, PCT_LEGEND, rankTint } from "../lib/rank";
 import ScatterPlot from "../components/ScatterPlot";
 import { fmtStat as fmtS } from "../lib/format";
 
@@ -128,14 +128,15 @@ export default function Coaches() {
                   </div>
                 )}
                 <h3 style={{ marginBottom: 6 }}>Tendency fingerprint</h3>
-                <div className="hint" style={{ marginBottom: 8 }}>Average league percentile of each tendency across his seasons (regular season). Far from the middle = a consistent identity. Colour is the percentile itself: {PCT_LEGEND}. "Top ⅓" counts the seasons ranked in the top third of the league.</div>
+                <div className="hint" style={{ marginBottom: 8 }}>Average league percentile of each tendency across his seasons (regular season). Far from the middle = a consistent identity. Colour is the percentile itself: {PCT_LEGEND}. Where a lower number is better, the percentile is taken the good way round, so green is always the good end. "Top ⅓" counts the seasons ranked in the top third of the league.</div>
                 <div className="tbl-wrap">
                   <table className="tbl">
                     <thead><tr><th className="left">Tendency</th><th>Career</th><th style={{ width: 180 }}>Percentile</th><th>Seasons</th><th>Top ⅓</th><th>Bottom ⅓</th></tr></thead>
                     <tbody>{fp.map((f) => (
                       <tr key={f.key}><td className="left">{f.label}</td><td className="num">{fmtStat(f.career, f.fmt as any)}</td>
-                        <td><div style={{ display: "flex", alignItems: "center", gap: 6 }}><div className="bar" style={{ flex: 1, marginTop: 0 }}><div style={{ width: `${f.mean_pct * 100}%`, background: barFill(f.mean_pct) }} /></div><span className="num tiny" style={{ width: 30 }}>{Math.round(f.mean_pct * 100)}</span></div></td>
-                        <td className="num muted">{f.seasons}</td><td className={`num ${f.top_third >= f.seasons / 2 ? "over" : ""}`}>{f.top_third}</td><td className={`num ${f.bottom_third >= f.seasons / 2 ? "under" : ""}`}>{f.bottom_third}</td></tr>
+                        {(() => { const p = oriented(f.mean_pct, f.good) ?? 0; const [top, bottom] = f.good === "low" ? [f.bottom_third, f.top_third] : [f.top_third, f.bottom_third]; return <>
+                        <td><div style={{ display: "flex", alignItems: "center", gap: 6 }}><div className="bar" style={{ flex: 1, marginTop: 0 }}><div style={{ width: `${p * 100}%`, background: barFill(p) }} /></div><span className="num tiny" style={{ width: 30 }}>{Math.round(p * 100)}</span></div></td>
+                        <td className="num muted">{f.seasons}</td><td className={`num ${top >= f.seasons / 2 ? "over" : ""}`}>{top}</td><td className={`num ${bottom >= f.seasons / 2 ? "under" : ""}`}>{bottom}</td></>; })()}</tr>
                     ))}</tbody>
                   </table>
                 </div>
@@ -174,7 +175,7 @@ export default function Coaches() {
                       <tr key={`${s.season}-${s.team}`}><td className="left">{s.season}</td><td className="left"><TeamTag abbr={s.team} /></td>
                         {mixed && <td className="left"><span className={`chip tiny ${s.held === role ? "" : "on"}`}>{s.held}</span></td>}
                         <td className="num muted">{s.win}-{s.loss}</td><td className="num muted">{fmtStat(s.ppg, "dec1")}</td>
-                        {metrics.map((m) => { const v = s[m.key] as number | null; const r = s[`${m.key}_rank`] as number | null; return <td key={m.key} className="num" style={{ background: rankTint(r, s.n_teams) }} title={r ? `rank ${r} of ${s.n_teams}` : ""}>{v === null || v === undefined ? "–" : <>{fmtStat(v, m.fmt as any)} <span className="faint tiny">{r}</span></>}</td>; })}
+                        {metrics.map((m) => { const v = s[m.key] as number | null; const r = s[`${m.key}_rank`] as number | null; return <td key={m.key} className="num" style={{ background: rankTint(r, s.n_teams, m.good) }} title={r ? `rank ${r} of ${s.n_teams}` : ""}>{v === null || v === undefined ? "–" : <>{fmtStat(v, m.fmt as any)} <span className="faint tiny">{r}</span></>}</td>; })}
                       </tr>
                     ))}</tbody>
                   </table>

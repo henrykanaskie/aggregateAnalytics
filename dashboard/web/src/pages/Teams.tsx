@@ -105,7 +105,7 @@ export default function Teams() {
             </div>
           </div>
           <div className="panel" data-tour="team-seasons">
-            <div className="panel-head"><h3>{team} by season · {side === "off" ? "offense" : "defense"}</h3><span className="hint">value with league rank, shaded by percentile: {PCT_LEGEND} · <span className="scroll-hint">scroll sideways for all {metrics.length} metrics</span></span></div>
+            <div className="panel-head"><h3>{team} by season · {side === "off" ? "offense" : "defense"}</h3><span className="hint">value with league rank, shaded by percentile the good way round: {PCT_LEGEND} · <span className="scroll-hint">scroll sideways for all {metrics.length} metrics</span></span></div>
             <div className="tbl-wrap">
               <table className="tbl wide">
                 <thead><tr><th className="left">Season</th><th className="left">Coach</th><th className="left">{side === "off" ? "OC" : "DC"}</th><th>G</th>{metrics.map((m) => <th key={m.key} className={m.key === active ? "over" : ""} onClick={() => setMetric(m.key)} title={m.note || undefined}>{m.label}</th>)}</tr></thead>
@@ -114,7 +114,7 @@ export default function Teams() {
                     <tr key={s.season}><td className="left">{s.season}</td><td className="left small muted">{coach?.coach ?? ""}</td>
                       <td className="left small muted">{cord ? <Link to={`/coaches?role=${side === "off" ? "OC" : "DC"}&coach=${encodeURIComponent(cord)}`}>{cord}</Link> : ""}</td>
                       <td className="num muted">{s.games}</td>
-                      {metrics.map((m) => { const v = s[m.key] as number | null; const r = s[`${m.key}_rank`] as number | null; return <td key={m.key} className="num" style={{ background: rankTint(r, s.n_teams) }} title={r ? `rank ${r} of ${s.n_teams}` : ""}>{v === null || v === undefined ? "–" : <>{fmtStat(v, m.fmt as any)} <span className="faint tiny">{r}</span></>}</td>; })}
+                      {metrics.map((m) => { const v = s[m.key] as number | null; const r = s[`${m.key}_rank`] as number | null; return <td key={m.key} className="num" style={{ background: rankTint(r, s.n_teams, m.good) }} title={r ? `rank ${r} of ${s.n_teams}` : ""}>{v === null || v === undefined ? "–" : <>{fmtStat(v, m.fmt as any)} <span className="faint tiny">{r}</span></>}</td>; })}
                     </tr>
                   ); })}
                 </tbody>
@@ -151,7 +151,7 @@ export default function Teams() {
               {sortedLeague.map((t) => (
                 <tr key={t.team as string} className={`clickable ${t.team === team ? "hl" : ""}`} onClick={() => setSp({ team: t.team as string })}>
                   <td className="left"><TeamTag abbr={t.team as string} /></td><td className="left small muted">{league?.coaches[t.team as string] ?? ""}</td>
-                  {metrics.map((m) => { const v = t[m.key] as number | null; const r = t[`${m.key}_rank`] as number | null; return <td key={m.key} className="num" style={{ background: rankTint(r, t.n_teams) }} title={r ? `rank ${r} of ${t.n_teams}` : ""}>{v === null || v === undefined ? "–" : fmtStat(v, m.fmt as any)}</td>; })}
+                  {metrics.map((m) => { const v = t[m.key] as number | null; const r = t[`${m.key}_rank`] as number | null; return <td key={m.key} className="num" style={{ background: rankTint(r, t.n_teams, m.good) }} title={r ? `rank ${r} of ${t.n_teams}` : ""}>{v === null || v === undefined ? "–" : fmtStat(v, m.fmt as any)}</td>; })}
                 </tr>
               ))}
             </tbody>
