@@ -2,10 +2,10 @@ import { useMemo, useState } from "react";
 import { CartesianGrid, ReferenceLine, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis, ZAxis } from "recharts";
 import { chartTheme } from "../lib/theme";
 
-export interface Dot { id: string; label: string; x: number | null; y: number | null; image?: string | null; sub?: string; highlight?: boolean; muted?: boolean; extra?: Record<string, string | number | null>; }
+export interface Dot { id: string; label: string; x: number | null; y: number | null; image?: string | null; sub?: string; highlight?: boolean; muted?: boolean; labelled?: boolean; extra?: Record<string, string | number | null>; }
 interface Props {
   dots: Dot[]; xLabel: string; yLabel: string; xFmt?: (v: number) => string; yFmt?: (v: number) => string;
-  height?: number; imageSize?: number; showLabels?: "all" | "highlight" | "none"; quadrants?: [string, string, string, string]; // TL, TR, BL, BR
+  height?: number; imageSize?: number; showLabels?: "all" | "some" | "highlight" | "none"; quadrants?: [string, string, string, string]; // TL, TR, BL, BR
   // The crosshairs are the mean of what is plotted unless the caller knows
   // better. A chart showing a trimmed field has to pass the full population's
   // average, or the line reads as the league when it is only the top of it.
@@ -38,7 +38,11 @@ export default function ScatterPlot({ dots, xLabel, yLabel, xFmt = (v) => String
     const hl = payload.highlight || hover === payload.id;
     const size = hl ? imageSize * 1.5 : imageSize;
     const dim = payload.muted && !hl ? 0.55 : 1;
-    const label = showLabels === "all" || (showLabels === "highlight" && hl);
+    // "some" lets the caller name the dots worth naming and leave the rest to
+    // hover, which is the only readable option once a crowded field is plotted
+    // whole: fifty labels at this size overlap forty of each other.
+    const label = showLabels === "all" || (showLabels === "highlight" && hl)
+      || (showLabels === "some" && (hl || !!payload.labelled));
     return (
       <g style={{ cursor: onPick ? "pointer" : "default" }} opacity={dim} onClick={() => onPick?.(payload.id)} onMouseEnter={() => setHover(payload.id)} onMouseLeave={() => setHover(null)}>
         {hl && <circle cx={cx} cy={cy} r={size / 2 + 4} fill="none" stroke={T.accent} strokeWidth={2} />}
