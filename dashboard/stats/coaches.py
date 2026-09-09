@@ -79,6 +79,25 @@ def season_ranks() -> pl.DataFrame:
     return with_ranks(rates(tg, ["season", "team"]))
 
 
+def season_used(team: str, season: int) -> int:
+    """Which season's numbers to read for ``team``: this one once it has four
+    games in it, else last.
+
+    A three-game sample is not a tendency, and in September ``season`` has no
+    games at all, so every ranked number on the research and matchup pages is
+    last year's until the new one has enough behind it. Lives here rather than
+    in the API because the precomputed angle table has to key on exactly the
+    same answer the request would have reached.
+    """
+    ranks = season_ranks()
+    mine = ranks.filter(pl.col("team") == team)
+    have = mine["season"].max() if not mine.is_empty() else None
+    cur = mine.filter(pl.col("season") == season)
+    if have is not None and have >= season and not cur.is_empty() and cur["games"][0] >= 4:
+        return season
+    return int(min(have or season - 1, season - 1))
+
+
 @lru_cache(maxsize=1)
 def coach_seasons() -> pl.DataFrame:
     """Coach x season x team: tendencies over the games that coach coached,

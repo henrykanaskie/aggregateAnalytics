@@ -34,6 +34,7 @@ from ..stats import players as players_mod
 from ..stats.catalog import GROUPS, catalog_json
 from ..stats import coaches as coaches_mod
 from ..stats import context as ctx_mod
+from ..stats import angles as ang_mod
 from ..stats import matchups as mu_mod
 from ..stats import extras as ex_mod
 from ..stats import projection as proj_mod
@@ -199,7 +200,7 @@ def player_lines(player_id: str, season: int = CURRENT_SEASON, week: int | None 
     mine = latest.filter(pl.col("player_id") == player_id) if not latest.is_empty() else latest
     rows = build_board(mine)
     attach_form(rows, [season - 1, season])
-    proj_mod.project_rows(rows, season, week, dvp_season=_season_used(prof.get("team") or "", season) if prof.get("team") else None)
+    proj_mod.project_rows(rows, season, week, dvp_season=coaches_mod.season_used(prof.get("team") or "", season) if prof.get("team") else None)
     hist = store.prop_history(player_id, season=season, week=week)
     team = prof.get("team")
     game = None
@@ -289,7 +290,7 @@ def log_baseline(req: LogBaselineRequest):
     week = _week_default(season, req.week)
     latest = store.latest_props(season, week, req.include_sample)
     rows = build_board(latest)
-    proj_mod.project_rows(rows, season, week, dvp_season=_season_used(rows[0]["home_team"], season) if rows else None)
+    proj_mod.project_rows(rows, season, week, dvp_season=coaches_mod.season_used(rows[0]["home_team"], season) if rows else None)
     n = proj_mod.log_baseline(rows, season, week)
     return {"season": season, "week": week, "logged": n}
 
@@ -326,17 +327,6 @@ def team_tendencies(team: str, since: int = Query(2010, ge=1999), season_type: s
     }
 
 
-def _season_used(team: str, season: int) -> int:
-    """This season once the team has four games in it, else last season."""
-    ranks = coaches_mod.season_ranks()
-    mine = ranks.filter(pl.col("team") == team)
-    have = mine["season"].max() if not mine.is_empty() else None
-    cur = mine.filter(pl.col("season") == season)
-    if have is not None and have >= season and not cur.is_empty() and cur["games"][0] >= 4:
-        return season
-    return int(min(have or season - 1, season - 1))
-
-
 def _team_block(t: str, use: int, season: int) -> dict:
     ranks = coaches_mod.season_ranks()
     tg = team_mod.team_games().filter(pl.col("season_type") == "REG")
@@ -355,7 +345,7 @@ def matchup(team: str, opponent: str, season: int = CURRENT_SEASON, position: st
     ranks, plus each side's last four regular-season games."""
     _need_team_table()
     team, opponent = team.upper(), opponent.upper()
-    use = _season_used(team, season)
+    use = coaches_mod.season_used(team, season)
     out = {"season_used": int(use), "team": _team_block(team, use, season), "opponent": _team_block(opponent, use, season), "metrics": team_mod.metric_json()}
     pos = position.upper() if position else None
     if pos in ctx_mod.POS_GROUPS:
@@ -386,7 +376,7 @@ def game_matchup(game_id: str, include_sample: bool = False):
     full = scan("schedules").filter(pl.col("game_id") == game_id).collect()
     game = records(full)[0]
     home, away = game["home_team"], game["away_team"]
-    use = _season_used(home, season)
+    use = coaches_mod.season_used(home, season)
     blocks = {t: _team_block(t, use, season) for t in (home, away)}
     dvp_tables = {pos: ctx_mod.dvp_table(use, pos) for pos in ctx_mod.POS_GROUPS}
 
@@ -418,7 +408,7 @@ def game_matchup(game_id: str, include_sample: bool = False):
             "offense_block": blocks[off_t], "defense_block": blocks[def_t],
             "dvp": dvp,
             "angles": team_angles,
-            "player_angles": mu_mod.player_angles(key_players, blocks[def_t]["season"], def_t, since=max(use - 2, 2016)),
+            "player_angles": ang_mod.for_matchup(off_t, def_t, season, use, key_players, blocks[def_t]["season"]),
             "offense_personnel": records(pl.DataFrame(off_pers)) if off_pers else [],
             "defense_personnel": mu_mod.defense_personnel(def_t, use, roster_season=season),
         })
@@ -525,7 +515,7 @@ def odds_board(season: int = CURRENT_SEASON, week: int | None = None,
         rows = [r for r in rows if any(b["book"] == book for b in r["books"])]
     if form:
         attach_form(rows, [season - 1, season])
-    proj_mod.project_rows(rows, season, week, dvp_season=_season_used(rows[0]["home_team"], season) if rows else None)
+    proj_mod.project_rows(rows, season, week, dvp_season=coaches_mod.season_used(rows[0]["home_team"], season) if rows else None)
     sources = sorted(set(latest["source"].to_list())) if not latest.is_empty() else []
     pulled = latest["pulled_at"].max() if not latest.is_empty() else None
     return {"season": season, "week": week, "sources": sources, "pulled_at": _clean(pulled),
