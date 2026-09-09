@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api6, ScatterRow } from "../api";
-import { fmtStat } from "../lib/format";
+import { fmtStat, shortName } from "../lib/format";
 import { useMeta } from "../state";
 import { Field } from "./common";
 import ScatterPlot from "./ScatterPlot";
@@ -70,7 +70,7 @@ export default function PlayerScatter({ playerId, position, statKey, season, nam
       // Which axis actually has nothing for him, so the note names the one to change.
       gaps: mine && !shown ? [x, y].filter((k) => mine[k] === null) : [],
       dots: top.map((r) => ({
-        id: r.player_id, label: r.name.split(" ").slice(-1)[0], x: r[x] as number | null, y: r[y] as number | null,
+        id: r.player_id, label: shortName(r.name), x: r[x] as number | null, y: r[y] as number | null,
         image: r.player_id === playerId ? r.headshot : null,
         sub: `${r.team} · ${r.games} g`, highlight: r.player_id === playerId,
       })),

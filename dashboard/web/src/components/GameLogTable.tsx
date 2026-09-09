@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { GameRow } from "../api";
-import { fmtStat } from "../lib/format";
+import { fmtStat, shortName } from "../lib/format";
 import { val } from "../lib/stats";
 import { useMeta } from "../state";
 import StatPicker from "./StatPicker";
@@ -70,7 +70,7 @@ export default function GameLogTable({ rows, columns, setColumns, statKey, line,
                 <td className="left"><span className={r.result === "W" ? "over" : r.result === "L" ? "under" : ""}>{r.result ?? "–"}</span> <span className="muted num">{r.team_score ?? ""}{r.team_score !== null ? "-" : ""}{r.opp_score ?? ""}</span></td>
                 <td className={`num muted ${important ? "dim" : ""}`}>{r.team_spread === null ? "–" : (r.team_spread > 0 ? "+" : "") + r.team_spread}</td>
                 <td className={`num muted ${important ? "dim" : ""}`}>{r.total_line ?? "–"}</td>
-                {position !== "QB" && <td className={`left small muted ${important ? "dim" : ""}`}>{r.qb_name ? r.qb_name.split(" ").slice(-1)[0] : "–"}</td>}
+                {position !== "QB" && <td className={`left small muted ${important ? "dim" : ""}`}>{shortName(r.qb_name)}</td>}
                 <td className={`left small muted ${important ? "dim" : ""}`}>{r.indoors ? "dome" : r.temp !== null ? `${r.temp}° ${r.wind !== null ? `${r.wind}mph` : ""}` : "–"}</td>
                 {cols.map((c) => <td key={c} className={`${cls(r, c)} ${fc(c)}`}>{fmtStat(val(r, c), statByKey.get(c)?.fmt)}</td>)}
               </tr>

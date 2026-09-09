@@ -21,6 +21,23 @@ export function fmtDate(iso: string | null | undefined): string {
   if (Number.isNaN(d.getTime())) return iso;
   return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
+/**
+ * "Justin Jefferson" -> "J. Jefferson", for labels with no room for the whole
+ * name. Prose should use the full name instead.
+ *
+ * The first word is the given name and everything after it is what the player
+ * is called, which is the part a reader scans for. Taking the *last* word
+ * instead looks equivalent and is not: it labels ten of this season's wide
+ * receivers "Jr." and four more "III", and it cannot tell five Moores or five
+ * Williamses apart. Keeping the tail whole also keeps "A. St. Brown" and
+ * "M. Harrison Jr." intact, which a surname-only rule cannot.
+ */
+export function shortName(name: string | null | undefined): string {
+  if (!name) return "–";
+  const [first, ...rest] = name.trim().split(/\s+/);
+  return rest.length ? `${first[0]}. ${rest.join(" ")}` : name;
+}
+
 export const impliedProb = (american: number | null | undefined) => {
   if (american === null || american === undefined) return null;
   return american > 0 ? 100 / (american + 100) : -american / (-american + 100);
