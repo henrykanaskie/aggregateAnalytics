@@ -54,6 +54,14 @@ export default function Coaches() {
   const fp = useMemo(() => (prof?.fingerprint ?? []).filter((f) => f.side === side && f.seasons >= 2), [prof, side]);
   // Only worth a column when the seasons actually came from more than one job.
   const mixed = Object.keys(prof?.season_roles ?? {}).length > 1;
+  // Which side of the ball each job answers for, taken from the API rather
+  // than restated here, so the rule lives in one place.
+  const sidesOf = (held: CoachRoleKey) => meta?.coach_roles?.find((r) => r.key === held)?.sides ?? ["off", "def"];
+  const answersFor = (held: CoachRoleKey, sd: string) => sidesOf(held).includes(sd);
+  // A head coach's offensive years include the ones he spent coordinating an
+  // offense; his defensive table must not, or it credits him with a defense he
+  // never ran.
+  const seasonsThisSide = (prof?.seasons ?? []).filter((s) => answersFor(s.held, side));
   const shown = useMemo(() => list.filter((c) => (!onlyActive || c.current_team) && (!q || c.coach.toLowerCase().includes(q.toLowerCase()))), [list, onlyActive, q]);
   // A coordinator's scatter axes have to come from his own side, or the
   // selector offers him metrics his page cannot plot.
@@ -154,15 +162,15 @@ export default function Coaches() {
                     <Field label="Y"><select className="input" value={ay} onChange={(e) => setSy(e.target.value)}>{axisMetrics.map((m) => <option key={m.key} value={m.key}>{m.side === "def" ? "DEF · " : ""}{m.label}</option>)}</select></Field>
                   </div>
                 </div>
-                {(() => { const mx = axisMetrics.find((m) => m.key === ax), my = axisMetrics.find((m) => m.key === ay); const dots = prof.seasons.map((s) => ({ id: `${s.season}-${s.team}`, label: `${s.season} ${s.team}`, x: s[ax] as number | null, y: s[ay] as number | null, sub: `${s.win}-${s.loss}`, extra: { [`${mx?.label ?? ax} rank`]: (s[`${ax}_rank`] as number) ?? null, [`${my?.label ?? ay} rank`]: (s[`${ay}_rank`] as number) ?? null } })); return <ScatterPlot dots={dots} xLabel={`${mx?.label ?? ax}${ax === "sec_per_play" ? " (higher = slower)" : ""}`} yLabel={`${my?.label ?? ay}${ay === "sec_per_play" ? " (higher = slower)" : ""}`} xFmt={(v) => fmtS(v, (mx?.fmt ?? "dec1") as any)} yFmt={(v) => fmtS(v, (my?.fmt ?? "dec1") as any)} showLabels="all" height={300} />; })()}
+                {(() => { const mx = axisMetrics.find((m) => m.key === ax), my = axisMetrics.find((m) => m.key === ay); const dots = prof.seasons.filter((s) => answersFor(s.held, mx?.side ?? "off") && answersFor(s.held, my?.side ?? "off")).map((s) => ({ id: `${s.season}-${s.team}`, label: `${s.season} ${s.team}`, x: s[ax] as number | null, y: s[ay] as number | null, sub: `${s.win}-${s.loss}`, extra: { [`${mx?.label ?? ax} rank`]: (s[`${ax}_rank`] as number) ?? null, [`${my?.label ?? ay} rank`]: (s[`${ay}_rank`] as number) ?? null } })); return <ScatterPlot dots={dots} xLabel={`${mx?.label ?? ax}${ax === "sec_per_play" ? " (higher = slower)" : ""}`} yLabel={`${my?.label ?? ay}${ay === "sec_per_play" ? " (higher = slower)" : ""}`} xFmt={(v) => fmtS(v, (mx?.fmt ?? "dec1") as any)} yFmt={(v) => fmtS(v, (my?.fmt ?? "dec1") as any)} showLabels="all" height={300} />; })()}
                 <div className="hint">Each dot is one of his seasons; the dashed lines are his own career averages. A tight cluster is an identity, a drift is a coach who changed.</div>
               </div>
               <div className="panel">
-                <div className="panel-head"><h3>Season by season · {side === "off" ? "offense" : "defense"}</h3><span className="hint">shaded by league percentile, deeper = further from the middle; green/red where a direction is better, blue where it is only a tendency · <span className="scroll-hint">scroll sideways for all {metrics.length} metrics</span></span></div>
+                <div className="panel-head"><h3>Season by season · {side === "off" ? "offense" : "defense"}{mixed ? ` · ${seasonsThisSide.length} of ${prof.seasons.length} seasons answer for it` : ""}</h3><span className="hint">shaded by league percentile, deeper = further from the middle; green/red where a direction is better, blue where it is only a tendency · <span className="scroll-hint">scroll sideways for all {metrics.length} metrics</span></span></div>
                 <div className="tbl-wrap">
                   <table className="tbl wide">
                     <thead><tr><th className="left">Season</th><th className="left">Team</th>{mixed && <th className="left">Job</th>}<th>W-L</th><th>PPG</th>{metrics.map((m) => <th key={m.key} title={m.note || undefined}>{m.label}</th>)}</tr></thead>
-                    <tbody>{prof.seasons.slice().reverse().map((s) => (
+                    <tbody>{seasonsThisSide.slice().reverse().map((s) => (
                       <tr key={`${s.season}-${s.team}`}><td className="left">{s.season}</td><td className="left"><TeamTag abbr={s.team} /></td>
                         {mixed && <td className="left"><span className={`chip tiny ${s.held === role ? "" : "on"}`}>{s.held}</span></td>}
                         <td className="num muted">{s.win}-{s.loss}</td><td className="num muted">{fmtStat(s.ppg, "dec1")}</td>

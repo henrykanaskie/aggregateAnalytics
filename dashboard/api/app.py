@@ -544,7 +544,13 @@ def coach_usage_api(name: str, role: str = "HC"):
     # under his current title: who got the ball in Miami is exactly the
     # question a reader has about Mike McDaniel, and it is his head-coaching
     # years that answer it.
-    cs = coaches_mod.accountable_seasons(name, _role(role)).select("team", "season").unique().sort("season")
+    # Who got the ball is an offensive question, so a head coach's defensive
+    # coordinator years have no business in it even though they are his.
+    acc = coaches_mod.accountable_seasons(name, _role(role))
+    if not acc.is_empty():
+        acc = acc.filter(pl.col("held").map_elements(
+            lambda h: coaches_mod.accountable_for(h, "off"), return_dtype=pl.Boolean))
+    cs = acc.select("team", "season").unique().sort("season") if not acc.is_empty() else acc
     if cs.is_empty():
         raise HTTPException(404, "unknown coach")
     return {"coach": name, "rows": [{k: _clean(v) if not isinstance(v, dict) else {kk: _clean(vv) for kk, vv in v.items()} for k, v in r.items()}

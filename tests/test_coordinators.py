@@ -203,12 +203,18 @@ def test_a_coordinator_brings_his_head_coaching_seasons_with_him():
     as a first-year hire."""
     if not coaches_mod.have_coordinators():
         pytest.skip("coordinator table not fetched")
-    hc_names = set(coaches_mod.coach_seasons()["coach"].to_list())
+    hc = coaches_mod.coach_seasons()
     oc = coaches_mod.role_seasons("OC")
-    both = [n for n in oc["coach"].unique().to_list() if n in hc_names]
-    if not both:
-        pytest.skip("nobody in this cache has held both jobs")
-    name = both[0]
+    # Sorted, and only men whose head-coaching years are not already inside
+    # their coordinator years: an interim promoted in November holds both jobs
+    # in one season, and that season is counted once, so he would widen nothing.
+    both = sorted(set(oc["coach"].to_list()) & set(hc["coach"].to_list()))
+    name = next((n for n in both
+                 if hc.filter(pl.col("coach") == n)
+                 .join(oc.filter(pl.col("coach") == n).select("season", "team"),
+                       on=["season", "team"], how="anti").height > 0), None)
+    if name is None:
+        pytest.skip("nobody in this cache held both jobs in different seasons")
     own = oc.filter(pl.col("coach") == name).height
     acc = coaches_mod.accountable_seasons(name, "OC")
     assert acc.height > own
@@ -261,6 +267,49 @@ def test_head_coach_profile_still_spans_both_sides():
     prof = coaches_mod.staff_profile(coaches_mod.coach_seasons()["coach"][0], "HC")
     assert prof["attribution"] == "game"
     assert {f["side"] for f in prof["fingerprint"]} == {"off", "def"}
+
+
+def test_which_job_answers_for_which_side():
+    assert coaches_mod.accountable_for("HC", "off") and coaches_mod.accountable_for("HC", "def")
+    assert coaches_mod.accountable_for("OC", "off") and not coaches_mod.accountable_for("OC", "def")
+    assert coaches_mod.accountable_for("DC", "def") and not coaches_mod.accountable_for("DC", "off")
+
+
+@pytest.mark.needs_data
+def test_a_head_coach_brings_his_coordinator_seasons_to_the_right_side_only():
+    """The mirror of the coordinator case, and the trap in it: a year spent
+    running an offense is evidence about offense. Counting it toward his
+    defense would credit him with a unit he never called."""
+    if not coaches_mod.have_coordinators():
+        pytest.skip("coordinator table not fetched")
+    hc = coaches_mod.accountable_all("HC")
+    mixed = (hc.filter(pl.col("held") != "HC")["coach"].unique().to_list())
+    if not mixed:
+        pytest.skip("nobody in this cache has held both jobs")
+    name = next((n for n in mixed
+                 if {"HC", "OC"} <= set(coaches_mod.accountable_seasons(n, "HC")["held"].to_list())), None)
+    if name is None:
+        pytest.skip("no head coach with offensive-coordinator history")
+    prof = coaches_mod.staff_profile(name, "HC")
+    roles = prof["season_roles"]
+    want_off = sum(n for r, n in roles.items() if coaches_mod.accountable_for(r, "off"))
+    want_def = sum(n for r, n in roles.items() if coaches_mod.accountable_for(r, "def"))
+    assert want_off > want_def, "an OC past should widen offence and not defence"
+    assert max(f["seasons"] for f in prof["fingerprint"] if f["side"] == "off") == want_off
+    assert max(f["seasons"] for f in prof["fingerprint"] if f["side"] == "def") == want_def
+
+
+@pytest.mark.needs_data
+def test_no_season_counts_toward_a_side_it_did_not_answer_for():
+    if not coaches_mod.have_coordinators():
+        pytest.skip("coordinator table not fetched")
+    for role in coaches_mod.ROLES:
+        acc = coaches_mod.accountable_all(role)
+        if acc.is_empty():
+            continue
+        held = set(acc["held"].unique().to_list())
+        # Every job present must answer for at least one side the page shows.
+        assert all(any(coaches_mod.accountable_for(h, sd) for sd in coaches_mod.ROLE_SIDES[role]) for h in held)
 
 
 @pytest.mark.needs_data

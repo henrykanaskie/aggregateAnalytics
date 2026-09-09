@@ -239,26 +239,51 @@ def role_seasons(role: str) -> pl.DataFrame:
     return coordinator_seasons().filter(pl.col("role") == role) if have_coordinators() else coordinators()
 
 
+def accountable_for(held: str, side: str) -> bool:
+    """Did a season spent in job ``held`` answer for ``side`` of the ball?
+
+    This is the whole rule, and it is per metric rather than per page. A head
+    coach owns both sides of his team. A coordinator owns one. So an offensive
+    coordinator's year belongs in a head coach's offensive numbers and nowhere
+    near his defensive ones, and the same season can count toward half a
+    profile and not the other half.
+    """
+    return side in ROLE_SIDES.get(held, ())
+
+
 def accountable_all(role: str) -> pl.DataFrame:
-    """:func:`accountable_seasons` for everyone who holds ``role``, in one pass.
+    """Every season relevant to ``role``, for everyone who holds it, in one
+    pass, tagged in ``held`` with the job that season was spent in.
+
+    A man's record is not just the seasons under his current title. A head
+    coach who used to coordinate brings those years; a coordinator who used to
+    be a head coach brings his. Which of them counts toward a given number is
+    :func:`accountable_for`'s business, not this function's -- here we gather
+    everything that could bear on the role and let the metric decide.
 
     The list and the profile have to agree: a sidebar that says two years next
     to a page that shows six is worse than either number alone.
+
+    Where a season appears under two jobs -- a coordinator promoted to interim
+    head coach in November -- the role being viewed wins, so his head-coach
+    page counts the games he actually ran and his coordinator page counts the
+    whole season he coordinated.
     """
     if role not in ROLE_SIDES:
         raise ValueError(f"unknown role {role!r}; expected one of {ROLES}")
     hc = coach_seasons().with_columns(pl.lit("HC").alias("held"))
-    if role == "HC":
-        return hc
-    own = role_seasons(role)
-    holders = set(_current_teams(role))
+    co = coordinator_seasons() if have_coordinators() else coordinators()
+    if not co.is_empty():
+        co = co.with_columns(pl.col("role").alias("held"))
+
+    own, others = (hc, co) if role == "HC" else (
+        (co.filter(pl.col("held") == role) if not co.is_empty() else co), hc)
     if own.is_empty():
-        # No coordinator table, or nobody has held the job long enough to be in
-        # it: there is no membership to attach head-coaching seasons to.
         return own
-    own = own.with_columns(pl.lit(role).alias("held"))
-    names = set(own["coach"].to_list()) | holders
-    extra = (hc.filter(pl.col("coach").is_in(list(names)))
+    names = set(own["coach"].to_list()) | set(_current_teams(role))
+    if others.is_empty():
+        return own
+    extra = (others.filter(pl.col("coach").is_in(list(names)))
              .join(own.select("coach", "season", "team"), on=["coach", "season", "team"], how="anti"))
     return own if extra.is_empty() else pl.concat([own, extra], how="diagonal")
 
@@ -419,20 +444,27 @@ def staff_profile(name: str, role: str = "HC") -> dict | None:
         return None
     seasons = cs.to_dicts()
     sides = ROLE_SIDES[role]
-    career = _career_rates(name, cs)
+    # One career per side, over the seasons that answer for it: a head coach's
+    # offensive totals take in the years he coordinated an offense, and his
+    # defensive totals do not.
+    career_by_side = {sd: _career_rates(name, cs.filter(
+        pl.col("held").map_elements(lambda h, s=sd: accountable_for(h, s), return_dtype=pl.Boolean)))
+        for sd in sides}
+    career = {k: v for sd in sides for k, v in career_by_side[sd].items()}
     fingerprint = []
     for m in METRICS:
         if m.side not in sides:
             continue
         pcts = [1 - (s[f"{m.key}_rank"] - 1) / (s["n_teams"] - 1) for s in seasons
-                if s.get(f"{m.key}_rank") is not None and s.get("n_teams") and s["n_teams"] > 1 and s["season"] >= m.since]
+                if accountable_for(s["held"], m.side)
+                and s.get(f"{m.key}_rank") is not None and s.get("n_teams") and s["n_teams"] > 1 and s["season"] >= m.since]
         if not pcts:
             continue
         top = sum(1 for p in pcts if p >= 2 / 3)
         bottom = sum(1 for p in pcts if p <= 1 / 3)
         fingerprint.append({"key": m.key, "label": m.label, "side": m.side, "fmt": m.fmt, "good": m.good,
                             "mean_pct": round(mean(pcts), 3), "seasons": len(pcts), "top_third": top, "bottom_third": bottom,
-                            "career": career.get(m.key)})
+                            "career": career_by_side[m.side].get(m.key)})
     fingerprint.sort(key=lambda f: abs(f["mean_pct"] - 0.5), reverse=True)
     return {
         "coach": name, "role": role, "role_label": ROLE_LABEL[role], "sides": list(sides),
