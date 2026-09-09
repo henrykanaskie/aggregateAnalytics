@@ -2,8 +2,9 @@ name: stats
 
 # Weekly, Tuesday 10:00 UTC (6am ET): nflverse has Monday night's games by
 # then. Refreshes the current season in the parquet cache, rebuilds the
-# derived tables, re-uploads the cache to the data-cache Release, commits
-# data/derived/. Run it by hand with full=true once to seed the cache.
+# derived tables, grades the weeks that have finished, re-uploads the cache to
+# the data-cache Release, commits data/derived/ and data/odds/graded/. Run it
+# by hand with full=true once to seed the cache.
 on:
   schedule:
     - cron: "0 10 * * 2"
@@ -43,16 +44,21 @@ jobs:
         run: python data_handling/ingest.py
       - name: Refresh current season and rebuild derived tables
         run: bash scripts/refresh_stats.sh
+      # Here and not on Render: a played game's closing line only exists in the
+      # snapshots taken before kickoff (ESPN drops an event's odds once it is
+      # final), and Render keeps ~10 days of those. This checkout has them all.
+      - name: Grade the weeks that have finished
+        run: python -m dashboard.odds.grading
       - name: Upload the cache
         run: bash scripts/push_cache.sh
-      - name: Commit derived tables
+      - name: Commit derived tables and grades
         run: |
           git config user.name "stats-bot"
           git config user.email "stats-bot@users.noreply.github.com"
-          git add data/derived || true
+          git add data/derived data/odds/graded || true
           if git diff --cached --quiet; then
-            echo "derived tables unchanged"; exit 0
+            echo "derived tables and grades unchanged"; exit 0
           fi
-          git commit -m "Derived tables $(date -u +'%Y-%m-%d')"
+          git commit -m "Derived tables and grades $(date -u +'%Y-%m-%d')"
           git pull --rebase origin ${{ github.ref_name }}
           git push

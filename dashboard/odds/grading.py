@@ -10,21 +10,35 @@ This is the feedback loop. Without it, every angle and every hit rate on the
 dashboard is an opinion; with it, you can see which books post soft lines,
 whether "L10 at 70%" means anything, and whether the projection beats the
 market.
+
+Grading belongs where the whole snapshot archive is, which is a checkout and
+not Render. ESPN 404s an event's odds the moment it is final, so a played
+game's closing line survives only in pulls taken before kickoff, and Render
+keeps about ten days of those (``ODDS_KEEP_DAYS``). stats.yml runs the CLI
+below on Tuesday mornings, once the cache refresh has landed Monday night's
+box scores, and commits ``data/odds/graded/``; the app then reads a result
+instead of recomputing one it no longer holds the lines for.
+
+    python -m dashboard.odds.grading                 # ungraded weeks, and a regrade of the newest
+    python -m dashboard.odds.grading --season 2026 --week 3
+    python -m dashboard.odds.grading --all           # regrade every finished week
 """
 
 from __future__ import annotations
 
+import argparse
+import sys
 from statistics import mean
 
 import polars as pl
 
 from nfl.data import scan
 
-from ..config import ODDS_DIR
+from ..config import CURRENT_SEASON, ODDS_DIR
 from ..stats.catalog import RAW_STAT_COLUMNS, STATS
 from ..stats.gamelog import recent_longest, recent_values
 from .markets import BY_KEY
-from .store import latest_props
+from .store import latest_props, scan_props
 
 GRADED_DIR = ODDS_DIR / "graded"
 
@@ -218,3 +232,69 @@ def summary(season: int | None = None) -> dict:
                 "pred_mae": float(grp["pred_abs_error"].mean()), "line_mae": float(grp["line_abs_error"].drop_nulls().mean()) if grp["line_abs_error"].drop_nulls().len() else None,
             })
     return out
+
+
+def played_weeks(season: int) -> set[int]:
+    """Weeks with a final score. A part-played week still grades: grade_week
+    filters to the games that finished."""
+    df = (scan("schedules")
+          .filter((pl.col("season") == season) & pl.col("home_score").is_not_null())
+          .select("week").unique().collect())
+    return {int(w) for w in df["week"]}
+
+
+def weeks_with_lines(season: int) -> set[int]:
+    """Weeks the archive holds snapshots for. Weeks from before the pulls
+    started can never be graded, so there is no point rescanning them."""
+    df = scan_props().filter(pl.col("season") == season).select("week").unique().collect()
+    return {int(w) for w in df["week"].drop_nulls()}
+
+
+def graded_weeks(season: int) -> set[int]:
+    if not GRADED_DIR.is_dir():
+        return set()
+    return {int(f.stem.split("_")[2]) for f in GRADED_DIR.glob(f"lines_{season}_*.parquet")}
+
+
+def weeks_to_grade(season: int, week: int | None = None, regrade_all: bool = False) -> list[int]:
+    if week is not None:
+        return [week]
+    gradable = played_weeks(season) & weeks_with_lines(season)
+    if regrade_all or not gradable:
+        return sorted(gradable)
+    # The newest week is always regraded: nflverse revises box scores for days
+    # after the games, and a stale grade is worse than a late one.
+    return sorted((gradable - graded_weeks(season)) | {max(gradable)})
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--season", type=int, default=CURRENT_SEASON)
+    ap.add_argument("--week", type=int, default=None)
+    ap.add_argument("--all", action="store_true", help="regrade every finished week")
+    a = ap.parse_args(argv)
+
+    weeks = weeks_to_grade(a.season, a.week, a.all)
+    if not weeks:
+        print(f"[grade] {a.season}: nothing finished to grade yet")
+        return 0
+
+    rc = 0
+    for w in weeks:
+        try:
+            g = grade_week(a.season, w)
+        except Exception as exc:  # one bad week must not cost the others
+            print(f"[grade] {a.season} wk{w:02d} FAILED: {type(exc).__name__}: {exc}", file=sys.stderr)
+            rc = 1
+            continue
+        if g.is_empty():
+            print(f"[grade] {a.season} wk{w:02d}: no lines to grade")
+        else:
+            print(f"[grade] {a.season} wk{w:02d}: {g.height} rows, "
+                  f"{g['game_id'].n_unique()} games, {g['book'].n_unique()} book(s)")
+    return rc
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

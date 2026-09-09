@@ -10,9 +10,9 @@ GitHub Release, where the commit history is the audit trail.
 | piece | where it runs | when | what it does |
 |---|---|---|---|
 | `lines.yml` | GitHub Actions | 4x/day (~6am, noon, 6pm, 11pm ET) | fetches the three tables the puller needs, runs `dashboard.odds.pull`, commits `data/odds/` |
-| `stats.yml` | GitHub Actions | Tuesday 6am ET | refreshes the current season in the parquet cache, rebuilds `data/derived/`, uploads the cache to the `data-cache` Release, commits `data/derived/` |
+| `stats.yml` | GitHub Actions | Tuesday 6am ET | refreshes the current season in the parquet cache, rebuilds `data/derived/`, grades the weeks that have finished, uploads the cache to the `data-cache` Release, commits `data/derived/` and `data/odds/graded/` |
 | `scripts/build.sh` | Render, on deploy | code or derived-table pushes | `pip install`, `scripts/fetch_cache.py` pulls the cache from the Release, `npm run build` for the SPA |
-| `data_handling/sync_odds.py` | inside the app | on wake, every 30 min | pulls new `data/odds/` files from GitHub, so lines commits never need a rebuild |
+| `data_handling/sync_odds.py` | inside the app | on wake, every 30 min | pulls new `data/odds/` files from GitHub, so lines commits never need a rebuild; deletes the snapshots the new ones replace |
 | `webauth/` | inside the app | every request | the password |
 
 Snapshots commit four times a day but do not redeploy: `render.yaml` ignores
@@ -46,6 +46,25 @@ build minutes.
 - **Memory.** 512 MB. Fine for polars scans with a column select; not fine
   for `pl.read_parquet` on the whole play-by-play table. The 45-second team
   tendency rebuild runs in Actions, never on Render.
+- **Snapshot retention.** The odds archive grows by four snapshots a day
+  forever. `ODDS_KEEP_DAYS` (10 in `render.yaml`) bounds what the host holds:
+  each sync fetches only snapshots inside that window and deletes the ones
+  that fall out of it, so Render sits at roughly 80 files instead of a season's
+  worth. The full archive stays in git, untouched; only Render's copy is
+  thinned. The window cannot be shrunk to a single pull, because ESPN 404s an
+  event's odds the moment it is final: a played game's closing line exists only
+  in snapshots taken before kickoff, and that is exactly what `grade_week`
+  reads. So the grading runs in `stats.yml` instead, on Tuesday mornings once
+  the cache refresh has landed Monday night's box scores, against a checkout
+  that has the whole archive. It commits `data/odds/graded/`, which the app
+  syncs like any other odds file and never prunes, so the dashboard reads a
+  result rather than recomputing one it no longer holds the lines for.
+  Opening lines are unaffected either way, ESPN stamps `open_line` on every row.
+
+  Grades for a week are recomputable from a checkout at any time:
+
+      python -m dashboard.odds.grading --season 2026 --week 3
+      python -m dashboard.odds.grading --all     # regrade the season
 - **Schedule jitter.** Actions cron runs a few minutes late routinely and can
   skip a slot under load. The pull times are approximate.
 - **Cache size.** The Release holds one tar per dataset, each under GitHub's
