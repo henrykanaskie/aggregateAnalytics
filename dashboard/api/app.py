@@ -252,6 +252,11 @@ def data_version() -> str:
         st = MANIFEST_PATH.stat()
         h.update(f"manifest|{int(st.st_mtime)}|{st.st_size}\n".encode())
     h.update(repr(store.version()).encode())
+    # The live injuries file sits under data/odds, outside both walks.
+    from ..config import INJURIES_LIVE
+    if INJURIES_LIVE.exists():
+        st = INJURIES_LIVE.stat()
+        h.update(f"injuries|{int(st.st_mtime)}|{st.st_size}\n".encode())
     return h.hexdigest()[:16]
 
 
@@ -635,7 +640,7 @@ def team_injuries_api(team: str, season: int = CURRENT_SEASON, week: int | None 
     df = ctx_mod.team_injuries(team.upper(), season, week)
     latest = ctx_mod.latest_injury_week(season)
     return {"team": team.upper(), "season": season, "week": week, "latest_week_available": latest,
-            "rows": records(df) if not df.is_empty() else []}
+            "as_of": ctx_mod.injuries_as_of(), "rows": records(df) if not df.is_empty() else []}
 
 
 @app.get("/api/tendencies/league")

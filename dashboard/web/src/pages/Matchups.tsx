@@ -133,9 +133,9 @@ function GameView({ d }: { d: GameMatchup }) {
       <div className="panel">
         <div className="panel-head"><h3>Injury reports · week {g.week}</h3></div>
         <div className="grid grid-2">
-          {[g.away_team, g.home_team].map((t) => { const rows = (d.injuries[t] ?? []).filter((r) => r.report_status && r.report_status !== "Note"); return (
-            <div key={t}><div className="small" style={{ marginBottom: 4 }}><TeamTag abbr={t} /> {rows.length === 0 && <span className="hint">no report in the cache for this week</span>}</div>
-              <div className="chips">{rows.map((r, i) => <span key={i} className="chip" title={`${r.report_primary_injury ?? ""} · ${r.practice_status ?? ""}`}><span className={r.report_status === "Out" || r.report_status === "Doubtful" ? "under" : "push"}>{r.report_status}</span> {r.full_name} <span className="muted">{r.position}</span></span>)}</div></div>
+          {[g.away_team, g.home_team].map((t) => { const rows = (d.injuries[t] ?? []).filter((r) => (r.report_status && r.report_status !== "Note") || r.practice_status); return (
+            <div key={t}><div className="small" style={{ marginBottom: 4 }}><TeamTag abbr={t} /> {rows.length === 0 && <span className="hint">nothing filed yet for this week</span>}</div>
+              <div className="chips">{rows.map((r, i) => <span key={i} className="chip" title={`${r.report_primary_injury ?? ""} · ${r.practice_status ?? ""}`}><span className={r.report_status === "Out" || r.report_status === "Doubtful" ? "under" : "push"}>{r.report_status ?? (r.practice_status?.startsWith("Did Not") ? "DNP" : r.practice_status?.startsWith("Limited") ? "Limited" : "Full")}</span> {r.full_name} <span className="muted">{r.position}</span></span>)}</div></div>
           ); })}
         </div>
       </div>

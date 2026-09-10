@@ -161,7 +161,7 @@ export const api3 = {
   usage: ep<{ team: string; season: number; rows: UsageRow[] }>()((team: string, season: number) => `/api/teams/${team}/usage${qs({ season })}`),
   coachUsage: ep<{ coach: string; rows: CoachUsageRow[] }>()((name: string, role: string = "HC") => `/api/coaches/${encodeURIComponent(name)}/usage?role=${role}`),
   playerInjuries: ep<{ rows: InjuryRow[] }>()((id: string) => `/api/players/${id}/injuries`),
-  teamInjuries: ep<{ team: string; season: number; week: number; latest_week_available: number | null; rows: InjuryRow[] }>()((team: string, season?: number, week?: number) => `/api/teams/${team}/injuries${qs({ season, week })}`),
+  teamInjuries: ep<{ team: string; season: number; week: number; latest_week_available: number | null; as_of?: string | null; rows: InjuryRow[] }>()((team: string, season?: number, week?: number) => `/api/teams/${team}/injuries${qs({ season, week })}`),
 };
 
 // --- game matchups -------------------------------------------------------------

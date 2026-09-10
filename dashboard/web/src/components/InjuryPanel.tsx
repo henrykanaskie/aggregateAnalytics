@@ -1,15 +1,19 @@
 import { useEffect, useState } from "react";
 import { api3, InjuryRow } from "../api";
 import { useMeta } from "../state";
+import { fmtDate } from "../lib/format";
 
 const short = (s: string | null) => !s ? "–" : s.startsWith("Full") ? "Full" : s.startsWith("Limited") ? "Limited" : s.startsWith("Did Not") ? "DNP" : s.startsWith("Out") ? "Out" : s;
-const statusClass = (s: string | null) => s === "Out" || s === "Doubtful" ? "under" : s === "Questionable" ? "push" : "";
+const statusClass = (s: string | null) => s === "Out" || s === "Doubtful" ? "under" : s === "Questionable" || s === "DNP" || s === "Limited" ? "push" : "";
+// The listing's status: the game designation once there is one, else how
+// much of practice he took part in, which is all the report holds mid-week.
+const listed = (r: InjuryRow) => (r.report_status && r.report_status !== "Note" ? r.report_status : r.practice_status ? short(r.practice_status) : null);
 
 /** The player's own injury history plus both teams' current report. */
 export default function InjuryPanel({ playerId, team, opponent }: { playerId: string; team: string | null; opponent: string | null }) {
   const { meta } = useMeta();
   const [mine, setMine] = useState<InjuryRow[]>([]);
-  const [reports, setReports] = useState<{ team: string; week: number; latest: number | null; rows: InjuryRow[] }[]>([]);
+  const [reports, setReports] = useState<{ team: string; week: number; latest: number | null; asOf: string | null; rows: InjuryRow[] }[]>([]);
   useEffect(() => {
     let alive = true;
     setMine([]);
@@ -19,7 +23,7 @@ export default function InjuryPanel({ playerId, team, opponent }: { playerId: st
   useEffect(() => {
     if (!meta) return;
     let alive = true;
-    Promise.all([team, opponent].filter((t): t is string => !!t).map((t) => api3.teamInjuries(t).then((d) => ({ team: t, week: d.week, latest: d.latest_week_available, rows: d.rows }))))
+    Promise.all([team, opponent].filter((t): t is string => !!t).map((t) => api3.teamInjuries(t).then((d) => ({ team: t, week: d.week, latest: d.latest_week_available, asOf: d.as_of ?? null, rows: d.rows }))))
       .then((r) => alive && setReports(r)).catch(() => alive && setReports([]));
     return () => { alive = false; };
   }, [meta, team, opponent]);
@@ -34,15 +38,15 @@ export default function InjuryPanel({ playerId, team, opponent }: { playerId: st
         </details>
       )}
       {reports.map((rep) => {
-        const rows = rep.rows.filter((r) => r.report_status && r.report_status !== "Note");
+        const rows = rep.rows.filter((r) => listed(r));
         return (
           <div key={rep.team} style={{ marginTop: 8 }}>
-            <div className="small"><b>{rep.team}</b> report, week {rep.week}{rep.rows.length === 0 ? <span className="hint"> · not published yet{rep.latest ? ` (latest cached: week ${rep.latest})` : " (run the injuries ingest)"}</span> : null}</div>
-            {rows.length > 0 && <div className="chips" style={{ marginTop: 4 }}>{rows.map((r, i) => <span key={i} className={`chip`} title={`${r.report_primary_injury ?? ""} · ${r.practice_status ?? ""}`}><span className={statusClass(r.report_status)}>{r.report_status?.[0]}</span> {r.full_name} <span className="muted">{r.position}</span></span>)}</div>}
+            <div className="small"><b>{rep.team}</b> report, week {rep.week}{rep.rows.length === 0 ? <span className="hint"> · nothing filed yet{rep.asOf ? ` (feed as of ${fmtDate(rep.asOf)})` : ""}</span> : null}</div>
+            {rows.length > 0 && <div className="chips" style={{ marginTop: 4 }}>{rows.map((r, i) => <span key={i} className={`chip`} title={`${r.report_primary_injury ?? ""} · ${r.practice_status ?? ""}`}><span className={statusClass(listed(r))}>{listed(r)}</span> {r.full_name} <span className="muted">{r.position}</span></span>)}</div>}
           </div>
         );
       })}
-      <div className="hint" style={{ marginTop: 6 }}>Refresh with <code>python data_handling/ingest.py --only injuries --refresh --start {meta?.season ?? 2026}</code>.</div>
+      <div className="hint" style={{ marginTop: 6 }}>Reports refresh with every lines pull, a few times a day{reports[0]?.asOf ? `; this feed is from ${fmtDate(reports[0].asOf)}` : ""}.</div>
     </div>
   );
 }

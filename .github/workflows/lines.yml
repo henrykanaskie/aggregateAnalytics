@@ -37,6 +37,11 @@ jobs:
         env:
           ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
         run: bash scripts/pull_lines.sh
+      # The season's injury reports, on the same clock as the lines: the
+      # weekly cache refresh only sees them on Tuesdays, after the games. A
+      # feed hiccup must not cost the snapshot, hence the || echo.
+      - name: Refresh injury reports
+        run: python -m dashboard.odds.injuries || echo "! injuries refresh failed; keeping the last file"
       - name: Commit the snapshot
         run: |
           git config user.name "Henry Kanaskie"

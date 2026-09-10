@@ -18,6 +18,10 @@ PROPS_DIR = ODDS_DIR / "props"
 GAMES_DIR = ODDS_DIR / "games"
 USAGE_PATH = ODDS_DIR / "oddsapi_usage.json"
 ESPN_CACHE = ODDS_DIR / "espn_athletes.json"
+#: This season's injury reports, refreshed with every lines pull. It lives
+#: under data/odds because that directory is what a stateless host syncs
+#: from git between deploys; the weekly cache only sees injuries on Tuesdays.
+INJURIES_LIVE = ODDS_DIR / "injuries.parquet"
 DERIVED_DIR = DATA_ROOT / "derived"
 PROP_PRED_PATH = DERIVED_DIR / "prop_predictions.parquet"
 

@@ -176,14 +176,48 @@ def coach_usage(team_seasons: list[tuple[str, int]]) -> list[dict]:
 # --- injuries ----------------------------------------------------------------
 
 _INJ_COLS = ["season", "week", "game_type", "team", "gsis_id", "full_name", "position", "report_primary_injury",
-             "report_secondary_injury", "report_status", "practice_primary_injury", "practice_status"]
+             "report_secondary_injury", "report_status", "practice_primary_injury", "practice_status", "date_modified"]
 
 
 def _inj() -> pl.LazyFrame | None:
+    """The cached injuries table with this season's live reports laid over it.
+
+    The cache is rebuilt weekly, so during the week it is a week behind; the
+    live file (``dashboard.odds.injuries``) arrives with every lines pull and
+    replaces the cache's rows for its season. Either half may be missing: a
+    fresh host has the live file and no cache, a machine that never pulled
+    lines has the cache alone.
+    """
+    from ..config import INJURIES_LIVE
+    base: pl.LazyFrame | None
     try:
-        return scan("injuries").select(_INJ_COLS)
+        base = scan("injuries").select(_INJ_COLS)
     except FileNotFoundError:
+        base = None
+    if not INJURIES_LIVE.exists():
+        return base
+    live = _live_injuries(INJURIES_LIVE.stat().st_mtime).lazy()
+    if base is None:
+        return live
+    season = int(pl.read_parquet(INJURIES_LIVE, columns=["season"])["season"].max() or 0)
+    return pl.concat([base.filter(pl.col("season") != season), live], how="vertical_relaxed")
+
+
+@lru_cache(maxsize=1)
+def _live_injuries(stamp: float) -> pl.DataFrame:
+    """Keyed on the file's mtime, so a synced update is a different call."""
+    from ..config import INJURIES_LIVE
+    df = pl.read_parquet(INJURIES_LIVE)
+    return df.select([pl.col(c) if c in df.columns else pl.lit(None, dtype=pl.String).alias(c) for c in _INJ_COLS])
+
+
+def injuries_as_of() -> str | None:
+    """When the live reports were last refreshed, or None without a live file."""
+    from ..config import INJURIES_LIVE
+    if not INJURIES_LIVE.exists():
         return None
+    from datetime import datetime, timezone
+    return datetime.fromtimestamp(INJURIES_LIVE.stat().st_mtime, tz=timezone.utc).isoformat(timespec="minutes")
 
 
 def player_injuries(player_id: str) -> pl.DataFrame:

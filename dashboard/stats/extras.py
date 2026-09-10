@@ -178,8 +178,16 @@ def alerts(rows: list[dict], season: int, week: int, scale: float = 1.0) -> list
     for t in teams:
         try:
             for r in team_injuries(t, season, week).to_dicts():
-                if r.get("gsis_id") and r.get("report_status"):
-                    inj[r["gsis_id"]] = r
+                # A game status when there is one; before Friday there is
+                # only practice participation, and sitting out practice is
+                # the earliest signal a prop has, so it counts too.
+                if not r.get("gsis_id"):
+                    continue
+                status = r.get("report_status")
+                if not status and (r.get("practice_status") or "").startswith("Did Not"):
+                    status = "DNP"
+                if status and status != "Note":
+                    inj[r["gsis_id"]] = {**r, "_status": status}
         except Exception:
             continue
     seen_inj = set()
@@ -204,10 +212,11 @@ def alerts(rows: list[dict], season: int, week: int, scale: float = 1.0) -> list
         i = inj.get(r["player_id"] or "")
         if i and r["player_id"] not in seen_inj:
             seen_inj.add(r["player_id"])
-            status = i["report_status"]
+            status = i["_status"]
             out.append({"kind": "injury", "severity": 2 if status in ("Out", "Doubtful") else 1, "player_id": r["player_id"], "player": r["player_name"],
                         "team": r["team"], "market": None, "market_label": None, "game_id": r["game_id"],
-                        "title": f"{r['player_name']} is {status}", "detail": f"{i.get('report_primary_injury') or ''} · {i.get('practice_status') or ''}".strip(" ·"),
+                        "title": f"{r['player_name']} is {status}" if status != "DNP" else f"{r['player_name']} did not practice",
+                        "detail": f"{i.get('report_primary_injury') or i.get('practice_primary_injury') or ''} · {i.get('practice_status') or ''}".strip(" ·"),
                         "at": _when(i.get("date_modified"))})
     # Newest first: a move is news when it happens, and a big one from last
     # Thursday should not sit above a small one from this morning. Ties, and
