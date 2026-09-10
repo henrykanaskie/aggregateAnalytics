@@ -44,6 +44,7 @@ from ..stats import context as ctx_mod
 from ..stats import angles as ang_mod
 from ..stats import matchups as mu_mod
 from ..stats import extras as ex_mod
+from ..stats import availability as avail_mod
 from ..stats import projection as proj_mod
 from ..odds import grading
 from ..stats import pbp as pbp_mod
@@ -114,7 +115,7 @@ def _warm_matchups() -> None:
     # sixteen responses twice.
     week = current_week(CURRENT_SEASON)
     for gid in schedule(CURRENT_SEASON).filter(pl.col("week") == week)["game_id"].to_list():
-        _MATCHUP_CACHE.get((store.version(), gid, True), lambda g=gid: game_matchup(g, True))
+        _MATCHUP_CACHE.get((_data_stamp(), gid, True), lambda g=gid: game_matchup(g, True))
 
 
 @app.on_event("startup")
@@ -519,9 +520,17 @@ def matchup(team: str, opponent: str, season: int = CURRENT_SEASON, position: st
 _MATCHUP_CACHE = _ByteCache(limit=20)   # a week is sixteen games, plus a few
 
 
+def _data_stamp() -> tuple:
+    """What retires a built board or matchup: a new lines snapshot, or a
+    refreshed injuries file, both of which the host syncs from git."""
+    from ..config import INJURIES_LIVE
+    inj = INJURIES_LIVE.stat().st_mtime_ns if INJURIES_LIVE.exists() else 0
+    return (store.version(), inj)
+
+
 @app.get("/api/matchups/{game_id}")
 def game_matchup_route(request: Request, game_id: str, include_sample: bool = False):
-    entry = _MATCHUP_CACHE.get((store.version(), game_id, include_sample),
+    entry = _MATCHUP_CACHE.get((_data_stamp(), game_id, include_sample),
                                lambda: game_matchup(game_id, include_sample))
     return _cached_json(request, entry)
 
@@ -584,6 +593,12 @@ def game_matchup(game_id: str, include_sample: bool = False):
     preds = predictions.game_predictions(season, game["week"])
     preds = records(preds.filter(pl.col("game_id") == game_id)) if not preds.is_empty() else []
     inj = {t: records(ctx_mod.team_injuries(t, season, game["week"])) for t in (home, away)}
+    listed = {t: avail_mod.listings(inj[t]) for t in (home, away)}
+    for s in sides:
+        avail_mod.apply(s, listed[s["offense"]], listed[s["defense"]])
+    for p in props:
+        l = listed.get(p.get("team") or "", {}).get(p.get("player_id") or "")
+        p["status"] = l["status"] if l else None
     return {
         "game": game, "season_used": use, "sides": sides, "metrics": team_mod.metric_json(),
         "dvp_labels": ctx_mod.DVP_LABELS, "history": mu_mod.head_to_head(away, home),
@@ -693,7 +708,7 @@ def _board_bytes(season: int, week: int | None, market: list[str] | None, book: 
     # Keyed on the resolved week, so a request that left the week to the server
     # and one that named it share an entry rather than building the same board
     # twice.
-    key = (store.version(), season, week, tuple(market or ()), book, include_sample, scale, form)
+    key = (_data_stamp(), season, week, tuple(market or ()), book, include_sample, scale, form)
     return _BOARD_CACHE.get(key, lambda: _build_board_response(
         season, week, market, book, include_sample, scale, form))
 
