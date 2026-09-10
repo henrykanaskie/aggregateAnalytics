@@ -487,6 +487,36 @@ says about 64%; the probit says about 65%. They agree by coincidence of the
 current parameters, not by design. Only the probit reaches the log, so only
 the probit is what this check is about.
 
+**1.7 (new, 2026-09-10) A model performance page: the backtest next to the
+live record.** nfeloapp.com does this well and it is the one thing on that site
+worth copying: a public, per-season account of how the model has done, going
+back to 2009, with the live picks tracked separately. Everything it needs is
+already here. The schedules table has the closing spread for every season
+since 1999 and moneylines from 2009; `nfl/evaluate.py` has the metrics and
+the market baseline; `model/tune.py` has the walk-forward pass;
+`track_record/predictions.csv` is the pre-kickoff log a stranger can verify.
+Three parts, in order:
+
+1. `python -m model.backtest`: walk forward season by season and write
+   `data/derived/model_backtest.parquet`, one row per season and per week:
+   record against the closing spread, margin MAE against the result and
+   against the line, Brier and a reliability table for win probability.
+   Rebuilt by `scripts/refresh_stats.sh` so a model change re-scores history.
+2. `/api/model/performance`: the backtest rows plus the live rows scored by
+   `grading`, in two clearly separate blocks. The page must never blur "tested
+   on the past" with "called before kickoff"; that distinction is the whole
+   value of the page, and nfelo's own performance page is careful about it.
+3. A **Model** page: the live record at the top (weeks, record against the
+   closing spread, Brier), a cumulative chart of picks against the line by
+   season underneath, and the per-season table with the market baseline in
+   every row so "beat the closing line" is the column that matters.
+
+Do it after 1.1 and 1.6, not before: a backtest of the hand-tuned constants
+is a backtest of the in-sample fit, and the page would then be advertising a
+number Phase 1 exists to correct. Every later model version (`elo-v2`, the
+QB layer, the fitted model) gets its own line on the same page, which is how
+the phases become a record rather than a story.
+
 > **Learning objectives:** in-sample versus out-of-sample fit, felt rather than
 > read about; non-stationarity, a parameter fitted on 2005 football is wrong for
 > 2026; regression tests as a guard on statistical properties, not just outputs.
@@ -734,6 +764,7 @@ the parameters it keeps.
 | Wed 9/9 stretch | walk-forward grid, the `carryover` answer | in-sample vs out-of-sample |
 | Mon 9/14 | first scored week, README | calibration vs accuracy, on your own numbers |
 | weeks 1-2 | per-season HFA as `elo-v2`, logistic calibration check | non-stationarity, fitted vs hand-set |
+| weeks 2-3 | model performance page: backtest since 1999 beside the live record (1.7) | a track record is a separate artefact from a backtest |
 | weeks 2-4 | QB adjustment, leaky version scored first | temporal leakage, shrinkage |
 | weeks 4-7 | feature table, ridge, then GBM | feature engineering, regularisation, small-data reality |
 | weeks 7+ | market residual model, subset hypotheses | market efficiency, multiple comparisons |
