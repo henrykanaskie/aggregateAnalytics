@@ -19,7 +19,8 @@ const PRESETS: { label: string; x: string; y: string }[] = [
   { label: "Offense EPA vs defense EPA", x: "epa_play", y: "def_epa_play" },
 ];
 
-/** Every team as a logo on two tendencies. */
+/** Every team as a coloured dot on two tendencies, named by its abbreviation.
+ *  Team marks are not ours to serve: see LICENSING.md. */
 export default function TeamScatter({ league, highlight = [], onPick, defaultX = "sec_per_play", defaultY = "plays_pg" }: { league: LeagueTendencies; highlight?: string[]; onPick?: (team: string) => void; defaultX?: string; defaultY?: string }) {
   const { teamByAbbr } = useMeta();
   const [x, setX] = useState(defaultX);
@@ -28,7 +29,7 @@ export default function TeamScatter({ league, highlight = [], onPick, defaultX =
   const mx = mdef(x), my = mdef(y);
   const dots = useMemo(() => league.teams.map((t) => ({
     id: t.team as string, label: t.team as string, x: t[x] as number | null, y: t[y] as number | null,
-    image: teamByAbbr.get(t.team as string)?.team_logo_espn ?? null, sub: league.coaches[t.team as string],
+    color: teamByAbbr.get(t.team as string)?.team_color ?? null, sub: league.coaches[t.team as string],
     highlight: highlight.includes(t.team as string), muted: highlight.length > 0 && !highlight.includes(t.team as string),
     extra: { [`${mx?.label ?? x} rank`]: shownRank(t[`${x}_rank`] as number | null, t.n_teams, mx?.good), [`${my?.label ?? y} rank`]: shownRank(t[`${y}_rank`] as number | null, t.n_teams, my?.good) },
   })), [league, x, y, highlight, teamByAbbr, mx, my]);
@@ -46,9 +47,9 @@ export default function TeamScatter({ league, highlight = [], onPick, defaultX =
         <Field label="Preset"><select className="input" value={PRESETS.find((p) => p.x === x && p.y === y)?.label ?? ""} onChange={(e) => { const p = PRESETS.find((q) => q.label === e.target.value); if (p) { setX(p.x); setY(p.y); } }}><option value="">Custom…</option>{PRESETS.map((p) => <option key={p.label} value={p.label}>{p.label}</option>)}</select></Field>
         <Field label="X axis"><select className="input" value={x} onChange={(e) => setX(e.target.value)}>{opts.map((m) => <option key={m.key} value={m.key}>{m.side === "def" ? "DEF · " : ""}{m.label}</option>)}</select></Field>
         <Field label="Y axis"><select className="input" value={y} onChange={(e) => setY(e.target.value)}>{opts.map((m) => <option key={m.key} value={m.key}>{m.side === "def" ? "DEF · " : ""}{m.label}</option>)}</select></Field>
-        <span className="hint" style={{ alignSelf: "center" }}>{league.season} regular season · dashed lines are league averages · hover a logo</span>
+        <span className="hint" style={{ alignSelf: "center" }}>{league.season} regular season · dashed lines are league averages · hover a dot</span>
       </div>
-      <ScatterPlot dots={dots} xLabel={mx?.label ?? x} yLabel={my?.label ?? y} xFmt={f(mx)} yFmt={f(my)} quadrants={quads} xEnds={axisEnds(x, mx?.label ?? x)} yEnds={axisEnds(y, my?.label ?? y)} onPick={onPick} showLabels="all" imageSize={26} height={480} />
+      <ScatterPlot dots={dots} xLabel={mx?.label ?? x} yLabel={my?.label ?? y} xFmt={f(mx)} yFmt={f(my)} quadrants={quads} xEnds={axisEnds(x, mx?.label ?? x)} yEnds={axisEnds(y, my?.label ?? y)} onPick={onPick} showLabels="all" dotSize={18} height={480} />
       {(mx?.note || my?.note) && <div className="hint">{mx?.note ? `${mx.label}: ${mx.note}. ` : ""}{my?.note ? `${my.label}: ${my.note}.` : ""}</div>}
     </div>
   );

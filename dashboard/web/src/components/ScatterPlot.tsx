@@ -3,10 +3,12 @@ import { CartesianGrid, ReferenceLine, ResponsiveContainer, Scatter, ScatterChar
 import { chartTheme } from "../lib/theme";
 import type { Quadrant } from "../lib/quadrants";
 
-export interface Dot { id: string; label: string; x: number | null; y: number | null; image?: string | null; sub?: string; highlight?: boolean; muted?: boolean; labelled?: boolean; color?: string | null; extra?: Record<string, string | number | null>; }
+export interface Dot { id: string; label: string; x: number | null; y: number | null; sub?: string; highlight?: boolean; muted?: boolean; labelled?: boolean; color?: string | null; extra?: Record<string, string | number | null>; }
 interface Props {
   dots: Dot[]; xLabel: string; yLabel: string; xFmt?: (v: number) => string; yFmt?: (v: number) => string;
-  height?: number; imageSize?: number; showLabels?: "all" | "some" | "highlight" | "none"; quadrants?: [Quadrant, Quadrant, Quadrant, Quadrant]; // TL, TR, BL, BR
+  // Resting diameter of a marker. Teams are drawn large enough to read as
+  // discs of one colour each; a fifty-player cloud wants the small default.
+  height?: number; dotSize?: number; showLabels?: "all" | "some" | "highlight" | "none"; quadrants?: [Quadrant, Quadrant, Quadrant, Quadrant]; // TL, TR, BL, BR
   // The crosshairs are the mean of what is plotted unless the caller knows
   // better. A chart showing a trimmed field has to pass the full population's
   // average, or the line reads as the league when it is only the top of it.
@@ -122,9 +124,11 @@ const sameSides = (a: Record<string, Side>, b: Record<string, Side>) => {
   return ka.length === kb.length && ka.every((k) => a[k] === b[k]);
 };
 
-/** Teams or players as dots (logos / headshots) on two metrics, with league
- *  averages as crosshairs. Highlighted dots draw larger and labelled. */
-export default function ScatterPlot({ dots, xLabel, yLabel, xFmt = (v) => String(v), yFmt = (v) => String(v), height = 380, imageSize = 22, showLabels = "highlight", quadrants, onPick, xAvg, yAvg, xEnds, yEnds }: Props) {
+/** Teams or players as coloured dots on two metrics, with league averages as
+ *  crosshairs. Highlighted dots draw larger and labelled. Identity comes from
+ *  the label and the colour: there are no logos or faces here, and the reason
+ *  is in LICENSING.md. */
+export default function ScatterPlot({ dots, xLabel, yLabel, xFmt = (v) => String(v), yFmt = (v) => String(v), height = 380, dotSize = 11, showLabels = "highlight", quadrants, onPick, xAvg, yAvg, xEnds, yEnds }: Props) {
   const T = chartTheme();
   const [hover, setHover] = useState<string | null>(null);
   // Filled while rendering, read after: `shape` below is the only place the
@@ -172,14 +176,12 @@ export default function ScatterPlot({ dots, xLabel, yLabel, xFmt = (v) => String
   const shape = (props: any) => {
     const { cx, cy, payload } = props as { cx: number; cy: number; payload: Dot };
     const hl = payload.highlight || hover === payload.id;
-    const size = hl ? imageSize * 1.5 : imageSize;
-    // The dot's own radius, so a label clears the headshot it belongs to
-    // rather than a nominal one. Recorded at its resting size: hover inflates
-    // the dot, and a layout that moved with the pointer would be worse than
-    // the overlap it fixed.
-    // The radius actually drawn: a face at its resting size, a plain marker
-    // at its own few pixels, so the reserved circle is the visible one.
-    pos.current.set(payload.id, { cx, cy, r: payload.image ? (payload.highlight ? imageSize * 1.5 : imageSize) / 2 : payload.highlight ? 9 : 6 });
+    const size = hl ? dotSize * 1.5 : dotSize;
+    // The dot's own radius, so a label clears the marker it belongs to rather
+    // than a nominal one. Recorded at its resting size: hover inflates the
+    // dot, and a layout that moved with the pointer would be worse than the
+    // overlap it fixed.
+    pos.current.set(payload.id, { cx, cy, r: (payload.highlight ? dotSize * 1.5 : dotSize) / 2 });
     const dim = payload.muted && !hl ? 0.55 : 1;
     // "some" lets the caller name the dots worth naming and leave the rest to
     // hover, which is the only readable option once a crowded field is plotted
@@ -191,15 +193,7 @@ export default function ScatterPlot({ dots, xLabel, yLabel, xFmt = (v) => String
     return (
       <g style={{ cursor: onPick ? "pointer" : "default" }} opacity={dim} onClick={() => onPick?.(payload.id)} onMouseEnter={() => setHover(payload.id)} onMouseLeave={() => setHover(null)}>
         {hl && <circle cx={cx} cy={cy} r={size / 2 + 4} fill="none" stroke={T.accent} strokeWidth={2} />}
-        {payload.image ? (
-          <>
-            <clipPath id={`clip-${payload.id}`}><circle cx={cx} cy={cy} r={size / 2} /></clipPath>
-            <circle cx={cx} cy={cy} r={size / 2} fill={T.tooltip.background as string} stroke={T.axis} />
-            <image href={payload.image} x={cx - size / 2} y={cy - size / 2} width={size} height={size} clipPath={`url(#clip-${payload.id})`} preserveAspectRatio="xMidYMid slice" />
-          </>
-        ) : (
-          <circle cx={cx} cy={cy} r={hl ? 7 : 5.5} fill={hl ? T.accent : payload.color ?? T.muted} stroke={T.tooltip.background as string} strokeWidth={1.5} />
-        )}
+        <circle cx={cx} cy={cy} r={size / 2} fill={hl ? T.accent : payload.color ?? T.muted} stroke={T.tooltip.background as string} strokeWidth={1.5} />
         {label && (() => {
           const at = labelAt(sides[payload.id] ?? "top", cx, cy, size / 2, measure(payload.label));
           return <text x={at.x} y={at.y} textAnchor={at.anchor} fontSize={hl ? 11 : 10} fontWeight={hl ? 700 : 500} fill={hl ? T.text : T.muted}>{payload.label}</text>;

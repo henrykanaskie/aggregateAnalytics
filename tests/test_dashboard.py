@@ -151,11 +151,11 @@ def test_floor_and_ceiling_come_from_the_players_own_games_around_the_projection
 
 def test_espn_file_decides_who_plays_this_week(monkeypatch):
     from dashboard.stats import fantasy
-    monkeypatch.setattr(fantasy, "_players_info", lambda pids: {"bk": {"display_name": "Backup QB", "headshot": None}})
+    monkeypatch.setattr(fantasy, "_players_info", lambda pids: {"bk": {"display_name": "Backup QB"}})
     game = {"opponent": "DAL", "home": True, "game_id": "g1", "gameday": "2026-09-27", "implied": 24.0}
     opp_of = {"WAS": game, "DAL": {**game, "opponent": "WAS", "home": False}}
     row = lambda pid, pos, rank, status=None: {"player_id": pid, "name": pid, "position": pos, "team": "WAS", "depth_rank": rank,
-                                                "headshot": None, "new_to_team": False, "stats_team": "WAS", "target_share": None,
+                                                "new_to_team": False, "stats_team": "WAS", "target_share": None,
                                                 "carry_share": None, "status": status, "injury": None, **game}
     roster = [row("qb1", "QB", 1), row("wr1", "WR", 1, "DNP"), row("cut", "WR", 2), row("traded", "WR", 3)]
     e = lambda ppr, team="WAS", pos="QB", status=None: {"ppr": ppr, "rec": 0.0, "team": team, "position": pos, "name": "", "status": status}

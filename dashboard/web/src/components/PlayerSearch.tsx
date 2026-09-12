@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api, PlayerLite } from "../api";
-import { Headshot } from "./common";
+import { Monogram } from "./common";
 import { useSticky } from "../lib/sticky";
 
 /** `inline` is the phone's search sheet: the list sits under the box instead of
@@ -39,7 +39,7 @@ export default function PlayerSearch({ onSelect, placeholder = "Search any playe
   const row = (p: PlayerLite, k: number) => (
     <div key={p.player_id} className={`row ${k === i ? "active" : ""}`} style={inline ? { animationDelay: `${Math.min(k, 6) * 15}ms` } : undefined}
       onMouseEnter={() => setI(k)} onMouseDown={inline ? undefined : () => pick(p)} onClick={inline ? () => pick(p) : undefined}>
-      <Headshot src={p.headshot} size={inline ? 48 : 36} />
+      <Monogram name={p.name} team={p.team} size={inline ? 48 : 36} />
       <div style={{ minWidth: 0 }}>
         <div className="row-name">{p.name} <span className="muted">{p.position}</span></div>
         <div className="meta">{p.team ?? "FA"} · {p.first_season}–{p.last_season} · {p.games} games</div>

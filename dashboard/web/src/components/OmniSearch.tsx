@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { api, api2, CoachSummary, PlayerLite } from "../api";
 import { useQuery } from "../lib/useQuery";
 import { useMeta } from "../state";
-import { Headshot } from "./common";
+import { Monogram } from "./common";
 
 // One box for everything with a page: players (from the API, as you type),
 // teams and head coaches (matched here, from lists the app already has).
@@ -73,7 +73,7 @@ export default function OmniSearch({ autoFocus = false }: { autoFocus?: boolean 
                 <div className="omni-group">{title}</div>
                 {g.map((h) => { const idx = hits.indexOf(h); return (
                   <button key={h.key} role="option" aria-selected={idx === i} className={`omni-hit ${idx === i ? "on" : ""}`} onMouseEnter={() => setI(idx)} onClick={() => go(h)}>
-                    {h.kind === "player" ? <Headshot src={h.p.headshot} size={28} /> : <span className={`omni-icon ${h.kind}`}>{h.kind === "team" ? "T" : "C"}</span>}
+                    {h.kind === "player" ? <Monogram name={h.p.name} team={h.p.team} size={28} /> : <span className={`omni-icon ${h.kind}`}>{h.kind === "team" ? "T" : "C"}</span>}
                     <span><b>{h.label}</b><span className="muted small"> {h.sub}</span></span>
                   </button>
                 ); })}

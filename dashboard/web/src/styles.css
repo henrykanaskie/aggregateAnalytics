@@ -1026,7 +1026,6 @@ a.home-row:hover { text-decoration: none; color: var(--accent); }
 .mt-stepper .num { min-width: 12px; text-align: center; }
 @media (max-width: 760px) {
   .mt-row { grid-template-columns: 40px minmax(0, 1fr) auto auto; gap: 8px; padding: 10px 2px; }
-  .mt-row > .headshot { display: none; }
   .mt-insight { align-items: flex-start; }
   .mt-insight .btn { align-self: center; }
   .mt-total .v { font-size: 30px; }
@@ -1134,7 +1133,6 @@ th.range-col { white-space: nowrap; }
 
 /* One line per player however long the name: the name gives way (ellipsis,
    full name on hover), the tags and the rest of the row never wrap under it. */
-.headshot { display: inline-block; flex-shrink: 0; border-radius: 4px; background: var(--bg-2); }
 .fx-line { display: flex; align-items: center; gap: 5px; white-space: nowrap; min-width: 0; }
 .fx-line .fx-full { overflow: hidden; text-overflow: ellipsis; max-width: 190px; }
 .fx-line .pill { flex-shrink: 0; }

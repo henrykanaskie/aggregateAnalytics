@@ -1,9 +1,14 @@
 """The searchable player index.
 
 Built from ``player_stats_week`` (who actually recorded a stat line) and
-decorated from the ``players`` master table (headshots, external ids, draft
-info). Cached in memory for the life of the process; it takes about a second
+decorated from the ``players`` master table (external ids, draft info).
+Cached in memory for the life of the process; it takes about a second
 to build.
+
+**No headshot column, on purpose.** Both source tables carry one, and the URL
+in it points at the NFL's own image CDN: a player likeness this project has no
+licence to serve. It is dropped here, at the source, rather than hidden in the
+frontend, so no payload can carry one. See LICENSING.md.
 """
 
 from __future__ import annotations
@@ -37,7 +42,7 @@ def player_index() -> pl.DataFrame:
     stats = (
         scan("player_stats_week")
         .select("player_id", "player_display_name", "position", "team", "season", "week",
-                "headshot_url", "fantasy_points_ppr")
+                "fantasy_points_ppr")
         .sort(["season", "week"])
         .group_by("player_id", maintain_order=True)
         .agg(
@@ -47,7 +52,6 @@ def player_index() -> pl.DataFrame:
             pl.col("season").min().alias("first_season"),
             pl.col("season").max().alias("last_season"),
             pl.len().alias("games"),
-            pl.col("headshot_url").drop_nulls().last().alias("headshot_stats"),
             pl.col("fantasy_points_ppr").filter(pl.col("season") == pl.col("season").max()).sum()
             .alias("last_season_ppr"),
         )
@@ -56,7 +60,6 @@ def player_index() -> pl.DataFrame:
     master = players_master().select(
         pl.col("gsis_id").alias("player_id"),
         pl.col("display_name").alias("master_name"),
-        pl.col("headshot").alias("headshot_master"),
         pl.col("latest_team"), pl.col("status"), pl.col("espn_id"), pl.col("pfr_id"),
         pl.col("jersey_number"), pl.col("birth_date").cast(pl.String).alias("birth_date"),
         pl.col("height"), pl.col("weight"), pl.col("college_name"),
@@ -66,11 +69,10 @@ def player_index() -> pl.DataFrame:
     )
     df = stats.join(master, on="player_id", how="left").with_columns(
         name=pl.coalesce(pl.col("master_name"), pl.col("name")),
-        headshot=pl.coalesce(pl.col("headshot_master"), pl.col("headshot_stats")),
         # players.latest_team tracks offseason moves that the stat table cannot.
         team=pl.coalesce(pl.col("latest_team"), pl.col("last_team")),
         position=pl.coalesce(pl.col("position"), pl.col("master_position")),
-    ).drop("master_name", "headshot_master", "headshot_stats", "master_position")
+    ).drop("master_name", "master_position")
     names = [normalize_name(n) for n in df["name"].to_list()]
     return df.with_columns(pl.Series("name_norm", names)).sort(
         ["last_season", "last_season_ppr"], descending=[True, True]
@@ -137,7 +139,7 @@ def roster_profile(player_id: str) -> dict | None:
         "player_id": player_id, "name": name, "position": r.get("position"),
         "last_team": r.get("latest_team"), "team": r.get("latest_team"),
         "first_season": season, "last_season": season, "games": 0, "last_season_ppr": 0.0,
-        "headshot": r.get("headshot"), "latest_team": r.get("latest_team"), "status": r.get("status"),
+        "latest_team": r.get("latest_team"), "status": r.get("status"),
         "espn_id": r.get("espn_id"), "pfr_id": r.get("pfr_id"), "jersey_number": r.get("jersey_number"),
         "birth_date": str(r["birth_date"]) if r.get("birth_date") is not None else None,
         "height": r.get("height"), "weight": r.get("weight"), "college_name": r.get("college_name"),
@@ -169,7 +171,6 @@ def team_players(team: str, season: int) -> pl.DataFrame:
             pl.col("position").last().alias("position"),
             pl.len().alias("games"),
             pl.col("fantasy_points_ppr").sum().alias("ppr"),
-            pl.col("headshot_url").drop_nulls().last().alias("headshot"),
         )
         .sort("ppr", descending=True)
         .collect()
@@ -179,8 +180,11 @@ def team_players(team: str, season: int) -> pl.DataFrame:
 @lru_cache(maxsize=1)
 def teams() -> list[dict]:
     t = pl.read_parquet(RAW_DIR / "teams.parquet")
+    # Colours, not marks. The logo and wordmark columns in `teams` are team
+    # trademarks served from the NFL's and ESPN's own CDNs, so they are not
+    # selected here and nothing downstream can render one. See LICENSING.md.
     return t.select("team_abbr", "team_name", "team_nick", "team_conf", "team_division",
-                    "team_color", "team_color2", "team_logo_espn").to_dicts()
+                    "team_color", "team_color2").to_dicts()
 
 
 def match_name(name: str, teams_hint: tuple[str, ...] = (), min_season: int = 2023) -> str | None:
