@@ -9,6 +9,14 @@ __pycache__/
 /data/*
 !/data/odds/
 !/data/derived/
+# ...except the run log, which is the one thing in there that is output rather
+# than data. `dashboard/scripts/daily.sh:15` points it at data/odds/, inside the
+# re-included directory, and `lines.yml` stages that directory unconditionally
+# (`git add data/odds`). So on any commit made from a checkout that has run the
+# daily script, this file goes with it. It carries absolute paths from whichever
+# machine wrote it, which on this one means a username and the repo's old
+# directory name, published to a repo whose whole point is being public.
+/data/odds/*.log
 
 !package.json
 !package-lock.json
