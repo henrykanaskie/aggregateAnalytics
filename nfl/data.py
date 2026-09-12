@@ -98,23 +98,7 @@ def normalize_keys(lf: pl.LazyFrame) -> pl.LazyFrame:
 
 
 def scan(name: str, *, strict: bool = True) -> pl.LazyFrame:
-    """Lazily read a cached dataset.
-
-    nflverse adds columns over time, so the per-season files have drifting
-    schemas. Missing columns are inserted as null and unexpected ones ignored
-    rather than raising, and ``season``/``week`` are normalised to
-    :data:`KEY_DTYPES` so an integer comparison works on every table.
-
-    Strict by default, in the same spirit as :func:`nfl.teams.canonical_team`:
-    a dataset listed in :data:`UNSAFE_UNION` cannot be unioned safely, so it
-    raises rather than returning a frame that is quietly half null. Pass
-    ``strict=False`` when you genuinely want the raw union (the profiler does,
-    because it is reporting on the mess rather than modelling on it).
-
-    >>> scan("depth_charts")                    # doctest: +SKIP
-    Traceback (most recent call last):
-    nfl.data.SchemaBreak: ...
-    """
+    """Lazily read a cached dataset."""
     if strict and name in UNSAFE_UNION:
         raise SchemaBreak(
             f"{name!r} does not have one schema across its per-season files, so "
@@ -134,9 +118,7 @@ def scan(name: str, *, strict: bool = True) -> pl.LazyFrame:
             extra_columns="ignore",
             missing_columns="insert",
             # Without this, a column shipped as Float64 in one season and Int32
-            # in another aborts the whole scan. `normalize_keys` then puts
-            # season/week back to integers so nothing downstream compares an
-            # int literal against a float column.
+            # in another aborts the whole scan. 
             cast_options=pl.ScanCastOptions(integer_cast="allow-float"),
         )
     else:
