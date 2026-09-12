@@ -33,7 +33,9 @@ build minutes.
    Only if you pay for a bigger tier: add `ODDS_API_KEY` and
    `ODDS_API_SCHEDULED=1` as GitHub secrets/variables too.
 3. **Render**: New, Blueprint, pick the repo. It reads `render.yaml`. When
-   prompted, set `SITE_PASSWORD`. Set `GH_TOKEN` (a fine-grained token with
+   prompted, set `SITE_PASSWORD` and `ADMIN_PASSWORD` (a different string:
+   the pull and grading controls are refused for everyone until it is set, and
+   refused for everyone if it matches `SITE_PASSWORD`). Set `GH_TOKEN` (a fine-grained token with
    read access to contents and releases) only if the repo is private;
    `fetch_cache.py` and `sync_odds.py` both read it.
 4. **Frontend build**: `scripts/build.sh` runs `npm ci` and `npm run build`

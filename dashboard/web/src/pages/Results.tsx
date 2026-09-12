@@ -7,7 +7,7 @@ import { useQuery } from "../lib/useQuery";
 import { useMeta } from "../state";
 
 export default function Results() {
-  const { meta } = useMeta();
+  const { meta, admin, adminNote } = useMeta();
   const [season, setSeason] = useSticky<number | null>("results.season", null);
   const [busy, setBusy] = useState(false);
   const [week, setWeek] = useSticky<number | "">("results.week", "");
@@ -32,9 +32,11 @@ export default function Results() {
         <div className="controls">
           <Field label="Season"><input className="input num" type="number" value={season ?? meta?.season ?? ""} onChange={(e) => setSeason(Number(e.target.value))} /></Field>
           <Field label="Grade week (blank = last)"><input className="input num" type="number" min={1} max={22} value={week} onChange={(e) => setWeek(e.target.value === "" ? "" : Number(e.target.value))} /></Field>
-          <button className="btn primary" disabled={busy} onClick={run}>{busy ? <Spinner /> : "Grade"}</button>
-          <button className="btn" disabled={busy} onClick={logBase}>Log baseline for this week</button>
-          <span className="hint">The daily script does both automatically (dashboard/scripts/daily.sh).</span>
+          {/* Both of these write to the log, so they need the admin password.
+              Absent rather than disabled: they would answer 403. */}
+          {admin && <button className="btn primary" disabled={busy} onClick={run}>{busy ? <Spinner /> : "Grade"}</button>}
+          {admin && <button className="btn" disabled={busy} onClick={logBase}>Log baseline for this week</button>}
+          <span className="hint">{admin ? "The daily script does both automatically (dashboard/scripts/daily.sh)." : `Grading is run by the maintainer${adminNote ? " (not configured yet)" : ""}; the table below is the result.`}</span>
         </div>
         {msg && <div className="small" style={{ marginTop: 8 }}>{msg}</div>}
       </div>

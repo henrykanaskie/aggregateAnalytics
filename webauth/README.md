@@ -24,8 +24,9 @@ dashboard loads. Settings has "Sign out", which clears the cookie.
 
 | variable | required | meaning |
 |---|---|---|
-| `SITE_PASSWORD` | yes | the password. Unset means every gated request answers 503. |
-| `SESSION_SECRET` | no | signs the cookie. Defaults to a hash of the password, so rotating the password signs everyone out. |
+| `SITE_PASSWORD` | yes | the password that opens the site. Unset means every gated request answers 503. |
+| `ADMIN_PASSWORD` | before anyone else has it | the password that may also pull lines and write to the log. Unset, or the same string as `SITE_PASSWORD`, means nobody can: those routes answer 503 for everyone. |
+| `SESSION_SECRET` | no | signs the cookie. Defaults to a hash of both passwords, so rotating either signs everyone out. |
 | `SESSION_DAYS` | no | cookie lifetime, default 30. |
 
 Set them in the host's dashboard, never in the repo. `.env` is already
@@ -38,9 +39,32 @@ pulls in GitHub Actions, the cache on a Release, the in-app odds sync) is in
 [DEPLOY.md](../DEPLOY.md). The cookie is marked `Secure` whenever the request
 arrives over HTTPS, directly or via `X-Forwarded-Proto`, which Render sets.
 
+## Two roles
+
+The cookie carries `view` or `admin`, signed next to the expiry, decided by
+which password was typed. `require_session` accepts either. `require_admin`
+accepts only the second, and three routes in `dashboard/api/app.py` carry it:
+`POST /api/odds/pull`, which spends Odds API credits, and `/api/grading/run`
+and `/api/projections/log`, which write to disk. Everything else is read-only.
+
+**Why `ADMIN_PASSWORD` is mixed into the signing key.** Every viewer knows
+`SITE_PASSWORD`: it is how they got in. A key derived from that alone is a key
+they can compute, and anyone who can compute the key can sign themselves an
+`admin` cookie and run up the bill. Mixing in a secret they do not hold is what
+makes the role mean anything, and `test_a_viewer_cannot_forge_an_admin_cookie`
+builds exactly that forgery to prove it. The cost is that setting or rotating
+`ADMIN_PASSWORD` signs everyone out, which is also the only way to revoke a
+live admin cookie without an explicit `SESSION_SECRET`.
+
+Unset is closed, not open: with no `ADMIN_PASSWORD` the write routes refuse
+everybody, including you. The same string in both variables is refused too,
+because it reads as "admin is configured" and means "every visitor is an
+admin".
+
 ## What it is and is not
 
-A gate against strangers. Everyone shares one password, there is no
-per-person identity, and the failed-attempt throttle (10 per 15 minutes per
-address) is in-process memory. Fine for a private dashboard over HTTPS. Not
-fine for anything you would mind leaking if the password leaked.
+A gate against strangers. Everyone shares one of two passwords, so the admin
+role says which password was typed and never which person typed it, and the
+failed-attempt throttle (10 per 15 minutes per address) is in-process memory.
+Fine for a private dashboard over HTTPS. Not fine for anything you would mind
+leaking if the password leaked.

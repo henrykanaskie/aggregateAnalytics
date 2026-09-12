@@ -27,7 +27,7 @@ from pydantic import BaseModel
 
 from data_handling import sync_odds
 from nfl.data import cached_datasets, scan
-from webauth import auth_router, require_session
+from webauth import auth_router, require_admin, require_session
 
 from .. import predictions
 from ..config import CURRENT_SEASON, DEFAULT_SINCE, DERIVED_DIR, WEB_DIST, odds_api_key
@@ -54,6 +54,12 @@ from ..stats.gamelog import availability, game_log
 # One password in front of everything (webauth/README.md). The dependency
 # gates every route below, including the SPA catch-all; the auth router must
 # be included before that catch-all is defined so /password is reachable.
+#
+# Three routes want more than that: `/api/odds/pull` spends Odds API credits,
+# and `/api/grading/run` and `/api/projections/log` write to disk. They each
+# carry `require_admin` as well, because a session that can read the site is
+# not a session that should be able to run up a bill. Every other route here
+# is read-only, which is what makes one extra dependency enough.
 app = FastAPI(title="Aggregate Analytics", version="0.1.0",
               dependencies=[Depends(require_session)])
 app.include_router(auth_router)
@@ -426,7 +432,7 @@ class GradeRequest(BaseModel):
     include_sample: bool = False
 
 
-@app.post("/api/grading/run")
+@app.post("/api/grading/run", dependencies=[Depends(require_admin)])
 def grading_run(req: GradeRequest):
     g = grading.grade_week(req.season, req.week, include_sample=req.include_sample)
     return {"season": req.season, "week": req.week, "graded": g.height}
@@ -438,7 +444,7 @@ class LogBaselineRequest(BaseModel):
     include_sample: bool = False
 
 
-@app.post("/api/projections/log")
+@app.post("/api/projections/log", dependencies=[Depends(require_admin)])
 def log_baseline(req: LogBaselineRequest):
     season = req.season or CURRENT_SEASON
     week = _week_default(season, req.week)
@@ -776,7 +782,7 @@ class PullRequest(BaseModel):
     dry_run: bool = False
 
 
-@app.post("/api/odds/pull")
+@app.post("/api/odds/pull", dependencies=[Depends(require_admin)])
 def odds_pull(req: PullRequest):
     log: list[str] = []
     try:

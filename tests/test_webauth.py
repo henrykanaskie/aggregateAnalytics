@@ -8,9 +8,10 @@ import pytest
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
-from webauth import auth, auth_router, require_session
+from webauth import auth, auth_router, require_admin, require_session
 
 PW = "hut-hut"
+ADMIN_PW = "the-coach"
 
 
 def _minimal() -> FastAPI:
@@ -20,6 +21,10 @@ def _minimal() -> FastAPI:
     @app.get("/api/thing")
     async def thing() -> dict:
         return {"secret": 42}
+
+    @app.post("/api/write", dependencies=[Depends(require_admin)])
+    async def write() -> dict:
+        return {"wrote": True}
 
     @app.get("/api/health")
     async def health() -> dict:
@@ -36,6 +41,7 @@ def _minimal() -> FastAPI:
 def client(monkeypatch):
     monkeypatch.setenv("SITE_PASSWORD", PW)
     monkeypatch.delenv("SESSION_SECRET", raising=False)
+    monkeypatch.delenv("ADMIN_PASSWORD", raising=False)
     auth.reset_throttle()
     return TestClient(_minimal())
 
@@ -85,7 +91,8 @@ def test_login_sets_cookie_and_opens_everything(client):
     assert auth.COOKIE in r.cookies
     assert client.get("/api/thing").json() == {"secret": 42}
     assert client.get("/", headers={"Accept": "text/html"}).json() == {"page": "index"}
-    assert client.get("/api/auth/me").json() == {"authenticated": True}
+    assert client.get("/api/auth/me").json() == {"authenticated": True, "admin": False,
+                                                 "admin_note": auth.admin_unavailable()}
 
 
 def test_logged_in_visitor_to_password_page_is_sent_home(client):
@@ -112,9 +119,11 @@ def test_token_expires(monkeypatch):
 
 def test_tampered_token_is_rejected(monkeypatch):
     monkeypatch.setenv("SITE_PASSWORD", PW)
-    exp, sig = auth.make_token(now=0).split(".")
-    assert not auth.token_is_valid(f"{int(exp) + 10**9}.{sig}", now=0)   # pushed expiry
-    assert not auth.token_is_valid(f"{exp}.{'0' * 64}", now=0)           # forged sig
+    exp, role, sig = auth.make_token(now=0).split(".")
+    assert not auth.token_is_valid(f"{int(exp) + 10**9}.{role}.{sig}", now=0)  # pushed expiry
+    assert not auth.token_is_valid(f"{exp}.{role}.{'0' * 64}", now=0)          # forged sig
+    assert not auth.token_is_valid(f"{exp}.admin.{sig}", now=0)                # swapped role
+    assert not auth.token_is_valid(f"{exp}.root.{sig}", now=0)                 # invented role
     assert not auth.token_is_valid("garbage", now=0)
 
 
@@ -148,6 +157,7 @@ def test_throttle_after_repeated_failures(client):
 @pytest.fixture
 def dashboard_client(monkeypatch):
     monkeypatch.setenv("SITE_PASSWORD", PW)
+    monkeypatch.delenv("ADMIN_PASSWORD", raising=False)
     monkeypatch.delenv("ODDS_REPO", raising=False)         # sync is a no-op in tests
     auth.reset_throttle()
     from dashboard.api.app import app
@@ -191,3 +201,115 @@ def test_dashboard_starts_and_warms_without_a_cache(monkeypatch, capsys):
         m._warm()                      # run it synchronously too, for the log
     out = capsys.readouterr().out
     assert "[warm]" in out
+
+
+# --- the admin role -------------------------------------------------------------
+# The routes behind `require_admin` write to disk or buy Odds API credits. A
+# viewer holds a valid session, so "signed in" is not the question these tests
+# ask; "which password did they type" is.
+
+@pytest.fixture
+def admin_client(monkeypatch):
+    monkeypatch.setenv("SITE_PASSWORD", PW)
+    monkeypatch.setenv("ADMIN_PASSWORD", ADMIN_PW)
+    monkeypatch.delenv("SESSION_SECRET", raising=False)
+    auth.reset_throttle()
+    return TestClient(_minimal())
+
+
+def test_write_is_closed_to_everyone_until_admin_is_configured(client):
+    """No ADMIN_PASSWORD is not "anyone may write", it is "nobody may"."""
+    client.post("/api/auth/login", json={"password": PW})
+    assert client.get("/api/thing").status_code == 200
+    r = client.post("/api/write")
+    assert r.status_code == 503
+    assert "ADMIN_PASSWORD" in r.json()["detail"]
+
+
+def test_two_identical_passwords_are_refused_rather_than_promoting_everyone(monkeypatch):
+    """The copy-paste mistake: the same string in both variables reads as
+    configured and would mean every visitor can spend money."""
+    monkeypatch.setenv("SITE_PASSWORD", PW)
+    monkeypatch.setenv("ADMIN_PASSWORD", PW)
+    monkeypatch.delenv("SESSION_SECRET", raising=False)
+    auth.reset_throttle()
+    c = TestClient(_minimal())
+    assert c.post("/api/auth/login", json={"password": PW}).status_code == 204
+    r = c.post("/api/write")
+    assert r.status_code == 503
+    assert "the same" in r.json()["detail"]
+
+
+def test_a_viewer_is_signed_in_and_still_cannot_write(admin_client):
+    admin_client.post("/api/auth/login", json={"password": PW})
+    assert admin_client.get("/api/thing").status_code == 200
+    assert admin_client.post("/api/write").status_code == 403
+    me = admin_client.get("/api/auth/me").json()
+    assert me == {"authenticated": True, "admin": False, "admin_note": None}
+
+
+def test_the_admin_password_writes(admin_client):
+    assert admin_client.post("/api/auth/login", json={"password": ADMIN_PW}).status_code == 204
+    assert admin_client.post("/api/write").json() == {"wrote": True}
+    assert admin_client.get("/api/auth/me").json()["admin"] is True
+    assert admin_client.get("/api/thing").status_code == 200      # and still reads
+
+
+def test_a_viewer_cannot_forge_an_admin_cookie(monkeypatch):
+    """The property the whole gate rests on.
+
+    Every viewer knows SITE_PASSWORD: it is how they got in. If the signing key
+    were derived from that alone they could compute it, sign themselves
+    ``<exp>.admin.<sig>`` and spend the credits. This builds exactly that
+    forgery, from only what a viewer holds, and it must not verify.
+    """
+    monkeypatch.setenv("SITE_PASSWORD", PW)
+    monkeypatch.setenv("ADMIN_PASSWORD", ADMIN_PW)
+    monkeypatch.delenv("SESSION_SECRET", raising=False)
+    import hashlib
+    import hmac as _hmac
+    viewer_key = hashlib.sha256(b"nfl_predictor.session:" + PW.encode()).digest()
+    exp = 10**10
+    payload = f"{exp}.admin"
+    forged = f"{payload}.{_hmac.new(viewer_key, payload.encode(), hashlib.sha256).hexdigest()}"
+    assert auth.token_role(forged, now=0) is None
+
+    c = TestClient(_minimal())
+    c.cookies.set(auth.COOKIE, forged)
+    assert c.post("/api/write").status_code in (401, 403)
+
+
+def test_clearing_the_admin_password_revokes_the_sessions_it_issued(monkeypatch):
+    monkeypatch.setenv("SITE_PASSWORD", PW)
+    monkeypatch.setenv("ADMIN_PASSWORD", ADMIN_PW)
+    monkeypatch.delenv("SESSION_SECRET", raising=False)
+    t = auth.make_token(now=0, role=auth.ADMIN)
+    assert auth.token_role(t, now=0) == auth.ADMIN
+    monkeypatch.delenv("ADMIN_PASSWORD")
+    # The key moved with the password, so the cookie stops verifying at all.
+    assert auth.token_role(t, now=0) is None
+
+
+def test_a_cookie_minted_before_roles_existed_reads_as_view_only(monkeypatch):
+    """A deploy must not bounce everyone already signed in, so the two-part
+    token still verifies. It gets the role it could act with when it was made."""
+    monkeypatch.setenv("SITE_PASSWORD", PW)
+    monkeypatch.delenv("ADMIN_PASSWORD", raising=False)
+    monkeypatch.delenv("SESSION_SECRET", raising=False)
+    exp = 10**10
+    old = f"{exp}.{auth._sign(str(exp))}"
+    assert auth.token_role(old, now=0) == auth.VIEW
+
+
+def test_the_dashboard_write_routes_need_admin(dashboard_client):
+    """Wired in the real app, not just the minimal one. 403 is raised by the
+    dependency, so no handler runs and nothing is pulled or written."""
+    writes = [("/api/odds/pull", {"source": "espn"}),
+              ("/api/grading/run", {"season": 2026, "week": 1}),
+              ("/api/projections/log", {})]
+    for path, body in writes:
+        assert dashboard_client.post(path, json=body).status_code == 401     # a stranger
+    dashboard_client.post("/api/auth/login", json={"password": PW})
+    for path, body in writes:
+        r = dashboard_client.post(path, json=body)
+        assert r.status_code == 503, f"{path} answered {r.status_code}"      # admin unset

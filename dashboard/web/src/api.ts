@@ -77,6 +77,20 @@ export const apiFresh = <T,>(url: string): Promise<T> => fetchJson<T>(url).then(
 type Ep<A extends any[], T> = ((...a: A) => Promise<T>) & { url: (...a: A) => string };
 const ep = <T,>() => <A extends any[]>(url: (...a: A) => string): Ep<A, T> => Object.assign((...a: A) => get<T>(url(...a)), { url });
 
+/** Who this browser is, as the server sees it. `admin` decides whether the
+ *  controls that pull lines or write to the log are drawn at all: a viewer
+ *  holds a valid session and would get a 403 from every one of them, and a
+ *  button that always fails is worse than no button. `admin_note` is why,
+ *  when the reason is configuration rather than the password typed. */
+export interface Session { authenticated: boolean; admin: boolean; admin_note: string | null; }
+export const session = async (): Promise<Session> => {
+  try {
+    const r = await fetch("/api/auth/me");
+    if (!r.ok) return { authenticated: false, admin: false, admin_note: null };
+    return await r.json();
+  } catch { return { authenticated: false, admin: false, admin_note: null }; }
+};
+
 export async function signOut(): Promise<void> {
   await fetch("/api/auth/logout", { method: "POST" });
   window.location.replace("/password");

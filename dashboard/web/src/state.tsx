@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { api, apiFresh, Meta, StatDef, MarketDef, Team } from "./api";
+import { api, apiFresh, Meta, session, StatDef, MarketDef, Team } from "./api";
 import { peek, syncDataVersion } from "./lib/cache";
 
 export interface Settings {
@@ -38,6 +38,8 @@ function loadSettings(): Settings {
 interface Ctx {
   meta: Meta | null; error: string | null; settings: Settings; setSettings: (s: Partial<Settings>) => void;
   statByKey: Map<string, StatDef>; marketByKey: Map<string, MarketDef>; teamByAbbr: Map<string, Team>; reloadMeta: () => void;
+  // Whether this session may pull lines and write to the log, and why not.
+  admin: boolean; adminNote: string | null;
 }
 const C = createContext<Ctx>(null as any);
 
@@ -46,16 +48,22 @@ export function MetaProvider({ children }: { children: React.ReactNode }) {
   // catalog on the first frame instead of waiting on /api/meta.
   const [meta, setMeta] = useState<Meta | null>(() => peek<Meta>(api.meta.url()) ?? null);
   const [error, setError] = useState<string | null>(null);
+  // Asked once. A viewer and an admin differ only in which controls exist, so
+  // there is nothing to re-check between renders; a 403 from the server is the
+  // real gate and this only keeps a dead button off the page.
+  const [admin, setAdmin] = useState(false);
+  const [adminNote, setAdminNote] = useState<string | null>(null);
   const [settings, setS] = useState<Settings>(loadSettings);
   // The version check runs before meta is stored, so the render that follows
   // finds an empty cache and refetches rather than seeding from the old copy.
   const reloadMeta = () => apiFresh<Meta>(api.meta.url()).then((m) => { syncDataVersion(m.data_version); setMeta(m); }).catch((e) => setError(String(e)));
   useEffect(() => { reloadMeta(); }, []);
+  useEffect(() => { session().then((s) => { setAdmin(s.admin); setAdminNote(s.admin_note); }); }, []);
   useEffect(() => { document.documentElement.setAttribute("data-theme", settings.theme); }, [settings.theme]);
   const setSettings = (p: Partial<Settings>) => setS((s) => { const n = { ...s, ...p }; localStorage.setItem(KEY, JSON.stringify(n)); return n; });
   const statByKey = useMemo(() => new Map((meta?.stats ?? []).map((s) => [s.key, s])), [meta]);
   const marketByKey = useMemo(() => new Map((meta?.markets ?? []).map((m) => [m.key, m])), [meta]);
   const teamByAbbr = useMemo(() => new Map((meta?.teams ?? []).map((t) => [t.team_abbr, t])), [meta]);
-  return <C.Provider value={{ meta, error, settings, setSettings, statByKey, marketByKey, teamByAbbr, reloadMeta }}>{children}</C.Provider>;
+  return <C.Provider value={{ meta, error, settings, setSettings, statByKey, marketByKey, teamByAbbr, reloadMeta, admin, adminNote }}>{children}</C.Provider>;
 }
 export const useMeta = () => useContext(C);

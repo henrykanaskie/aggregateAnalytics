@@ -54,6 +54,11 @@ services:
         value: "10"
       - key: SITE_PASSWORD
         sync: false
+      # The second password, for the routes that spend credits or write to the
+      # log. Unset means those routes are closed to everyone, which is the
+      # right default for a host that strangers can reach.
+      - key: ADMIN_PASSWORD
+        sync: false
       - key: ODDS_API_KEY
         sync: false
       - key: GH_TOKEN

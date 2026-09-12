@@ -6,7 +6,7 @@ import { useQuery } from "../lib/useQuery";
 import { useMeta } from "../state";
 
 export default function Settings() {
-  const { meta, settings, setSettings, reloadMeta } = useMeta();
+  const { meta, settings, setSettings, reloadMeta, admin, adminNote } = useMeta();
   const [busy, setBusy] = useState<string | null>(null);
   const [result, setResult] = useState<PullResult | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -29,6 +29,16 @@ export default function Settings() {
     <div>
       <div className="page-head"><div><h1>Settings & data</h1></div><button className="btn" onClick={() => signOut()} title="Forget the site password on this browser">Sign out</button></div>
       <div className="grid grid-2">
+        {!admin ? (
+        <div className="panel" data-tour="settings-pull">
+          <div className="panel-head"><h3>Pull lines</h3></div>
+          {/* Pulling spends Odds API credits, so it needs the admin password
+              rather than the one that opens the site. The buttons are absent
+              instead of disabled: every one of them would answer 403. */}
+          <div className="small muted">Pulling lines spends real credits, so it needs the admin password. Sign out and sign in with it to get these controls back.{adminNote ? <> <b>Not configured yet:</b> {adminNote}</> : null}</div>
+          <div className="hint" style={{ marginTop: 10 }}>The snapshot store on the right is read-only and always visible.</div>
+        </div>
+        ) : (
         <div className="panel" data-tour="settings-pull">
           <div className="panel-head"><h3>Pull lines</h3><span className="hint">every pull is appended; nothing is overwritten</span></div>
           <div className="controls" style={{ marginBottom: 12 }}>
@@ -64,6 +74,7 @@ export default function Settings() {
           </div>
           <div className="hint" style={{ marginTop: 10 }}>From a terminal or cron: <code>python -m dashboard.odds.pull --source espn</code> (add <code>--source oddsapi --markets …</code> for the multi-book feed).</div>
         </div>
+        )}
         <div className="grid" style={{ alignContent: "start" }}>
           <div className="panel">
             <div className="panel-head"><h3>Snapshot store · data/odds/</h3><button className="btn sm" onClick={refresh}>refresh</button></div>
