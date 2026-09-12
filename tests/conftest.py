@@ -126,3 +126,46 @@ def raw_depth_modern() -> pl.DataFrame:
         },
         schema_overrides={"season": pl.Int32, "pos_slot": pl.Int32, "pos_rank": pl.Int32},
     )
+
+
+@pytest.fixture
+def qb_values() -> pl.DataFrame:
+    """`qb_game_value` output in miniature: two quarterbacks, one season.
+
+    `alice` improves steadily, `bob` is erratic. Both matter: a steady series
+    makes a leak obvious, an erratic one makes bleed-between-players obvious.
+    """
+    return pl.DataFrame(
+        {
+            "player_id": ["alice"] * 5 + ["bob"] * 5,
+            "season": [2024] * 10,
+            "week": [1, 2, 3, 4, 5] * 2,
+            "dropbacks": [30, 32, 28, 35, 31, 40, 22, 38, 25, 33],
+            "epa_per_dropback": [
+                0.00, 0.05, 0.10, 0.15, 0.20,      # alice: steady climb
+                0.30, -0.20, 0.25, -0.15, 0.10,    # bob: noisy
+            ],
+        },
+        schema_overrides={"season": pl.Int32, "week": pl.Int32},
+    )
+
+
+@pytest.fixture
+def games_with_qbs() -> pl.DataFrame:
+    """A team whose usual starter misses one week.
+
+    SEA start `starter` in weeks 1, 2 and 4 and `backup` in week 3, which is the
+    only case where a correct differential adjustment should be far from zero.
+    """
+    return pl.DataFrame(
+        {
+            "game_id": [f"2024_0{w}_X_SEA" for w in range(1, 5)],
+            "season": [2024] * 4,
+            "week": [1, 2, 3, 4],
+            "home": ["SEA"] * 4,
+            "away": ["ARI", "LA", "SF", "LAC"],
+            "home_qb_id": ["starter", "starter", "backup", "starter"],
+            "away_qb_id": ["alice", "alice", "alice", "alice"],
+        },
+        schema_overrides={"season": pl.Int32, "week": pl.Int32},
+    )
