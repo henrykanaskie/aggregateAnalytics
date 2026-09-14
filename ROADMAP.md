@@ -9,6 +9,11 @@ sections are **Status** (what changed in 48 hours, and what I would challenge)
 and **Wednesday** (the plan for tomorrow, expanded to the level of "what
 function, what test, what trap").
 
+Revised again **2026-09-12 (Saturday)**, adding 5.6 to 5.11 under Phase 5:
+method notes from pricing the Week 1 Sunday board by hand. Those items are
+hypotheses, not findings, and 5.1 says why they stay that way until the odds
+archive is deep enough to score them.
+
 ---
 
 ## 0. Status, measured 2026-09-08
@@ -709,6 +714,138 @@ rules differ and the two records should be readable separately.
 model, never the reverse. Re-run props whenever the game prediction changes;
 never adjust a margin because a prop looked wrong.
 
+### Revision 2026-09-12: method notes from a Week 1 dry run
+
+These items came out of pricing the whole Week 1 Sunday board by hand against
+the DraftKings snapshot and checking every read against the 2025 game logs.
+**None of them is validated, and 5.1 is the reason they cannot be yet:** the
+odds archive starts 2026-09-08, so no historical prop line exists to backtest
+against. They are hypotheses with a stated mechanism, written down now so that
+when the archive is deep enough to score them they are pre-registered rather
+than invented afterwards. That is the same discipline Phase 4 asks for on
+subsets, applied to yourself before the fact.
+
+**5.6 Take opportunity from the market's own volume line.** 5.2 models
+opportunity as target share times expected team attempts. That is the right
+long-run answer and it is also the hardest part of the problem, because
+opportunity is exactly what a trade or a depth chart change destroys.
+
+The shortcut: the book posts a volume line and a yardage line for the same
+player. Divide them and you have its implied efficiency.
+
+    implied_rate = yardage_line / volume_line
+    edge         = projected_rate - implied_rate
+
+Now you are forecasting only a rate, and rates travel across team changes far
+better than volumes do. The Week 1 case: `baseline-v1` projected David
+Montgomery at 7.6 carries, which was his Detroit committee share, while the
+book said 13.5 because Houston made him the lead back. The book was right and
+accepting its number cost nothing. One answerable question remained, whether
+56.5 / 13.5 = 4.19 yards a carry is correct for a back who ran 4.53 last year
+against a defence that allowed 5.14.
+
+This does not replace 5.2, it de-risks it. Build the opportunity model, then
+score it against the book's volume line as the benchmark. If it cannot beat
+that line it is not ready to carry a yardage projection on its back.
+
+**5.7 Defence vs position has to be a rate.** `dvp_table`
+(`dashboard/stats/context.py:52`) returns per-game totals allowed to a
+position. That confounds defensive quality with pace and game script: a
+defence whose offence controls the ball faces fewer snaps and grades better
+than it is. Jacksonville allowed 85.6 rushing yards a game in 2025, first in
+the league, and 3.94 yards per carry, fifth. The gap is that nobody ran on
+them.
+
+Add the per-opportunity form beside the existing one:
+
+    ypc_allowed = rush_yards_allowed / carries_faced
+    ypa_allowed = pass_yards_allowed / attempts_faced
+
+and adjust multiplicatively with fitted shrinkage instead of the hard clip at
+`FACTOR_CLIP = (0.8, 1.25)`:
+
+    proj_rate = player_rate * (def_rate / league_rate) ** k
+
+`k` is how much credit the matchup gets. The current clip is a crude `k` with
+no fitted value behind it. Fitting it is a one-parameter walk-forward and the
+cheapest real improvement available in that file.
+
+**5.8 Conditional samples, and the discipline of using them against yourself.**
+`projection.py` takes the last twelve games, half-life four, unconditionally.
+The useful query is the opposite: filter the log to weeks matching Sunday's
+configuration.
+
+| query | unconditional | conditional |
+|---|---|---|
+| Mayer receiving yards | 25.2 / game | 49.0, the four games Bowers missed |
+| McBride receiving yards | 72.9 / game | 77.4, Brissett's fourteen starts |
+| Pickens receiving yards | 84.1 / game | 77.1, with Lamb active |
+
+The third row is the one that matters. Pickens looked like a seventeen yard
+overlay on the raw average and turned out to be a ten yard one once the four
+games CeeDee Lamb missed came out of the sample. **The conditional split is a
+falsification tool first and an edge generator second.** Run it on every
+candidate and report both numbers so the shrinkage is visible rather than
+implicit.
+
+Mechanically: given the expected active set, filter the player's log to the
+weeks matching it, require n >= 3, and refuse rather than fall back to the
+unconditional mean when the sample is short. This runs on the same `join_asof`
+against depth and injury snapshots that 5.2 already needs, so it is a new
+query over planned infrastructure, not new infrastructure.
+
+**5.9 The snapshot archive is an availability feed, not only a price history.**
+Seventeen timestamped pulls exist and nothing reads the history. Two signals,
+both a diff over consecutive snapshots:
+
+- *Movement.* `line - open_line` is already a column and already populated.
+  274 of 500 Sunday prop lines had moved off their open.
+- *Appearance and disappearance.* A player who had a line and loses it is
+  being ruled out. A player holding a starting depth chart role with no line
+  in any snapshot is not expected to play. On 2026-09-11 Tua Tagovailoa held a
+  full Atlanta starter line at 07:41Z and 14:13Z and was gone by 19:01Z. That
+  was the entire story of Atlanta at Pittsburgh, and it arrived while every
+  `report_status` in `injuries.parquet` was still null.
+
+This is a better active gate than the depth chart one in 5.2, because it
+reflects what the book believes rather than what a Tuesday snapshot said, and
+it is roughly forty lines over data already on disk. It also serves Phase 4:
+availability and movement are market information in the same sense the closing
+number is.
+
+**5.10 Abstention is a feature and it needs a rule.** `project_rows` emits a
+projection for every row it can compute. A model obliged to price everything
+will price its own noise. The Week 1 dry run declined Chicago at Carolina
+outright, and the whole Green Bay backfield, the latter because Josh Jacobs is
+RB1 on the depth chart with no line in any snapshot while MarShawn Lloyd's
+rushing number fell ten yards. No amount of modelling resolves that
+contradiction; the honest output is nothing.
+
+Make the refusal explicit and logged, so declining is a recorded decision
+rather than an absence:
+
+- conditional sample below the 5.8 threshold
+- depth chart role and market availability disagree
+- volume line moved more than a set threshold since open
+- a required teammate's status unresolved at prediction time
+
+Definition of done: a sibling log or a `skipped` column carrying a reason
+string, so the Monday scoring run reports both what the model got wrong and
+what it declined to guess. A model that abstains is scoreable. A model that is
+silently absent is not.
+
+**5.11 What is still judgement, and the one piece worth measuring.** The dry
+run leaned on priors that are not yet method: that Kyler Murray's five game
+2025 was unrepresentative while Kirk Cousins' ten games were real, age decline,
+second year efficiency jumps for rookie backs. Sample-size-weighted regression
+to a positional mean and an age curve cover most of it.
+
+One is a genuine research question and it is answerable from tables you
+already have: **does running back target share rise when a backup quarterback
+starts?** That single claim carried the Bijan Robinson read, and `pbp` plus
+`player_stats_week` can settle it over 2020+ without buying anything. If it
+holds it is a feature; if it does not, a pick built on it was a story.
+
 > **Learning objectives:** count models and overdispersion, a Poisson whose
 > variance exceeds its mean is telling you the rate is not constant; hierarchical
 > shrinkage, how much to trust a player versus their position; distribution
@@ -769,6 +906,7 @@ the parameters it keeps.
 | weeks 4-7 | feature table, ridge, then GBM | feature engineering, regularisation, small-data reality |
 | weeks 7+ | market residual model, subset hypotheses | market efficiency, multiple comparisons |
 | weeks 8+ | props track: receptions first, own log, own namespace | count models, shrinkage, distribution scoring |
+| weeks 8+ | prop method 5.6-5.11: rate-space edge, per-opportunity DvP, conditional samples, snapshot differ, abstention | pre-registering a hypothesis; falsifying your own read; when not to bet |
 
 ---
 
@@ -1008,3 +1146,7 @@ Sunday and your snapshot was Tuesday, that timestamp is the difference between
   knowing before you start.
 - The shrinkage weights in Phase 5, and whether to pay for prop lines. The
   first is a modelling judgement; the second is a budget.
+- The value of `k` in 5.7, the conditional-sample threshold in 5.8, and the
+  movement threshold in 5.10. All three are fitted or chosen against a scored
+  record that does not exist yet. Picking them now would be inventing the
+  answer before the measurement.
