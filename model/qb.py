@@ -79,45 +79,17 @@ def qb_game_value(seasons: range | list[int] | None = None) -> pl.DataFrame:
 
 
 def qb_form(
-    values: pl.DataFrame, *, half_life: float = 8.0, leaky: bool = False
+    values: pl.DataFrame, *, half_life: float = 8.0, leaky: bool = False,
+    value_col: str = "epa_per_dropback",
 ) -> pl.DataFrame:
     """Rolling estimate of a quarterback's form ENTERING each game.
-
-    TASK 2b (part 2), and TASK 2c via the ``leaky`` flag.
-
-    Takes :func:`qb_game_value` output, returns it with one column added:
-
-        form    the quarterback's estimated quality entering this game
-
-    Two things decide whether this is correct:
-
-    THE SHIFT. With ``leaky=False`` (the default, and the only honest setting),
-    ``form`` for game N must depend only on games 1..N-1. With ``leaky=True`` it
-    may include game N. The flag exists so you can build both from one code path
-    and score them against each other; it is not an option you ever ship.
-
-    THE WINDOW. Fixed window or exponential decay, and how fast. That is a
-    modelling judgement about how quickly quarterback play actually changes, and
-    it is yours to make and defend. ``half_life`` is named for the exponential
-    reading; rename it if you go the other way.
-
-    Three mechanical traps, none of which will raise if you get them wrong:
-
-      * the whole expression chain needs ``.over("player_id")``, not just the
-        aggregation, or form bleeds across quarterbacks
-      * polars does NOT sort inside a window, so sort the frame first
-      * ``ewm_mean`` takes exactly one of ``half_life``, ``span`` or ``alpha``,
-        plus ``ignore_nulls``; ``rolling_mean`` uses ``min_samples``, not
-        ``min_periods``
-
-    DONE WHEN: ``test_form_ignores_the_current_game`` and
-    ``test_leaky_form_uses_the_current_game`` both pass. Those two tests are the
-    entire lesson of this phase.
     """
-
-    
-    raise NotImplementedError("Phase 2, tasks 2b and 2c")
-
+    qb = values.sort("player_id", "season", "week", descending=False, nulls_last=True)
+    form = pl.col(value_col).ewm_mean(half_life=half_life, ignore_nulls=True)
+    if not leaky:
+        form = form.shift(1)
+    qb = qb.with_columns(form=form.over("player_id"))
+    return qb
 
 def rookie_prior(player_ids: pl.Series) -> pl.DataFrame:
     """Prior expectation for a quarterback with no NFL games yet.
