@@ -3,12 +3,13 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .DS_Store
-# The raw parquet cache stays out of git (it lives on a GitHub Release, see
-# scripts/fetch_cache.py). Odds snapshots and derived tables are tracked:
-# they are small, and their commit history is the audit trail.
+# The raw parquet cache and the derived tables built from it stay out of git
+# (they live on a GitHub Release, see scripts/fetch_cache.py): both are
+# rebuilt weekly, and every rebuild of a binary would stay in the history.
+# Odds snapshots are tracked: they are small, and their commit history is the
+# audit trail.
 /data/*
 !/data/odds/
-!/data/derived/
 # ...except the run log, which is the one thing in there that is output rather
 # than data. `dashboard/scripts/daily.sh:15` points it at data/odds/, inside the
 # re-included directory, and `lines.yml` stages that directory unconditionally

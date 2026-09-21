@@ -238,7 +238,7 @@ export default function Research() {
               <div className="panel"><GameLogTable rows={filtered} columns={columns} setColumns={setColumns} statKey={statKey} line={line} available={log?.available} position={player.position} picked={picked} onPick={(id) => setPicked((p) => (p === id ? null : id))} important={important} /></div>
               <div className="panel">
                 <div className="panel-head" data-tour="research-peers"><h3>Among {player.position}s · {stat?.label ?? statKey} vs the volume behind it</h3><span className="hint">the highlighted face is {player.name}; dashed lines average the position's most-used players, not its whole roster</span></div>
-                <Defer minHeight={300} when={core}><PlayerScatter playerId={pid} position={player.position} statKey={statKey} season={(meta?.season ?? 2026) - 1} name={player.name} /></Defer>
+                <Defer minHeight={300} when={core}><PlayerScatter playerId={pid} position={player.position} statKey={statKey} season={meta?.stats_season ?? 2026} name={player.name} /></Defer>
               </div>
               <div className="panel"><MiniCharts rows={filtered} keys={miniKeys} setKeys={setMiniKeys} available={log?.available} position={player.position} onFocus={chooseStat} /></div>
               <div className="panel">
@@ -302,7 +302,7 @@ function PredictionSlot({ playerId, market, line, proj, statFmt }: { playerId: s
           <span className="pill">baseline</span> projects <b className="num">{proj.value}</b> <span className="muted">(50% band {proj.low}–{proj.high})</span>
           {line !== null && proj.edge !== null && <> · vs line <span className="num">{line}</span> <span className={`num ${proj.edge > 0 ? "over" : "under"}`}>{proj.edge > 0 ? "+" : ""}{proj.edge}</span></>}
           {proj.p_over !== null && <> · P(over) <b className="num">{Math.round(proj.p_over * 100)}%</b></>}
-          <div className="hint">Recency-weighted mean of the last {proj.n} games ({proj.base}){proj.factor !== 1 && proj.factor_ctx ? <> × {proj.factor} for the opponent (allows {proj.factor_ctx.allowed.toFixed(1)} vs league {proj.factor_ctx.league.toFixed(1)}, {proj.factor_ctx.rank ? `${shownRank(proj.factor_ctx.rank, proj.factor_ctx.n_teams ?? 32, "low")} of ${proj.factor_ctx.n_teams ?? 32} stingiest` : "unranked"})</> : null}. A reference, not a model.</div>
+          <div className="hint">Recency-weighted mean of the last {proj.n} games ({proj.base}){proj.factor !== 1 && proj.factor_ctx ? <> × {proj.factor} for the opponent ({proj.factor_ctx.blended ? `this season blended with last, ` : ""}allows {proj.factor_ctx.allowed.toFixed(1)} vs league {proj.factor_ctx.league.toFixed(1)}, {proj.factor_ctx.rank ? `${shownRank(proj.factor_ctx.rank, proj.factor_ctx.n_teams ?? 32, "low")} of ${proj.factor_ctx.n_teams ?? 32} stingiest` : "unranked"})</> : null}. A reference, not a model.</div>
         </div>
       )}
       {mine.length === 0 && !proj && <div className="hint">When the model logs a row to <code>data/derived/prop_predictions.parquet</code> for this player and market, it shows here next to the line. See the Predictions page for the schema.</div>}
@@ -327,7 +327,7 @@ function QuickPicks() {
   useEffect(() => {
     if (!team || !meta) { setRows([]); return; }
     let alive = true;
-    api.teamPlayers(team, meta.season - 1).then((r) => alive && setRows(r)).catch(() => alive && setRows([]));
+    api.teamPlayers(team, meta.stats_season).then((r) => alive && setRows(r)).catch(() => alive && setRows([]));
     return () => { alive = false; };
   }, [team, meta]);
   if (!meta) return null;

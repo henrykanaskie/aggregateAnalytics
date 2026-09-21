@@ -317,11 +317,22 @@ def build(seasons: list[int] | None = None, log=print) -> pl.DataFrame:
         tg = _team_game(df)
         frames.append(tg)
         log(f"[team] {s}: {tg.height} team-games")
-    out = pl.concat(frames, how="diagonal_relaxed").sort(["season", "week", "game_id", "team"])
+    out = pl.concat(frames, how="diagonal_relaxed")
+    # A rebuild of some seasons is an update of those seasons, not a new
+    # table. Writing only `frames` would drop every year not named, which is
+    # what turns `python -m dashboard.stats.team 2026` into 32 rows where
+    # there were 27 seasons.
+    if CACHE.exists():
+        kept = pl.read_parquet(CACHE).filter(~pl.col("season").is_in(seasons))
+        if kept.height:
+            out = pl.concat([kept, out], how="diagonal_relaxed")
+            log(f"[team] kept {kept.height} rows from the seasons not rebuilt")
+    out = out.sort(["season", "week", "game_id", "team"])
     CACHE.parent.mkdir(parents=True, exist_ok=True)
     out.write_parquet(CACHE, compression="zstd")
     log(f"[team] wrote {out.height} rows -> {CACHE}")
     team_games.cache_clear()
+    latest_season.cache_clear()
     return out
 
 
@@ -330,6 +341,22 @@ def team_games() -> pl.DataFrame:
     if not CACHE.exists():
         raise FileNotFoundError(f"{CACHE} missing. Run: python -m dashboard.stats.team")
     return pl.read_parquet(CACHE).filter(pl.col("team").is_not_null() & pl.col("opponent").is_not_null())
+
+
+@lru_cache(maxsize=1)
+def latest_season() -> int:
+    """The newest season this table has played games for.
+
+    The league-wide views (league table, defense vs. position, team usage)
+    used to default to ``CURRENT_SEASON - 1`` outright, which is right in
+    August and wrong from week 1 on: the Tuesday refresh puts the new season
+    in this table and nothing downstream noticed. Reading the season off the
+    data means those pages move with it instead of being pinned to last year.
+
+    The matchup and research pages do not read a single season at all: they
+    blend this one with the last (:mod:`dashboard.stats.blend`).
+    """
+    return int(team_games()["season"].max())
 
 
 def rates(df: pl.DataFrame, keys: list[str]) -> pl.DataFrame:

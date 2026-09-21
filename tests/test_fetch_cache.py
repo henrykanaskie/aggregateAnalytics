@@ -57,3 +57,22 @@ def test_repo_is_required(monkeypatch):
     monkeypatch.delenv("GITHUB_REPOSITORY", raising=False)
     with pytest.raises(SystemExit):
         fetch_cache._repo()
+
+
+def test_derived_tables_land_next_to_raw(monkeypatch, tmp_path):
+    # The derived tables ride on the same Release as `_derived.tar`, with
+    # paths under derived/, so the app finds them where config.DERIVED_DIR says.
+    monkeypatch.setenv("CACHE_REPO", "o/r")
+    payload = _tar_bytes("derived/player_angles.parquet", b"PAR1")
+    monkeypatch.setattr(fetch_cache, "release_assets",
+                        lambda repo, tag: [{"name": "_derived.tar", "size": len(payload), "url": "u"}])
+
+    def fake_download(asset, into: Path) -> Path:
+        out = into / asset["name"]
+        out.write_bytes(payload)
+        return out
+    monkeypatch.setattr(fetch_cache, "download", fake_download)
+    monkeypatch.setattr(sys, "argv", ["fetch_cache", "--dest", str(tmp_path)])
+
+    assert fetch_cache.main() == 0
+    assert (tmp_path / "derived" / "player_angles.parquet").read_bytes() == b"PAR1"

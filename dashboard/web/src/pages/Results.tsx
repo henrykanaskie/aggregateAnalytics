@@ -1,5 +1,7 @@
 import { useState } from "react";
-import { api5, GradeSummary } from "../api";
+import { api5, AngleTrackRecord, GradeSummary } from "../api";
+import { Link } from "react-router-dom";
+import { Outcome } from "../components/AngleReview";
 import { Banner, Field, Spinner } from "../components/common";
 import { fmtPct } from "../lib/format";
 import { useSticky } from "../lib/sticky";
@@ -40,6 +42,7 @@ export default function Results() {
         </div>
         {msg && <div className="small" style={{ marginTop: 8 }}>{msg}</div>}
       </div>
+      <AngleTrack />
       {data && data.n === 0 && <Banner kind="info">Nothing graded yet for this season. Lines can only be graded once their games have been played.</Banner>}
       {data && data.n > 0 && (
         <div className="grid grid-2">
@@ -69,6 +72,48 @@ export default function Results() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/** How the matchup angles have done: each kind of angle, graded game by game
+ *  on the number it was about (dashboard/stats/angle_grades.py). */
+function AngleTrack() {
+  const [weeks, setWeeks] = useSticky<number>("results.angleWeeks", 8);
+  const { data } = useQuery<AngleTrackRecord>(api5.angleTrack.url(weeks));
+  const [show, setShow] = useState(15);
+  if (!data) return null;
+  if (data.n === 0) return <Banner kind="info">No matchup angles graded yet. <code>python -m dashboard.stats.angle_grades</code> grades every finished week.</Banner>;
+  const Rate = ({ n, hits }: { n: number; hits: number }) => { const r = hits / n; return <span className={n < 5 ? "" : r >= 0.6 ? "over" : r <= 0.4 ? "under" : ""}>{fmtPct(r)}</span>; };
+  const span = data.weeks.length ? `${data.weeks[0][0]} W${data.weeks[0][1]} to ${data.weeks[data.weeks.length - 1][0]} W${data.weeks[data.weeks.length - 1][1]}` : "";
+  return (
+    <div className="grid grid-2" style={{ marginBottom: 12 }}>
+      <div className="panel">
+        <div className="panel-head">
+          <h3>Matchup angles · {data.hits} of {data.n} right (<Rate n={data.n} hits={data.hits} />){data.pushes ? <span className="muted"> · {data.pushes} pushes</span> : null}</h3>
+          <Field label="Last"><select className="input" value={weeks} onChange={(e) => setWeeks(Number(e.target.value))}>{[4, 8, 17, 40].map((w) => <option key={w} value={w}>{w} weeks</option>)}</select></Field>
+        </div>
+        <div className="small muted" style={{ marginBottom: 6 }}>{span} · {data.by_kind.map((k) => <span key={k.kind}>{k.kind} angles {k.hits}/{k.n} (<Rate n={k.n} hits={k.hits} />) </span>)}</div>
+        <div className="tbl-wrap" style={{ maxHeight: 420 }}><table className="tbl compact">
+          <thead><tr><th className="left">Angle</th><th>Kind</th><th>n</th><th>Right</th><th>Rate</th></tr></thead>
+          <tbody>{data.families.slice(0, show).map((f) => <tr key={f.family + f.kind + f.lean}><td className="left small">{f.family} <span className={`tiny ${f.lean === "over" ? "over" : f.lean === "under" ? "under" : "muted"}`}>{f.lean === "neutral" ? "" : f.lean}</span></td><td className="muted small">{f.kind}</td><td className="num muted">{f.n}</td><td className="num">{f.hits}</td><td className="num"><Rate n={f.n} hits={f.hits} /></td></tr>)}</tbody>
+        </table></div>
+        {data.families.length > show && <button className="btn" style={{ marginTop: 6 }} onClick={() => setShow(data.families.length)}>Show all {data.families.length}</button>}
+        <div className="hint" style={{ marginTop: 6 }}>An angle is right when the number it was about landed on the side it said: the team's rate against its own pre-game number, the player's game against his previous 16. Rebuilt from what was known before kickoff. Moves under 5% of the usual number (half a point for rates, 0.02 for EPA) are pushes and left out of n. Colour needs five or more.</div>
+      </div>
+      <div className="panel">
+        <div className="panel-head"><h3>Called it · the clearest recent hits</h3></div>
+        <div className="hint" style={{ marginBottom: 6 }}>Hits only, picked for how far the number moved. Examples of what a right call looks like, not a measure of how often they are right: the table is that.</div>
+        <div className="grid" style={{ gap: 6 }}>
+          {data.best.map((a, i) => (
+            <div key={i} className="tile" style={{ borderLeft: "3px solid var(--over)", padding: "8px 10px" }}>
+              <div className="small muted"><Link to={`/matchups?game=${a.game_id}`}>{a.season} W{a.week} · {a.offense} vs {a.defense}</Link></div>
+              <div style={{ fontWeight: 600 }}>{a.player_id ? <Link to={`/research?player=${a.player_id}`}>{a.title}</Link> : a.title}</div>
+              <Outcome a={a} />
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

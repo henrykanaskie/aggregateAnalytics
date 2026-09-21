@@ -44,5 +44,6 @@ if [ "$(date +%u)" = "2" ]; then
   echo "[ingest] Tuesday refresh"
   $PY data_handling/ingest.py --only schedules player_stats_week snap_counts pbp injuries pfr_def pfr_rec pfr_rush pfr_pass ngs_passing ngs_receiving ngs_rushing ff_opportunity ftn_charting participation --start 2026 --end 2026 --refresh
   $PY -m dashboard.stats.team 2026
+  $PY -m dashboard.stats.angle_grades || echo "[angles] grading failed; the matchup review keeps last week's"
 fi
 echo "=== $(date -u +%FT%TZ) daily done"

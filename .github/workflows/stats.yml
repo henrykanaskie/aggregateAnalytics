@@ -2,9 +2,9 @@ name: stats
 
 # Weekly, Tuesday 10:00 UTC (6am ET): nflverse has Monday night's games by
 # then. Refreshes the current season in the parquet cache, rebuilds the
-# derived tables, grades the weeks that have finished, re-uploads the cache to
-# the data-cache Release, commits data/derived/ and data/odds/graded/. Run it
-# by hand with full=true once to seed the cache.
+# derived tables, grades the weeks that have finished, re-uploads the cache and
+# the derived tables to the data-cache Release, commits data/odds/graded/. Run
+# it by hand with full=true once to seed the cache.
 on:
   schedule:
     - cron: "0 10 * * 2"
@@ -49,30 +49,29 @@ jobs:
       # final), and Render keeps ~10 days of those. This checkout has them all.
       - name: Grade the weeks that have finished
         run: python -m dashboard.odds.grading
+      # After the lines, so a player angle can say where its prop closed.
+      - name: Grade the matchup angles of the weeks that have finished
+        run: python -m dashboard.stats.angle_grades
       - name: Upload the cache
         run: bash scripts/push_cache.sh
-      - name: Commit derived tables and grades
+      - name: Commit grades
         run: |
           git config user.name "Henry Kanaskie"
           git config user.email "howenkan13@gmail.com"
-          # Separate adds on purpose: one `git add` over both paths stages
-          # neither when data/odds/graded is absent, which it is until the
-          # first week grades.
-          git add data/derived || true
+          # `|| true`: data/odds/graded is absent until the first week grades.
           git add data/odds/graded || true
           if git diff --cached --quiet; then
-            echo "derived tables and grades unchanged"; exit 0
+            echo "grades unchanged"; exit 0
           fi
-          git commit -m "Derived tables and grades $(date -u +'%Y-%m-%d')"
+          git commit -m "Grades $(date -u +'%Y-%m-%d')"
           git pull --rebase origin ${{ github.ref_name }}
           git push
-      # Every run uploads a fresh cache, and Render only reads the cache at
-      # build time, so every run wants a build. A derived-table push is meant
-      # to trigger one, but that hangs on the service's Auto-Deploy setting,
-      # and a refresh that only moved the cache (a coordinator rescrape, say)
-      # commits nothing and would otherwise be invisible until the next build
-      # for some other reason. The service's Deploy Hook asks for the build
-      # directly. Optional: with no RENDER_DEPLOY_HOOK secret this is skipped.
+      # Every run uploads a fresh cache and fresh derived tables, and Render
+      # only reads the Release at build time, so every run wants a build.
+      # Nothing this job commits triggers one (grades live under data/odds/,
+      # which the app syncs itself), so the service's Deploy Hook asks for it
+      # directly. Without the RENDER_DEPLOY_HOOK secret this is skipped, and
+      # the site keeps last week's tables until the next code push builds.
       - name: Redeploy Render
         env:
           HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
