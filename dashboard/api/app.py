@@ -42,6 +42,7 @@ from ..stats.catalog import GROUPS, catalog_json
 from ..stats import coaches as coaches_mod
 from ..stats import context as ctx_mod
 from ..stats import angles as ang_mod
+from ..stats import angle_grades as ag_mod
 from ..stats import blend as blend_mod
 from ..stats import matchups as mu_mod
 from ..stats import extras as ex_mod
@@ -456,6 +457,20 @@ def dvp_factors_api(position: str, stat: str, since: int = 2016):
 @app.get("/api/grading/summary")
 def grading_summary(season: int | None = None):
     return grading.summary(season)
+
+
+@app.get("/api/grading/angles/track-record")
+def angle_track_record(weeks: int = Query(8, ge=1, le=60)):
+    """How each kind of matchup angle has done over the last ``weeks`` graded
+    weeks: the number the angle was about, did it move the way it said."""
+    return ag_mod.track_record(weeks)
+
+
+@app.get("/api/grading/angles/{game_id}")
+def angle_review(game_id: str):
+    """One played game's angles, rebuilt as of kickoff, each with what
+    actually happened. Empty until the game has been graded."""
+    return ag_mod.for_game(game_id)
 
 
 class GradeRequest(BaseModel):

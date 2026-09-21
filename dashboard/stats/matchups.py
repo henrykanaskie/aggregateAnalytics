@@ -559,10 +559,12 @@ def _lvl(dim_levels: list[dict], name: str) -> dict | None:
     return next((l for l in dim_levels if l["level"] == name), None)
 
 
-def player_angles(side_players: list[dict], deff: dict | None, def_team: str, since: int) -> list[dict]:
+def player_angles(side_players: list[dict], deff: dict | None, def_team: str, since: int,
+                  before: tuple[int, int] | None = None) -> list[dict]:
     """For the QB, top RBs, WRs and TEs on the offense: pull their play-level
     splits and compare against what this defense does most. Also each
-    player's history against this opponent."""
+    player's history against this opponent. ``before=(season, week)`` reads
+    only games before that one (see :mod:`dashboard.stats.angle_grades`)."""
     from .gamelog import game_log
     from .pbp import splits
 
@@ -586,7 +588,7 @@ def player_angles(side_players: list[dict], deff: dict | None, def_team: str, si
         pid = p["player_id"]
         try:
             if pos == "QB":
-                sp = splits(pid, "pass", ["pressure", "blitz", "man_zone", "play_action", "coverage"], since=since)
+                sp = splits(pid, "pass", ["pressure", "blitz", "man_zone", "play_action", "coverage"], since=since, before=before)
                 dims = {x["key"]: x["levels"] for x in sp["dims"]}
                 if "pressure" in dims and (hi(pressr) or hi(blitzr)):
                     pr, cl = _lvl(dims["pressure"], "Pressured"), _lvl(dims["pressure"], "Clean pocket")
@@ -619,7 +621,7 @@ def player_angles(side_players: list[dict], deff: dict | None, def_team: str, si
                             f"EPA per dropback {e2:+.2f} vs two-high, {e1:+.2f} vs single-high. {def_team} two-high rate {_fmt(c2h,'def_two_high_rate')} (#{c2hr}).",
                             "over" if e2 > e1 + 0.05 else "under" if e2 < e1 - 0.1 else "neutral", ["passing", "QB"], 1)
             elif pos == "RB":
-                sp = splits(pid, "rush", ["box", "ngs_box"], since=since)
+                sp = splits(pid, "rush", ["box", "ngs_box"], since=since, before=before)
                 dims = {x["key"]: x["levels"] for x in sp["dims"]}
                 lv = dims.get("box") or dims.get("ngs_box")
                 if lv and (hi(boxr, 8) or lo(boxr, 8)):
@@ -630,7 +632,7 @@ def player_angles(side_players: list[dict], deff: dict | None, def_team: str, si
                             f"{st['ypc']:.1f} yds/carry vs 8+ in the box ({st['plays']} carries), {li['ypc']:.1f} vs light boxes. {def_team} averages {_fmt(box,'def_box_avg')} in the box (#{boxr}).",
                             ("under" if st["ypc"] < li["ypc"] - 0.7 else "neutral") if heavy else ("over" if li["ypc"] > st["ypc"] + 0.7 else "neutral"), ["rushing", "RB"], 1)
             elif pos in ("WR", "TE"):
-                sp = splits(pid, "rec", ["man_zone"], since=since)
+                sp = splits(pid, "rec", ["man_zone"], since=since, before=before)
                 dims = {x["key"]: x["levels"] for x in sp["dims"]}
                 if "man_zone" in dims and (hi(manr, 8) or lo(manr, 8)):
                     m, z = _lvl(dims["man_zone"], "Man Coverage"), _lvl(dims["man_zone"], "Zone Coverage")
@@ -646,6 +648,8 @@ def player_angles(side_players: list[dict], deff: dict | None, def_team: str, si
             gl = game_log(pid)
             key = {"QB": "passing_yards", "RB": "rushing_yards", "WR": "receiving_yards", "TE": "receiving_yards"}[pos]
             recent = gl.filter(pl.col("season") >= since)
+            if before is not None:
+                recent = recent.filter((pl.col("season") < before[0]) | ((pl.col("season") == before[0]) & (pl.col("week") < before[1])))
             vs = recent.filter(pl.col("opponent") == def_team)
             if vs.height >= 2 and recent.height >= 8:
                 a, b = float(vs[key].mean()), float(recent[key].mean())

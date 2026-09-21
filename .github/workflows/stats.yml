@@ -49,6 +49,9 @@ jobs:
       # final), and Render keeps ~10 days of those. This checkout has them all.
       - name: Grade the weeks that have finished
         run: python -m dashboard.odds.grading
+      # After the lines, so a player angle can say where its prop closed.
+      - name: Grade the matchup angles of the weeks that have finished
+        run: python -m dashboard.stats.angle_grades
       - name: Upload the cache
         run: bash scripts/push_cache.sh
       - name: Commit derived tables and grades

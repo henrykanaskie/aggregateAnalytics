@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { api, api4, Angle, DefPlayer, GameMatchup, MatchupSideFull, ScheduleGame, TeamMetric } from "../api";
+import { api, api4, api5, Angle, AngleTrackRecord, DefPlayer, GameMatchup, GradedAngle, MatchupSideFull, ScheduleGame, TeamMetric } from "../api";
+import { AngleReview, TrackChip, TrackIndex, trackIndex, trackKey } from "../components/AngleReview";
 import { Banner, Field, Headshot, SampleBanner, Spinner, TeamTag } from "../components/common";
 import { fmtLine, fmtOdds, fmtPct, fmtSpread, fmtStat } from "../lib/format";
 import { gameWeek, warm } from "../lib/prefetch";
@@ -73,6 +74,12 @@ function GameView({ d }: { d: GameMatchup }) {
   const dk = d.lines.filter((l) => l.book === "draftkings");
   const line = (market: string, side: string) => dk.find((l) => l.market === market && l.side === side);
   const hs = line("spreads", g.home_team), tot = line("totals", "Over"), hm = line("h2h", g.home_team), am = line("h2h", g.away_team);
+  // A played game gets its angles graded; every game gets each angle's
+  // recent record next to it.
+  const played = g.home_score !== null && g.home_score !== undefined;
+  const { data: review } = useQuery<GradedAngle[]>(played ? api5.angleReview.url(g.game_id) : null);
+  const { data: track } = useQuery<AngleTrackRecord>(api5.angleTrack.url(TRACK_WEEKS));
+  const tIdx = useMemo(() => trackIndex(track), [track]);
   return (
     <div className="grid" style={{ gap: 14 }}>
       <SampleBanner sources={d.sources} />
@@ -91,8 +98,11 @@ function GameView({ d }: { d: GameMatchup }) {
         <div className="hint" style={{ marginTop: 8 }}>Team numbers: {blendNote(d.blend)} Each defense is also read against this offense: where teams consistently play an offense differently (lighter boxes, more two-high, less pressure), the "Here" column projects this defense's number for this game, and the angles use that. Who gets the ball and who covers are {d.season_used} numbers{d.season_used < g.season ? ` until ${g.season} has four games` : ""}. Ranks are among 32 teams.</div>
       </div>
 
+      {played && review && review.length > 0 && <AngleReview rows={review} home={g.home_team} away={g.away_team} score={`${g.away_team} ${g.away_score}, ${g.home_team} ${g.home_score}`} />}
+      {played && review && review.length === 0 && <Banner kind="info">This game is final but its angles have not been graded yet. The Tuesday job does it once the box scores land (<code>python -m dashboard.stats.angle_grades</code>).</Banner>}
+
       <div className="grid" style={{ gap: 14 }} data-tour="matchup-sides">
-        {d.sides.map((s) => <SideView key={s.offense} s={s} metrics={d.metrics} labels={d.dvp_labels} usageSeason={d.season_used} />)}
+        {d.sides.map((s) => <SideView key={s.offense} s={s} metrics={d.metrics} labels={d.dvp_labels} usageSeason={d.season_used} track={track ? tIdx : null} />)}
       </div>
 
       <div className="grid grid-2">
@@ -161,7 +171,9 @@ function implied(g: ScheduleGame, homeSpread: number | null, total: number | nul
   const home = (total - homeSpread) / 2, away = total - home;
   return `${g.home_team} ${home.toFixed(1)} · ${g.away_team} ${away.toFixed(1)}`;
 }
-function AngleGrid({ title, angles, empty }: { title: string; angles: Angle[]; empty: string }) {
+const TRACK_WEEKS = 8;
+
+function AngleGrid({ title, angles, empty, track, offense, defense }: { title: string; angles: Angle[]; empty: string; track: TrackIndex | null; offense: string; defense: string }) {
   return (
     <div style={{ marginBottom: 12 }}>
       <h3 style={{ marginBottom: 6 }}>{title} <span className="faint">· {angles.length}</span></h3>
@@ -170,7 +182,7 @@ function AngleGrid({ title, angles, empty }: { title: string; angles: Angle[]; e
         <div className="grid grid-3">
           {angles.map((a, i) => (
             <div key={i} className="tile" style={{ borderLeft: `3px solid var(--${a.lean === "over" ? "over" : a.lean === "under" ? "under" : "border-2"})` }}>
-              <div className="k"><span className={leanClass(a.lean)}>{a.lean === "neutral" ? "check" : `lean ${a.lean}`}</span> · {a.tags.join(", ")}{a.strength >= 2 ? " · strong" : ""}</div>
+              <div className="k" style={{ display: "flex", justifyContent: "space-between", gap: 6 }}><span><span className={leanClass(a.lean)}>{a.lean === "neutral" ? "check" : `lean ${a.lean}`}</span> · {a.tags.join(", ")}{a.strength >= 2 ? " · strong" : ""}</span>{track && <TrackChip rec={track.get(trackKey(a, offense, defense))} weeks={TRACK_WEEKS} />}</div>
               <div style={{ fontWeight: 600, marginTop: 2 }}>{a.player_id ? <Link to={`/research?player=${a.player_id}`}>{a.title}</Link> : a.title}</div>
               <div className="small muted" style={{ marginTop: 2 }}>{a.detail}</div>
             </div>
@@ -182,7 +194,7 @@ function AngleGrid({ title, angles, empty }: { title: string; angles: Angle[]; e
 }
 const rate = (r: number | null | undefined) => r === null || r === undefined ? <span className="muted">–</span> : <span className={r >= 0.6 ? "over" : r <= 0.4 ? "under" : ""}>{fmtPct(r)}</span>;
 
-function SideView({ s, metrics, labels, usageSeason }: { s: MatchupSideFull; metrics: TeamMetric[]; labels: Record<string, string>; usageSeason: number }) {
+function SideView({ s, metrics, labels, usageSeason, track }: { s: MatchupSideFull; metrics: TeamMetric[]; labels: Record<string, string>; usageSeason: number; track: TrackIndex | null }) {
   const mdefs = useMemo(() => new Map(metrics.map((m) => [m.key, m])), [metrics]);
   const os = s.offense_block.season, ds = s.defense_block.season;
   // Usual number and rank first; "Here" is the projection against the other
@@ -204,8 +216,8 @@ function SideView({ s, metrics, labels, usageSeason }: { s: MatchupSideFull; met
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}><TeamTag abbr={s.offense} /> <b>offense</b> <span className="muted">vs</span> <TeamTag abbr={s.defense} /> <b>defense</b></div>
         <span className="hint">{s.offense_block.coach ? <Link to={`/coaches?coach=${encodeURIComponent(s.offense_block.coach)}`}>{s.offense_block.coach}</Link> : null} · {s.defense_block.coach ? <Link to={`/coaches?coach=${encodeURIComponent(s.defense_block.coach)}`}>{s.defense_block.coach}</Link> : null}</span>
       </div>
-      <AngleGrid title="Team angles" angles={s.angles} empty="No strong collisions between ranked tendencies on this side." />
-      <AngleGrid title="Player angles · each key player's own splits against what this defense does most" angles={s.player_angles} empty="No key player has a split that lines up with a strong tendency of this defense." />
+      <AngleGrid title="Team angles" angles={s.angles} empty="No strong collisions between ranked tendencies on this side." track={track} offense={s.offense} defense={s.defense} />
+      <AngleGrid title="Player angles · each key player's own splits against what this defense does most" angles={s.player_angles} empty="No key player has a split that lines up with a strong tendency of this defense." track={track} offense={s.offense} defense={s.defense} />
       <div className="grid grid-3">
         <div>
           <h3 style={{ marginBottom: 6 }}>{s.offense} offense · {blendLabel(s.offense_block.blend, os?.season as number)}</h3>

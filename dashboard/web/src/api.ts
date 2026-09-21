@@ -204,11 +204,19 @@ export interface TeammatePresence { teammates: Teammate[]; presence: Record<stri
 export interface CorrRow { with: string; player_id: string | null; name?: string; position?: string; stat: string; r: number; n: number; }
 export interface DvpFactors { stat: string; dvp_stat: string | null; factors: Record<string, Record<string, number>>; }
 export interface GradeSummary { n: number; weeks: [number, number][]; by_book: { book: string; n: number; over_rate: number; push_rate: number; mae: number; bias: number }[]; by_market: { market: string; n: number; over_rate: number; push_rate: number; mae: number; bias: number }[]; signals: { signal: string; n: number; hit_rate: number }[]; movement: { signal: string; n: number; hit_rate: number }[]; models: { model_version: string; n: number; hit_rate: number | null; n_strong: number; hit_rate_strong: number | null; pred_mae: number; line_mae: number | null }[]; }
+// A matchup angle rebuilt as of kickoff and checked against the game: the
+// number it was about (measure), where that number usually sits (baseline) and
+// where it landed (actual). dashboard/stats/angle_grades.py.
+export interface GradedAngle { season: number; week: number; game_id: string; offense: string; defense: string; kind: "team" | "player"; family: string; title: string; detail: string; lean: "over" | "under" | "neutral"; strength: number; tags: string[]; player_id: string | null; player: string | null; position: string | null; team: string | null; measure: string; direction: "up" | "down"; baseline: number | null; baseline_label: string; actual: number | null; fmt: string; verdict: "hit" | "miss" | "push"; line: number | null; line_result: "over" | "under" | "push" | null; market: string | null; }
+export interface AngleFamily { family: string; kind: "team" | "player"; n: number; hits: number; rate: number; lean: string; }
+export interface AngleTrackRecord { weeks: [number, number][]; n: number; hits: number; pushes: number; families: AngleFamily[]; by_kind: { kind: string; n: number; hits: number; rate: number }[]; best: GradedAngle[]; }
 export const api5 = {
   teammates: ep<TeammatePresence>()((id: string) => `/api/players/${id}/teammates`),
   correlations: ep<{ stat: string; rows: CorrRow[] }>()((id: string, stat: string) => `/api/players/${id}/correlations${qs({ stat })}`),
   dvpFactors: ep<DvpFactors>()((position: string, stat: string, since: number) => `/api/dvp/factors${qs({ position, stat, since })}`),
   gradeSummary: ep<GradeSummary>()((season?: number) => `/api/grading/summary${qs({ season })}`),
+  angleReview: ep<GradedAngle[]>()((gameId: string) => `/api/grading/angles/${gameId}`),
+  angleTrack: ep<AngleTrackRecord>()((weeks = 8) => `/api/grading/angles/track-record${qs({ weeks })}`),
   gradeRun: async (season: number, week: number, include_sample = false) => {
     const r = await fetch("/api/grading/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ season, week, include_sample }) });
     invalidate(GRADED);
