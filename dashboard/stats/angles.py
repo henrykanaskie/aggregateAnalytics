@@ -91,9 +91,9 @@ def _row(r: dict) -> dict:
 def build(season: int = CURRENT_SEASON, log=print) -> pl.DataFrame:
     """Every angle for every ordered pair of teams, on the blended numbers
     as they stand now."""
-    table = blended(season)
+    ranked = blended(season)
     through = through_week(season)
-    rows_by_team = {r["team"]: r for r in table.to_dicts()}
+    rows_by_team = {r["team"]: r for r in ranked.to_dicts()}
     teams = sorted(rows_by_team)
     since = since_for(season)
     log(f"[angles] {len(teams)} teams, {season} through week {through}")
@@ -113,7 +113,7 @@ def build(season: int = CURRENT_SEASON, log=print) -> pl.DataFrame:
         for def_t in teams:
             if def_t == off_t:
                 continue
-            _, deff, _ = matchup_view(rows_by_team[off_t], rows_by_team[def_t], table)
+            _, deff, _ = matchup_view(rows_by_team[off_t], rows_by_team[def_t], ranked)
             for a in compute_angles(players[off_t], _row(deff), def_t, since=since):
                 rows.append({"season": season, "through_week": through, "offense": off_t, "defense": def_t,
                              "player_id": a["player_id"], "player": a["player"], "position": a["position"],
