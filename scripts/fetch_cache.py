@@ -1,9 +1,9 @@
 """Download the parquet cache from the repo's `data-cache` GitHub Release.
 
 The cache is a gigabyte or so and does not belong in git. It lives as one
-tarball per dataset on a Release, uploaded weekly by stats.yml, and pulled
-down by every deploy build so the running app has nothing on disk it cannot
-recreate. Standard library only, so it runs before `pip install`.
+tarball per dataset on a Release, with the derived tables built from it in
+`_derived.tar`, uploaded weekly by stats.yml, and pulled down by every deploy
+build so the running app has nothing on disk it cannot recreate. Standard library only, so it runs before `pip install`.
 
     python scripts/fetch_cache.py            # into $NFL_DATA_DIR or ./data
     python scripts/fetch_cache.py --dest /tmp/cache

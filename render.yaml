@@ -3,8 +3,10 @@
 # the dashboard when prompted.
 #
 # Lines snapshots do not trigger a rebuild (see buildFilter); the running app
-# syncs data/odds from GitHub on wake and every 30 minutes. Code and derived
-# table pushes do rebuild, which is a handful of times a week.
+# syncs data/odds from GitHub on wake and every 30 minutes. Code pushes
+# rebuild, and so does the weekly stats run, through the Deploy Hook: the
+# derived tables live on the data-cache Release with the parquet cache, and a
+# build is when the host fetches them.
 services:
   - type: web
     name: aggregateanalytics
