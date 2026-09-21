@@ -11,7 +11,7 @@ export interface MarketDef { key: string; label: string; stat: string | null; ki
 export interface SourceStatus { last_pull: string | null; pulls: number; rows: number; books: number; }
 export interface OddsStatus { has_odds_api_key: boolean; status: Record<string, { props?: SourceStatus; games?: SourceStatus }>; oddsapi_usage: { at: string; remaining: number | null; used: number | null; last_cost: number | null; note: string } | null; }
 export interface Meta {
-  season: number; week: number; data_version?: string; default_since: number; teams: Team[]; stats: StatDef[]; stat_groups: string[];
+  season: number; week: number; stats_season: number; data_version?: string; default_since: number; teams: Team[]; stats: StatDef[]; stat_groups: string[];
   markets: MarketDef[]; books: Record<string, string>; odds: OddsStatus; datasets: string[];
   split_dims: { key: string; label: string; roles: string[]; since: number; note: string }[];
   team_metrics: TeamMetric[]; team_table_ready: boolean; current_coaches: Record<string, string>;
@@ -139,31 +139,39 @@ export interface Splits { role: "rush" | "rec" | "pass"; n_plays: number; since:
 export interface SplitGames { role: string; dim: string; label?: string; games: { game_id: string; season: number; week: number; season_type: string; opponent: string; levels: Record<string, Record<string, number | null>> }[]; }
 export interface TeamMetric { key: string; label: string; fmt: "pct" | "dec1" | "dec2" | "int"; side: "off" | "def"; since: number; note: string; good: "high" | "low" | "none"; }
 export type TeamSeasonRow = Record<string, number | string | null> & { season: number; team: string; games: number; n_teams: number };
-export interface TeamTendencies { team: string; since: number; seasons: TeamSeasonRow[]; games: (Record<string, number | string | boolean | null> & { season: number; week: number; game_id: string; opponent: string; home: boolean })[]; coaches: { season: number; coach: string; games: number; wins: number; losses: number }[]; coordinators: { season: number; OC: string | null; DC: string | null }[]; current_coach: string | null; metrics: TeamMetric[]; }
-export interface LeagueTendencies { season: number; teams: TeamSeasonRow[]; metrics: TeamMetric[]; coaches: Record<string, string>; }
+/** How a blended row was made: this season so far weighed against the last
+ *  one. ``weights`` is this season's share per kind of number. */
+export interface BlendInfo { season: number; prior_season: number; games: number; prior_games: number; through_week: number; weights: { scheme: number; tendency: number; efficiency: number }; off_staff_changed?: boolean; def_staff_changed?: boolean; games_min?: number; }
+/** One number read against a specific opponent: the team's usual, what the
+ *  other side draws from everyone, and the projection for this game. */
+export interface H2HShift { key: string; label: string; fmt: string; side: "off" | "def"; usual: number; usual_rank: number | null; drawn: number; drawn_rank: number; expected: number; expected_rank: number; n_teams: number; by: string; moved: number; }
+export interface TeamTendencies { now?: (TeamSeasonRow & { blend: BlendInfo }) | null; team: string; since: number; seasons: TeamSeasonRow[]; games: (Record<string, number | string | boolean | null> & { season: number; week: number; game_id: string; opponent: string; home: boolean })[]; coaches: { season: number; coach: string; games: number; wins: number; losses: number }[]; coordinators: { season: number; OC: string | null; DC: string | null }[]; current_coach: string | null; metrics: TeamMetric[]; }
+export interface LeagueTendencies { season: number; teams: TeamSeasonRow[]; metrics: TeamMetric[]; coaches: Record<string, string>; blended: boolean; can_blend: boolean; blend: BlendInfo | null; }
 export type CoachRoleKey = "HC" | "OC" | "DC";
 export interface CoachRole { key: CoachRoleKey; label: string; sides: string[]; attribution: "game" | "season"; }
 export interface CoachSummary { role: CoachRoleKey; coach: string; first_season: number; last_season: number; seasons: number; games: number; wins: number; losses: number; teams: string[]; current_team: string | null; has_history: boolean; }
 export interface Fingerprint { key: string; label: string; side: string; fmt: string; good: string; mean_pct: number; seasons: number; top_third: number; bottom_third: number; career: number | null; }
 export interface CoachProfile { coach: string; role: CoachRoleKey; role_label: string; sides: string[]; attribution: "game" | "season"; also: { role: CoachRoleKey; label: string; seasons: number; first_season: number; last_season: number }[]; season_roles: Partial<Record<CoachRoleKey, number>>; current_team: string | null; seasons: (TeamSeasonRow & { coach: string; held: CoachRoleKey; win: number; loss: number; tie: number; ppg: number | null; opp_ppg: number | null })[]; career: Record<string, number | null>; fingerprint: Fingerprint[]; metrics: TeamMetric[]; }
 
-export interface MatchupSide { team: string; season: TeamSeasonRow | null; last4: Record<string, number | null> | null; coach: string | null; }
-export interface Matchup { season_used: number; team: MatchupSide; opponent: MatchupSide; metrics: TeamMetric[]; }
+export interface MatchupSide { team: string; season: TeamSeasonRow | null; last4: Record<string, number | null> | null; coach: string | null; blend: BlendInfo | null; h2h: H2HShift[]; }
+export interface Matchup { season: number; week: number; season_used: number; team: MatchupSide; opponent: MatchupSide; metrics: TeamMetric[]; }
 
 export const api2 = {
   matchup: ep<Matchup>()((team: string, opponent: string) => `/api/matchup${qs({ team, opponent })}`),
   splits: ep<Splits>()((id: string, o: { role?: string; dim?: string[]; since?: number; season_type?: string; stat?: string }) => `/api/players/${id}/splits${qs(o)}`),
   splitGames: ep<SplitGames>()((id: string, role: string, dim: string, since: number) => `/api/players/${id}/splits/games${qs({ role, dim, since })}`),
   teamTendencies: ep<TeamTendencies>()((team: string, since: number, season_type = "REG") => `/api/teams/${team}/tendencies${qs({ since, season_type })}`),
-  league: ep<LeagueTendencies>()((season: number) => `/api/tendencies/league${qs({ season })}`),
+  // `blend` is only sent to turn it off, so the default request stays one URL
+  // for the prefetcher and the page alike.
+  league: ep<LeagueTendencies>()((season: number, blend = true) => `/api/tendencies/league${qs({ season, blend: blend ? undefined : false })}`),
   coaches: ep<CoachSummary[]>()((role: string = "HC") => `/api/coaches?role=${role}`),
   coach: ep<CoachProfile>()((name: string, role: string = "HC") => `/api/coaches/${encodeURIComponent(name)}?role=${role}`),
 };
 
 // --- context: defense vs position, usage, injuries --------------------------
 export type DvpRow = Record<string, number | string | null> & { defense: string; games: number; n_teams: number };
-export interface Dvp { position: string; season: number; stats: string[]; labels: Record<string, string>; season_row: DvpRow | null; last4: Record<string, number> | null; log: Record<string, any>[]; }
-export interface DvpLeague { season: number; position: string; stats: string[]; labels: Record<string, string>; league: DvpRow[]; team: string; log: Record<string, any>[]; }
+export interface Dvp { blended?: boolean; prior_season?: number; position: string; season: number; stats: string[]; labels: Record<string, string>; season_row: DvpRow | null; last4: Record<string, number> | null; log: Record<string, any>[]; }
+export interface DvpLeague { blended?: boolean; prior_season?: number | null; season: number; position: string; stats: string[]; labels: Record<string, string>; league: DvpRow[]; team: string; log: Record<string, any>[]; }
 export interface UsageRow { depth_rank?: number | null; stats_team?: string | null; new_to_team?: boolean; player_id: string; player_display_name: string; position: string; games: number; targets: number; receptions: number; receiving_yards: number; receiving_tds: number; carries: number; rushing_yards: number; rushing_tds: number; attempts: number; passing_yards: number; passing_tds: number; fantasy_points_ppr: number; receiving_air_yards: number; target_share: number | null; carry_share: number | null; air_share: number | null; targets_pg: number; carries_pg: number; ppr_pg: number; touches_pg: number; team_games: number; }
 export interface UsageTop { name: string; player_id: string; games: number; target_share: number; carry_share: number; targets_pg: number; carries_pg: number; touches_pg: number; ppr_pg: number; }
 export interface CoachUsageRow { team: string; season: number; team_games: number; rb1?: UsageTop; wr1?: UsageTop; te1?: UsageTop; rb2_carry_share?: number; rb_target_share: number | null; }
@@ -171,7 +179,7 @@ export interface InjuryRow { season: number; week: number; game_type: string; te
 
 export const api3 = {
   matchup: ep<Matchup & { dvp?: Dvp }>()((team: string, opponent: string, position?: string | null) => `/api/matchup${qs({ team, opponent, position })}`),
-  dvp: ep<DvpLeague>()((team: string, position: string, season: number) => `/api/teams/${team}/dvp${qs({ position, season })}`),
+  dvp: ep<DvpLeague>()((team: string, position: string, season: number, blend = true) => `/api/teams/${team}/dvp${qs({ position, season, blend: blend ? undefined : false })}`),
   usage: ep<{ team: string; season: number; rows: UsageRow[] }>()((team: string, season: number) => `/api/teams/${team}/usage${qs({ season })}`),
   coachUsage: ep<{ coach: string; rows: CoachUsageRow[] }>()((name: string, role: string = "HC") => `/api/coaches/${encodeURIComponent(name)}/usage?role=${role}`),
   playerInjuries: ep<{ rows: InjuryRow[] }>()((id: string) => `/api/players/${id}/injuries`),
@@ -183,24 +191,32 @@ export interface Angle { title: string; detail: string; lean: "over" | "under" |
 export interface DefPlayer { status?: string | null; injury?: string | null; stats_team?: string | null; new_to_team?: boolean; player_id: string | null; name: string; position: string; group: string; games: number; snap_pct: number; headshot: string | null; targets: number; targets_pg: number | null; catch_rate: number | null; yards_allowed: number; yards_per_target: number | null; td_allowed: number | null; ints: number | null; adot_faced: number | null; pressures: number | null; sacks: number | null; tackles: number | null; missed_tackle_pct: number | null; }
 export interface MatchupSideFull { offense: string; defense: string; offense_block: MatchupSide; defense_block: MatchupSide; dvp: Record<string, { season_row: DvpRow | null; last4: Record<string, number> | null; stats: string[] }>; angles: Angle[]; player_angles: Angle[]; offense_personnel: (UsageRow & { headshot?: string | null; status?: string | null; injury?: string | null })[]; defense_personnel: DefPlayer[]; }
 export interface H2H { game_id: string; season: number; week: number; game_type: string; gameday: string; home_team: string; away_team: string; roof: string | null; a: string; b: string; a_home: boolean; a_pts: number; b_pts: number; margin: number; total: number; a_spread: number | null; total_line: number | null; a_cover: boolean | null; over: boolean | null; a_coach: string | null; b_coach: string | null; a_qb: string | null; b_qb: string | null; stars: { team: string; player_id: string; name: string; position: string; line: string; ppr: number }[]; }
-export interface GameMatchup { game: ScheduleGame & Record<string, any>; season_used: number; sides: MatchupSideFull[]; metrics: TeamMetric[]; dvp_labels: Record<string, string>; history: H2H[]; venue: Record<string, any>; props: (BoardRow & { status?: string | null })[]; lines: any[]; predictions: GamePrediction[]; injuries: Record<string, InjuryRow[]>; sources: string[]; }
+export interface GameMatchup { game: ScheduleGame & Record<string, any>; season_used: number; blend: BlendInfo | null; sides: MatchupSideFull[]; metrics: TeamMetric[]; dvp_labels: Record<string, string>; history: H2H[]; venue: Record<string, any>; props: (BoardRow & { status?: string | null })[]; lines: any[]; predictions: GamePrediction[]; injuries: Record<string, InjuryRow[]>; sources: string[]; }
 export const api4 = {
   gameMatchup: ep<GameMatchup>()((gameId: string, includeSample = false) => `/api/matchups/${gameId}${qs({ include_sample: includeSample })}`),
 };
 
 // --- projections, grading, teammates, correlations, adjustment, alerts -------------
-export interface Proj { value: number; base: number; median: number; sd: number; factor: number; factor_ctx: { allowed: number; league: number; rank: number | null; n_teams?: number | null; games: number; season: number } | null; n: number; low: number; high: number; p_over: number | null; edge: number | null; model_version: string; }
+export interface Proj { value: number; base: number; median: number; sd: number; factor: number; factor_ctx: { allowed: number; league: number; rank: number | null; n_teams?: number | null; games: number; season: number; prior_games?: number | null; blended?: boolean } | null; n: number; low: number; high: number; p_over: number | null; edge: number | null; model_version: string; }
 export interface Alert { kind: "move" | "outlier" | "injury"; severity: number; player_id: string | null; player: string; team: string | null; market: string | null; market_label: string | null; game_id: string | null; title: string; detail: string; at?: string | null; }
 export interface Teammate { player_id: string; name: string; position: string; games_with: number; games_without: number; eligible: string[]; }
 export interface TeammatePresence { teammates: Teammate[]; presence: Record<string, string[]>; since?: number; }
 export interface CorrRow { with: string; player_id: string | null; name?: string; position?: string; stat: string; r: number; n: number; }
 export interface DvpFactors { stat: string; dvp_stat: string | null; factors: Record<string, Record<string, number>>; }
 export interface GradeSummary { n: number; weeks: [number, number][]; by_book: { book: string; n: number; over_rate: number; push_rate: number; mae: number; bias: number }[]; by_market: { market: string; n: number; over_rate: number; push_rate: number; mae: number; bias: number }[]; signals: { signal: string; n: number; hit_rate: number }[]; movement: { signal: string; n: number; hit_rate: number }[]; models: { model_version: string; n: number; hit_rate: number | null; n_strong: number; hit_rate_strong: number | null; pred_mae: number; line_mae: number | null }[]; }
+// A matchup angle rebuilt as of kickoff and checked against the game: the
+// number it was about (measure), where that number usually sits (baseline) and
+// where it landed (actual). dashboard/stats/angle_grades.py.
+export interface GradedAngle { season: number; week: number; game_id: string; offense: string; defense: string; kind: "team" | "player"; family: string; title: string; detail: string; lean: "over" | "under" | "neutral"; strength: number; tags: string[]; player_id: string | null; player: string | null; position: string | null; team: string | null; measure: string; direction: "up" | "down"; baseline: number | null; baseline_label: string; actual: number | null; fmt: string; verdict: "hit" | "miss" | "push"; line: number | null; line_result: "over" | "under" | "push" | null; market: string | null; }
+export interface AngleFamily { family: string; kind: "team" | "player"; n: number; hits: number; rate: number; lean: string; }
+export interface AngleTrackRecord { weeks: [number, number][]; n: number; hits: number; pushes: number; families: AngleFamily[]; by_kind: { kind: string; n: number; hits: number; rate: number }[]; best: GradedAngle[]; }
 export const api5 = {
   teammates: ep<TeammatePresence>()((id: string) => `/api/players/${id}/teammates`),
   correlations: ep<{ stat: string; rows: CorrRow[] }>()((id: string, stat: string) => `/api/players/${id}/correlations${qs({ stat })}`),
   dvpFactors: ep<DvpFactors>()((position: string, stat: string, since: number) => `/api/dvp/factors${qs({ position, stat, since })}`),
   gradeSummary: ep<GradeSummary>()((season?: number) => `/api/grading/summary${qs({ season })}`),
+  angleReview: ep<GradedAngle[]>()((gameId: string) => `/api/grading/angles/${gameId}`),
+  angleTrack: ep<AngleTrackRecord>()((weeks = 8) => `/api/grading/angles/track-record${qs({ weeks })}`),
   gradeRun: async (season: number, week: number, include_sample = false) => {
     const r = await fetch("/api/grading/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ season, week, include_sample }) });
     invalidate(GRADED);

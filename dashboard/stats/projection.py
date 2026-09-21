@@ -18,10 +18,13 @@ import polars as pl
 
 from ..config import PROP_PRED_PATH
 from ..odds.markets import BY_KEY
+from .blend import dvp_blended
 from .context import DVP_STATS, dvp_table
 from .gamelog import recent_longest, recent_values
 
-MODEL_VERSION = "baseline-v1"
+#: v2: the opponent factor reads this season blended with last
+#: (:func:`blend.dvp_blended`) instead of whichever one season was in use.
+MODEL_VERSION = "baseline-v2"
 HALF_LIFE = 4          # games; the 5th most recent game counts half as much as the latest
 N_GAMES = 12
 FACTOR_CLIP = (0.8, 1.25)
@@ -57,14 +60,18 @@ def _phi(z: float) -> float:
     return 0.5 * (1 + math.erf(z / math.sqrt(2)))
 
 
-def dvp_factor(position: str | None, stat: str, defense: str | None, season: int) -> tuple[float, dict | None]:
+def dvp_factor(position: str | None, stat: str, defense: str | None, season: int,
+               week: int | None = None) -> tuple[float, dict | None]:
     """How generous the defense has been to the position for this stat,
-    relative to league average. 1.0 = neutral, clipped to FACTOR_CLIP."""
+    relative to league average. 1.0 = neutral, clipped to FACTOR_CLIP.
+
+    With ``week``, the defense is read as it stood before that week, this
+    season blended with last; without it, ``season`` alone."""
     key = _DVP_KEY.get(stat)
     pos = {"FB": "RB", "HB": "RB"}.get(position or "", position)
     if not key or not defense or pos not in ("QB", "RB", "WR", "TE"):
         return 1.0, None
-    t = dvp_table(season, pos)
+    t = dvp_blended(season, pos, before_week=week) if week is not None else dvp_table(season, pos)
     if t.is_empty() or t.filter(pl.col("defense") == defense).is_empty():
         return 1.0, None
     league = float(t[key].mean())
@@ -73,10 +80,11 @@ def dvp_factor(position: str | None, stat: str, defense: str | None, season: int
     if not league or allowed is None:
         return 1.0, None
     f = min(FACTOR_CLIP[1], max(FACTOR_CLIP[0], allowed / league))
-    return f, {"allowed": allowed, "league": league, "rank": row.get(f"{key}_rank"), "n_teams": row.get("n_teams"), "games": row.get("games"), "season": season}
+    return f, {"allowed": allowed, "league": league, "rank": row.get(f"{key}_rank"), "n_teams": row.get("n_teams"), "games": row.get("games"), "season": season,
+               "prior_games": row.get("prior_games"), "blended": week is not None}
 
 
-def project_rows(rows: list[dict], season: int, week: int, dvp_season: int | None = None) -> None:
+def project_rows(rows: list[dict], season: int, week: int) -> None:
     """Mutates board rows: adds ``proj`` = {value, base, median, sd, factor,
     n, low, high, p_over, edge}. One batch scan for all players."""
     by_player: dict[str, set[str]] = {}
@@ -91,7 +99,6 @@ def project_rows(rows: list[dict], season: int, week: int, dvp_season: int | Non
     long_players = [p for p, ss in by_player.items() if any(s.startswith("long_") for s in ss)]
     for pid, d in recent_longest(long_players, seasons).items():
         vals.setdefault(pid, {}).update(d)
-    use = dvp_season or (season - 1)
     for r in rows:
         r["proj"] = None
         pv = vals.get(r.get("player_id") or "")
@@ -103,7 +110,7 @@ def project_rows(rows: list[dict], season: int, week: int, dvp_season: int | Non
             continue
         m, med, sd = _wstats([float(v) for v in series])
         defense = r["home_team"] if r.get("team") == r.get("away_team") else r["away_team"] if r.get("team") else None
-        factor, ctx = dvp_factor(r.get("position"), r["stat"], defense, use)
+        factor, ctx = dvp_factor(r.get("position"), r["stat"], defense, season, week)
         value = m * factor
         line = r.get("consensus")
         p_over = None

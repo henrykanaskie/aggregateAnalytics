@@ -108,11 +108,11 @@ def season_used(team: str, season: int) -> int:
     """Which season's numbers to read for ``team``: this one once it has four
     games in it, else last.
 
-    A three-game sample is not a tendency, and in September ``season`` has no
-    games at all, so every ranked number on the research and matchup pages is
-    last year's until the new one has enough behind it. Lives here rather than
-    in the API because the precomputed angle table has to key on exactly the
-    same answer the request would have reached.
+    Only player usage still reads a single season this way (who gets the
+    ball, who covers, whose depth chart production ranks the key players).
+    Team numbers blend the two seasons instead; see :mod:`dashboard.stats.blend`.
+    Lives here rather than in the API because the precomputed angle table has
+    to pick the same key players the request would have.
     """
     ranks = season_ranks()
     mine = ranks.filter(pl.col("team") == team)

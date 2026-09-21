@@ -147,6 +147,17 @@ def roster_profile(player_id: str) -> dict | None:
     }
 
 
+@lru_cache(maxsize=1)
+def latest_stat_season() -> int:
+    """The newest season with player box scores behind it.
+
+    The roster and peer-scatter views default to this rather than to
+    ``CURRENT_SEASON - 1``, so they follow the weekly ingest instead of
+    staying on last season all year.
+    """
+    return int(scan("player_stats_week").select(pl.col("season").max()).collect().item())
+
+
 def team_players(team: str, season: int) -> pl.DataFrame:
     """Everyone who logged a stat line for ``team`` in ``season``, by PPR points."""
     return (

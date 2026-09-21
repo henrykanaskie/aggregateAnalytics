@@ -10,22 +10,25 @@ GitHub Release, where the commit history is the audit trail.
 | piece | where it runs | when | what it does |
 |---|---|---|---|
 | `lines.yml` | GitHub Actions | 4x/day (~6am, noon, 6pm, 11pm ET) | fetches the three tables the puller needs, runs `dashboard.odds.pull`, commits `data/odds/` |
-| `stats.yml` | GitHub Actions | Tuesday 6am ET | refreshes the current season in the parquet cache, rebuilds `data/derived/`, grades the weeks that have finished, uploads the cache to the `data-cache` Release, commits `data/derived/` and `data/odds/graded/` |
+| `stats.yml` | GitHub Actions | Tuesday 6am ET | refreshes the current season in the parquet cache, rebuilds `data/derived/`, grades the weeks that have finished, uploads the cache and the derived tables to the `data-cache` Release, commits `data/odds/graded/`, calls the Deploy Hook |
 | `keepalive.yml` | GitHub Actions | every 10 min | `GET /api/health`, so the host does not idle out and wake up in front of a visitor. Needs the `SITE_URL` repo variable; without it the job exits doing nothing |
-| `scripts/build.sh` | Render, on deploy | code or derived-table pushes | `pip install`, `scripts/fetch_cache.py` pulls the cache from the Release, `npm run build` for the SPA |
+| `scripts/build.sh` | Render, on deploy | code pushes and the weekly stats run | `pip install`, `scripts/fetch_cache.py` pulls the cache and derived tables from the Release, `npm run build` for the SPA |
 | `data_handling/sync_odds.py` | inside the app | on wake, every 30 min | pulls new `data/odds/` files from GitHub, so lines commits never need a rebuild; deletes the snapshots the new ones replace |
 | `webauth/` | inside the app | every request | the password |
 
 Snapshots commit four times a day but do not redeploy: `render.yaml` ignores
 `data/odds/**`, and the app syncs them itself. Builds happen only for code
-and for the weekly derived tables, which keeps well inside the free tier's
-build minutes.
+and for the weekly stats run, which keeps well inside the free tier's build
+minutes. The derived tables are not in git: they are rebuilt weekly from the
+cache, so they ride on the Release with it (`_derived.tar`), and every
+rebuild of a binary stays out of the history.
 
 ## First-time setup, in order
 
 1. **Seed the cache.** Actions tab, `stats`, Run workflow, tick `full`. It
    ingests 1999 to now (expect 20 to 40 minutes), uploads one tar per dataset
-   to a Release tagged `data-cache`, and commits `data/derived/`.
+   plus `_derived.tar` for the tables built from it, to a Release tagged
+   `data-cache`.
 2. **The Odds API key is optional and not for the schedule.** The free tier
    is 500 credits a month and one default pull is about 115, so the scheduled
    job pulls ESPN only. Set `ODDS_API_KEY` in Render's environment to enable
@@ -41,10 +44,9 @@ build minutes.
 4. **Frontend build**: `scripts/build.sh` runs `npm ci` and `npm run build`
    in `dashboard/web/` on every deploy, so `dist/` never needs committing.
    `render.yaml` pins `NODE_VERSION`.
-5. **Deploy hook.** Render reads the cache only when it builds, so every
-   `stats` run wants a build, and a run that changed nothing under
-   `data/derived/` (a coordinator rescrape, say) pushes no commit for
-   Auto-Deploy to notice. In the service's Settings, copy the Deploy Hook URL
+5. **Deploy hook.** Render reads the cache and the derived tables only when
+   it builds, so every `stats` run wants a build, and nothing that run commits
+   triggers one. In the service's Settings, copy the Deploy Hook URL
    and add it to the repo as the `RENDER_DEPLOY_HOOK` secret; the workflow
    calls it at the end of every run. Without the secret the step is skipped.
 

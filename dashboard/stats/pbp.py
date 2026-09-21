@@ -283,14 +283,19 @@ def _aggs(role: str) -> list[pl.Expr]:
 
 
 def splits(player_id: str, role: str, dims: list[str] | None = None, since: int = 1999,
-           season_type: str | None = None) -> dict:
-    return _splits_cached(player_id, role, tuple(dims) if dims else None, since, season_type)
+           season_type: str | None = None, before: tuple[int, int] | None = None) -> dict:
+    """``before=(season, week)`` keeps only plays from earlier games, which is
+    how a played game's angles are rebuilt as they stood before kickoff."""
+    return _splits_cached(player_id, role, tuple(dims) if dims else None, since, season_type, before)
 
 
 @lru_cache(maxsize=2048)
-def _splits_cached(player_id: str, role: str, dims: tuple[str, ...] | None, since: int, season_type: str | None) -> dict:
+def _splits_cached(player_id: str, role: str, dims: tuple[str, ...] | None, since: int, season_type: str | None,
+                   before: tuple[int, int] | None = None) -> dict:
     df = role_plays(player_plays(player_id), role)
     df = df.filter(pl.col("season") >= since)
+    if before is not None:
+        df = df.filter((pl.col("season") < before[0]) | ((pl.col("season") == before[0]) & (pl.col("week") < before[1])))
     if season_type in ("REG", "POST"):
         df = df.filter(pl.col("season_type") == season_type)
     total = df.height

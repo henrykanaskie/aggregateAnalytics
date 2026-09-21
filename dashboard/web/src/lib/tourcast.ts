@@ -64,7 +64,7 @@ export async function buildCast(meta: Meta, settings: Settings): Promise<Cast> {
   // Nothing pulled yet: fall back to last season's leading scorer on whichever
   // team is playing, which every page can still say something about.
   if (!cast.playerId && cast.team) {
-    const roster = await api.teamPlayers(cast.team, meta.season - 1).catch(() => []);
+    const roster = await api.teamPlayers(cast.team, meta.stats_season).catch(() => []);
     const top = roster.find((p) => SKILL.includes(p.position));
     if (top) { cast.playerId = top.player_id; cast.playerName = top.name; }
   }

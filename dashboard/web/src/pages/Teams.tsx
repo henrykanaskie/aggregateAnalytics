@@ -12,6 +12,7 @@ import TeamScatter from "../components/TeamScatter";
 import UsageTree from "../components/UsageTree";
 import { PCT_LEGEND, rankTint, shownRank } from "../lib/rank";
 import DvpTable from "../components/DvpTable";
+import { blendNote } from "../lib/blend";
 
 export default function Teams() {
   const { meta } = useMeta();
@@ -22,8 +23,11 @@ export default function Teams() {
   const [side, setSide] = useSticky<"off" | "def">("teams.side", "off");
   const [metric, setMetric] = useSticky("teams.metric", "pass_rate");
   const [leagueSeason, setLeagueSeason] = useSticky<number | null>("teams.leagueSeason", null);
+  // While a season is under way the league views blend it with the last one;
+  // this is the switch back to the season on its own.
+  const [blend, setBlend] = useSticky<boolean>("teams.blend", true);
   const { data, error: teamErr } = useQuery<TeamTendencies>(team ? api2.teamTendencies.url(team, since) : null);
-  const { data: league, error: leagueErr } = useQuery<LeagueTendencies>(meta ? api2.league.url(leagueSeason ?? meta.season - 1) : null);
+  const { data: league, error: leagueErr } = useQuery<LeagueTendencies>(meta ? api2.league.url(leagueSeason ?? meta.stats_season, blend) : null);
   const err = teamErr ?? leagueErr;
   const metrics: TeamMetric[] = (data?.metrics ?? meta?.team_metrics ?? []).filter((m) => m.side === side);
   const mdef = metrics.find((m) => m.key === metric) ?? metrics[0];
@@ -105,11 +109,18 @@ export default function Teams() {
             </div>
           </div>
           <div className="panel" data-tour="team-seasons">
-            <div className="panel-head"><h3>{team} by season · {side === "off" ? "offense" : "defense"}</h3><span className="hint">value with league rank, shaded by percentile the good way round: {PCT_LEGEND} · <span className="scroll-hint">scroll sideways for all {metrics.length} metrics</span></span></div>
+            <div className="panel-head"><h3>{team} by season · {side === "off" ? "offense" : "defense"}</h3><span className="hint">{data.now ? `top row is ${data.now.season} so far blended with ${data.now.blend.prior_season} (hover it for the weights); the rest are single seasons · ` : ""}value with league rank, shaded by percentile the good way round: {PCT_LEGEND} · <span className="scroll-hint">scroll sideways for all {metrics.length} metrics</span></span></div>
             <div className="tbl-wrap">
               <table className="tbl wide">
                 <thead><tr><th className="left">Season</th><th className="left">Coach</th><th className="left">{side === "off" ? "OC" : "DC"}</th><th>G</th>{metrics.map((m) => <th key={m.key} className={m.key === active ? "over" : ""} onClick={() => setMetric(m.key)} title={m.note || undefined}>{m.label}</th>)}</tr></thead>
                 <tbody>
+                  {data.now && (
+                    <tr title={blendNote(data.now.blend)}>
+                      <td className="left"><b>{data.now.season} now</b></td><td className="left small muted" colSpan={2}>blended with {data.now.blend.prior_season}</td>
+                      <td className="num muted">{data.now.games}</td>
+                      {metrics.map((m) => { const v = data.now![m.key] as number | null; const r = data.now![`${m.key}_rank`] as number | null; const n = data.now!.n_teams; return <td key={m.key} className="num" style={{ background: rankTint(r, n, m.good) }} title={r ? `rank ${shownRank(r, n, m.good)} of ${n}, blended` : ""}>{v === null || v === undefined ? "–" : <><b>{fmtStat(v, m.fmt as any)}</b> <span className="faint tiny">{shownRank(r, n, m.good)}</span></>}</td>; })}
+                    </tr>
+                  )}
                   {data.seasons.map((s) => { const coach = data.coaches.find((c) => c.season === s.season); const co = (data.coordinators ?? []).find((c) => c.season === s.season); const cord = side === "off" ? co?.OC : co?.DC; return (
                     <tr key={s.season}><td className="left">{s.season}</td><td className="left small muted">{coach?.coach ?? ""}</td>
                       <td className="left small muted">{cord ? <Link to={`/coaches?role=${side === "off" ? "OC" : "DC"}&coach=${encodeURIComponent(cord)}`}>{cord}</Link> : ""}</td>
@@ -125,12 +136,12 @@ export default function Teams() {
       )}
       {team && data && (
         <div className="grid grid-2" style={{ marginBottom: 14 }}>
-          <div className="panel"><UsageTree team={team} season={data.seasons[0]?.season ?? (meta?.season ?? 2026) - 1} /></div>
-          <div className="panel"><DvpTable season={league?.season ?? (meta?.season ?? 2026) - 1} highlight={team} onPick={(t) => setSp({ team: t })} /></div>
+          <div className="panel"><UsageTree team={team} season={data.seasons[0]?.season ?? meta?.stats_season ?? 2026} /></div>
+          <div className="panel"><DvpTable season={league?.season ?? meta?.stats_season ?? 2026} blend={blend} highlight={team} onPick={(t) => setSp({ team: t })} /></div>
         </div>
       )}
       {!team && (
-        <div className="panel" style={{ marginBottom: 14 }}><DvpTable season={league?.season ?? (meta?.season ?? 2026) - 1} onPick={(t) => setSp({ team: t })} /></div>
+        <div className="panel" style={{ marginBottom: 14 }}><DvpTable season={league?.season ?? meta?.stats_season ?? 2026} blend={blend} onPick={(t) => setSp({ team: t })} /></div>
       )}
       {league && (
         <div className="panel" style={{ marginBottom: 14 }} data-tour="team-scatter">
@@ -140,10 +151,12 @@ export default function Teams() {
       )}
       <div className="panel">
         <div className="panel-head">
-          <h3>League table · {league?.season}</h3>
+          <h3>League table · {league?.season}{league?.blended ? ` blended with ${league.season - 1}` : ""}</h3>
           <span className="hint">sorted by {mdef?.label ?? active}, high to low{mdef?.good === "low" ? " (low is better here)" : ""} · click any column to sort by it</span>
-          <Field label="Season"><input className="input num" type="number" min={1999} max={(meta?.season ?? 2026) - 1} value={leagueSeason ?? league?.season ?? ""} onChange={(e) => setLeagueSeason(Number(e.target.value))} /></Field>
+          {league?.can_blend && <Seg value={blend ? "blend" : "season"} options={[{ v: "blend", l: "Blended" }, { v: "season", l: `${league.season} only` }]} onChange={(v) => setBlend(v === "blend")} />}
+          <Field label="Season"><input className="input num" type="number" min={1999} max={meta?.season ?? 2026} value={leagueSeason ?? league?.season ?? ""} onChange={(e) => setLeagueSeason(Number(e.target.value))} /></Field>
         </div>
+        {league?.blended && <div className="hint" style={{ marginBottom: 6 }}>{blendNote(league.blend)}</div>}
         <div className="tbl-wrap" style={{ maxHeight: 640 }} ref={leagueWrap}>
           <table className="tbl wide">
             <thead><tr><th className="left">Team</th><th className="left">Coach</th>{metrics.map((m) => <th key={m.key} data-active={m.key === active ? "1" : undefined} className={m.key === active ? "over" : ""} onClick={() => setMetric(m.key)} title={m.note || undefined}>{m.label}{m.key === active ? " ↓" : ""}</th>)}</tr></thead>
