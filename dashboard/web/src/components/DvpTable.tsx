@@ -6,17 +6,17 @@ import { useSticky } from "../lib/sticky";
 import { useQuery } from "../lib/useQuery";
 
 /** League table of what each defense allows to a position, per game. */
-export default function DvpTable({ season, highlight, onPick }: { season: number; highlight?: string; onPick?: (team: string) => void }) {
+export default function DvpTable({ season, blend = true, highlight, onPick }: { season: number; blend?: boolean; highlight?: string; onPick?: (team: string) => void }) {
   const [pos, setPos] = useSticky("dvp.pos", "RB");
   const [sortKey, setSortKey] = useState<string | null>(null);
-  const { data } = useQuery<DvpLeague>(api3.dvp.url("ALL", pos, season));
+  const { data } = useQuery<DvpLeague>(api3.dvp.url("ALL", pos, season, blend));
   if (!data) return null;
   const key = sortKey ?? data.stats[0];
   const rows = [...data.league].sort((a, b) => ((b[key] as number) ?? 0) - ((a[key] as number) ?? 0));
   return (
     <div>
-      <div className="panel-head"><h3>Defense vs position · {season}</h3><Seg value={pos} options={["QB", "RB", "WR", "TE"].map((p) => ({ v: p, l: p }))} onChange={setPos} /></div>
-      <div className="hint" style={{ marginBottom: 6 }}>Per-game totals allowed to {pos}s, regular season. Rank 1 = fewest allowed, the stingiest defense; 32 = the friendliest matchup. Shading is generosity, {PCT_LEGEND}. Click a column to sort.</div>
+      <div className="panel-head"><h3>Defense vs position · {season}{data.blended ? ` blended with ${data.prior_season}` : ""}</h3><Seg value={pos} options={["QB", "RB", "WR", "TE"].map((p) => ({ v: p, l: p }))} onChange={setPos} /></div>
+      <div className="hint" style={{ marginBottom: 6 }}>Per-game totals allowed to {pos}s, regular season{data.blended ? `: ${season} so far weighed against ${data.prior_season}, which fades as this season's games pile up. G is this season's games` : ""}. Rank 1 = fewest allowed, the stingiest defense; 32 = the friendliest matchup. Shading is generosity, {PCT_LEGEND}. Click a column to sort.</div>
       <div className="tbl-wrap" style={{ maxHeight: 520 }}>
         <table className="tbl">
           <thead><tr><th className="left">Defense</th><th>G</th>{data.stats.map((k) => <th key={k} className={k === key ? "over" : ""} onClick={() => setSortKey(k)}>{data.labels[k]}</th>)}</tr></thead>

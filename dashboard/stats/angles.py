@@ -13,17 +13,19 @@ tendency table -- so they can be built weekly too, by
 ``.github/workflows/stats.yml``, alongside everything else under
 ``data/derived``. What is left at request time is a filter on a small parquet.
 
-The table is keyed by the defense rather than by the game, because that is
-what an angle actually depends on: a receiver's man-coverage split against
-Seattle is the same observation whoever else is on the field. So the build
-covers every ordered pair of teams, not the seventeen games of one week, and
-the table stays right when the schedule moves on.
+The table is keyed by the pair of teams rather than by the game, because that
+is what an angle actually depends on: a receiver's man-coverage split against
+Seattle is the same observation in any week the two meet. It is the *pair*
+and not just the defense because the defense is read as it should look to
+that offense (:func:`dashboard.stats.blend.matchup_view`): Seattle's usual
+man rate is not what it plays against every quarterback. So the build covers
+every ordered pair of teams, not the seventeen games of one week, and the
+table stays right when the schedule moves on.
 
-Both seasons are part of the key. ``season`` is the one asked for, which sets
-the roster; ``season_used`` is the one the numbers come from, which in
-September is the year before (see
-:func:`dashboard.stats.coaches.season_used`). They come apart, and a row built
-against one pair must never be served for another.
+``season`` and ``through_week`` are the rest of the key. ``season`` sets the
+roster; ``through_week`` is the last week of it the blended team numbers
+include (0 in September, when they are last season's alone). A row built on
+one pair of them must never be served for another.
 
 Build it with::
 
@@ -41,7 +43,8 @@ from functools import lru_cache
 import polars as pl
 
 from ..config import CURRENT_SEASON, DERIVED_DIR
-from .coaches import season_ranks, season_used
+from .blend import blended, matchup_view, through_week
+from .coaches import season_used
 from .matchups import offense_personnel, player_angles as compute_angles
 
 CACHE = DERIVED_DIR / "player_angles.parquet"
@@ -54,7 +57,7 @@ KEY_PLAYERS = 8
 
 SCHEMA: dict[str, pl.DataType] = {
     "season": pl.Int32,
-    "season_used": pl.Int32,
+    "through_week": pl.Int32,
     "offense": pl.String,
     "defense": pl.String,
     "player_id": pl.String,
@@ -68,10 +71,11 @@ SCHEMA: dict[str, pl.DataType] = {
 }
 
 
-def since_for(use: int) -> int:
-    """The window the splits are read over. Two seasons back, floored at 2016
-    because the participation data that says man vs zone starts there."""
-    return max(use - 2, 2016)
+def since_for(season: int) -> int:
+    """The window the splits are read over: the three seasons before
+    ``season`` and whatever of it has been played, floored at 2016 because
+    the participation data that says man vs zone starts there."""
+    return max(season - 3, 2016)
 
 
 def _clean(v):
@@ -85,43 +89,41 @@ def _row(r: dict) -> dict:
 # --- build -------------------------------------------------------------------
 
 def build(season: int = CURRENT_SEASON, log=print) -> pl.DataFrame:
-    """Every angle for every ordered pair of teams, at each season the API
-    could read for them."""
-    ranks = season_ranks()
-    teams = sorted(t for t in ranks["team"].unique().to_list() if t)
-    # Normally one season for the whole league; two only while the earliest
-    # teams have four games and the rest do not.
-    uses = sorted({season_used(t, season) for t in teams})
-    log(f"[angles] {len(teams)} teams, season(s) used {uses}")
+    """Every angle for every ordered pair of teams, on the blended numbers
+    as they stand now."""
+    table = blended(season)
+    through = through_week(season)
+    rows_by_team = {r["team"]: r for r in table.to_dicts()}
+    teams = sorted(rows_by_team)
+    since = since_for(season)
+    log(f"[angles] {len(teams)} teams, {season} through week {through}")
 
-    frames: list[pl.DataFrame] = []
-    for use in uses:
-        since = since_for(use)
-        blocks, players = {}, {}
-        for t in teams:
-            row = ranks.filter((pl.col("team") == t) & (pl.col("season") == use))
-            blocks[t] = _row(row.to_dicts()[0]) if not row.is_empty() else None
-            pers = offense_personnel(t, use, roster_season=season)
-            players[t] = [p for p in pers if p["position"] in POSITIONS][:KEY_PLAYERS]
+    players = {}
+    for t in teams:
+        # Whose production the key players are ranked by is still one
+        # season: last year's until this one has four games.
+        pers = offense_personnel(t, season_used(t, season), roster_season=season)
+        players[t] = [p for p in pers if p["position"] in POSITIONS][:KEY_PLAYERS]
 
-        rows: list[dict] = []
-        for off_t in teams:
-            # The splits behind these are memoised per player, so the first
-            # defense pays for the offense's eight players and the other
-            # thirty use what it built.
-            for def_t in teams:
-                if def_t == off_t:
-                    continue
-                for a in compute_angles(players[off_t], blocks[def_t], def_t, since=since):
-                    rows.append({"season": season, "season_used": use, "offense": off_t, "defense": def_t,
-                                 "player_id": a["player_id"], "player": a["player"], "position": a["position"],
-                                 "title": a["title"], "detail": a["detail"], "lean": a["lean"],
-                                 "tags": a["tags"], "strength": a["strength"]})
-            log(f"[angles] {use} {off_t}: {len(rows)} rows so far")
-        frames.append(pl.DataFrame(rows, schema=SCHEMA))
+    rows: list[dict] = []
+    for off_t in teams:
+        # The splits behind these are memoised per player, so the first
+        # defense pays for the offense's eight players and the other
+        # thirty use what it built.
+        for def_t in teams:
+            if def_t == off_t:
+                continue
+            _, deff, _ = matchup_view(rows_by_team[off_t], rows_by_team[def_t], table)
+            for a in compute_angles(players[off_t], _row(deff), def_t, since=since):
+                rows.append({"season": season, "through_week": through, "offense": off_t, "defense": def_t,
+                             "player_id": a["player_id"], "player": a["player"], "position": a["position"],
+                             "title": a["title"], "detail": a["detail"], "lean": a["lean"],
+                             "tags": a["tags"], "strength": a["strength"]})
+        log(f"[angles] {off_t}: {len(rows)} rows so far")
+    frames = [pl.DataFrame(rows, schema=SCHEMA)]
 
     out = (pl.concat(frames) if frames else pl.DataFrame(schema=SCHEMA)).sort(
-        ["season", "season_used", "offense", "defense", "player_id"])
+        ["season", "through_week", "offense", "defense", "player_id"])
     CACHE.parent.mkdir(parents=True, exist_ok=True)
     out.write_parquet(CACHE, compression="zstd")
     log(f"[angles] wrote {out.height} rows -> {CACHE}")
@@ -146,14 +148,16 @@ _OUT = ["title", "detail", "lean", "tags", "strength", "player_id", "player", "p
 
 @lru_cache(maxsize=1)
 def _covered() -> set[tuple[int, int]]:
-    """The ``(season, season_used)`` pairs the table was built for."""
-    if not exists():
+    """The ``(season, through_week)`` pairs the table was built for. A table
+    from before the blend (keyed on ``season_used``) covers nothing, so it is
+    computed live until the weekly build replaces it."""
+    if not exists() or "through_week" not in table().columns:
         return set()
-    t = table().select("season", "season_used").unique()
-    return {(r["season"], r["season_used"]) for r in t.to_dicts()}
+    t = table().select("season", "through_week").unique()
+    return {(r["season"], r["through_week"]) for r in t.to_dicts()}
 
 
-def for_matchup(offense: str, defense: str, season: int, use: int, key_players: list[dict],
+def for_matchup(offense: str, defense: str, season: int, through: int, key_players: list[dict],
                 def_block: dict | None) -> list[dict]:
     """The angles for one side of one game.
 
@@ -165,9 +169,9 @@ def for_matchup(offense: str, defense: str, season: int, use: int, key_players: 
     table predates, and spending three seconds of a shared core to cover that
     is how the page got slow in the first place.
     """
-    if (season, use) not in _covered():
-        return compute_angles(key_players, def_block, defense, since=since_for(use))
-    hit = table().filter((pl.col("season") == season) & (pl.col("season_used") == use)
+    if (season, through) not in _covered():
+        return compute_angles(key_players, def_block, defense, since=since_for(season))
+    hit = table().filter((pl.col("season") == season) & (pl.col("through_week") == through)
                          & (pl.col("offense") == offense) & (pl.col("defense") == defense))
     return [{k: r[k] for k in _OUT} | {"defense": defense, "tags": list(r["tags"] or [])}
             for r in hit.to_dicts()]

@@ -86,9 +86,10 @@ export function warmAll(meta: Meta, settings: Settings): void {
 
   const team = lastParam("/teams", "team");
   if (team) urls.push(api2.teamTendencies.url(team, readSticky("teams.since", 2012)));
-  const leagueSeason = readSticky<number | null>("teams.leagueSeason", null) ?? meta.season - 1;
-  urls.push(api2.league.url(leagueSeason));
-  urls.push(api3.dvp.url("ALL", readSticky("dvp.pos", "RB"), leagueSeason));   // the table under the Teams page
+  const leagueSeason = readSticky<number | null>("teams.leagueSeason", null) ?? meta.stats_season;
+  const leagueBlend = readSticky<boolean>("teams.blend", true);
+  urls.push(api2.league.url(leagueSeason, leagueBlend));
+  urls.push(api3.dvp.url("ALL", readSticky("dvp.pos", "RB"), leagueSeason, leagueBlend));   // the table under the Teams page
 
   // The tab remembers which role it was left on, so warm that list rather than
   // always the head coaches.

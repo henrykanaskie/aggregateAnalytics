@@ -42,6 +42,7 @@ from ..stats.catalog import GROUPS, catalog_json
 from ..stats import coaches as coaches_mod
 from ..stats import context as ctx_mod
 from ..stats import angles as ang_mod
+from ..stats import blend as blend_mod
 from ..stats import matchups as mu_mod
 from ..stats import extras as ex_mod
 from ..stats import availability as avail_mod
@@ -223,6 +224,32 @@ def _week_default(season: int, week: int | None) -> int:
     return week if week is not None else current_week(season)
 
 
+def _stats_season(season: int | None) -> int:
+    """Which season the league-wide team views read when the caller names none.
+
+    The newest one the team table has games for, not ``CURRENT_SEASON - 1``:
+    the Tuesday refresh adds the new season's week as it is played, and these
+    views are supposed to move with it. Falls back to last season while the
+    table is missing or has nothing yet.
+    """
+    if season is not None:
+        return season
+    try:
+        return team_mod.latest_season()
+    except (FileNotFoundError, TypeError, ValueError):
+        return CURRENT_SEASON - 1
+
+
+def _player_season(season: int | None) -> int:
+    """Same idea for the views built on weekly player box scores."""
+    if season is not None:
+        return season
+    try:
+        return players_mod.latest_stat_season()
+    except (FileNotFoundError, TypeError, ValueError):
+        return CURRENT_SEASON - 1
+
+
 # --- meta ------------------------------------------------------------------
 
 def data_version() -> str:
@@ -302,6 +329,10 @@ def meta():
         "split_dims": [{"key": d.key, "label": d.label, "roles": list(d.roles), "since": d.since, "note": d.note} for d in pbp_mod.DIMS],
         "team_metrics": team_mod.metric_json(),
         "team_table_ready": team_mod.CACHE.exists(),
+        # The season the league-wide team views default to. The browser used
+        # to compute `season - 1` itself, which pinned every one of them to
+        # last year for the whole of this one.
+        "stats_season": _stats_season(None),
         "current_coaches": coaches_mod.current_coaches(),
         "have_coordinators": coaches_mod.have_coordinators(),
         "coach_roles": [{"key": r, "label": coaches_mod.ROLE_LABEL[r], "sides": list(coaches_mod.ROLE_SIDES[r]),
@@ -360,7 +391,7 @@ def player_lines(player_id: str, season: int = CURRENT_SEASON, week: int | None 
     mine = latest.filter(pl.col("player_id") == player_id) if not latest.is_empty() else latest
     rows = build_board(mine)
     attach_form(rows, [season - 1, season])
-    proj_mod.project_rows(rows, season, week, dvp_season=coaches_mod.season_used(prof.get("team") or "", season) if prof.get("team") else None)
+    proj_mod.project_rows(rows, season, week)
     hist = store.prop_history(player_id, season=season, week=week)
     team = prof.get("team")
     game = None
@@ -411,8 +442,9 @@ def player_correlations(player_id: str, stat: str, since: int | None = None):
 
 
 @app.get("/api/scatter/players")
-def scatter_players(season: int = CURRENT_SEASON - 1, position: str = "WR", min_games: int = 4):
+def scatter_players(season: int | None = None, position: str = "WR", min_games: int = 4):
     """League-wide per-game numbers for one position and season, for peer scatter charts."""
+    season = _player_season(season)
     return {"season": season, "position": position.upper(), "rows": ex_mod.player_scatter(season, position.upper(), min_games)}
 
 
@@ -450,14 +482,14 @@ def log_baseline(req: LogBaselineRequest):
     week = _week_default(season, req.week)
     latest = store.latest_props(season, week, req.include_sample)
     rows = build_board(latest)
-    proj_mod.project_rows(rows, season, week, dvp_season=coaches_mod.season_used(rows[0]["home_team"], season) if rows else None)
+    proj_mod.project_rows(rows, season, week)
     n = proj_mod.log_baseline(rows, season, week)
     return {"season": season, "week": week, "logged": n}
 
 
 @app.get("/api/teams/{team}/players")
-def team_players(team: str, season: int = CURRENT_SEASON - 1):
-    return records(players_mod.team_players(team, season))
+def team_players(team: str, season: int | None = None):
+    return records(players_mod.team_players(team, _player_season(season)))
 
 
 # --- teams & coaches ---------------------------------------------------------
@@ -479,44 +511,75 @@ def team_tendencies(team: str, since: int = Query(2010, ge=1999), season_type: s
     seasons = ranks.filter((pl.col("team") == team) & (pl.col("season") >= since)).sort("season", descending=True)
     games = team_mod.rates(tg.filter((pl.col("team") == team) & (pl.col("season") >= since)),
                            ["season", "week", "season_type", "game_id", "opponent", "home"]).sort(["season", "week"])
+    # The season under way, blended with last: what the team is now, as
+    # opposed to the single-season rows below it.
+    now = None
+    if season_type == "REG":
+        latest = _stats_season(None)
+        if blend_mod.season_in_progress(latest):
+            b = _without_faced(blend_mod.blended(latest)).filter(pl.col("team") == team)
+            if not b.is_empty():
+                now = records(b)[0]
+                now["blend"] = blend_mod.blend_info(b.to_dicts()[0])
     return {
-        "team": team, "since": since, "seasons": records(seasons), "games": records(games),
+        "team": team, "since": since, "seasons": records(seasons), "games": records(games), "now": now,
         "coaches": coaches_mod.team_history(team), "current_coach": coaches_mod.current_coaches().get(team),
         "coordinators": coaches_mod.team_staff_history(team),
         "metrics": team_mod.metric_json(),
     }
 
 
-def _team_block(t: str, use: int, season: int) -> dict:
-    ranks = coaches_mod.season_ranks()
+def _team_block(t: str, season: int, row: dict | None) -> dict:
+    """One side of a matchup: the team's blended numbers (``row``, already
+    adjusted for the opponent when it came through :func:`blend.matchup_view`),
+    its last four regular-season games, and how the blend was made."""
     tg = team_mod.team_games().filter(pl.col("season_type") == "REG")
-    row = ranks.filter((pl.col("team") == t) & (pl.col("season") == use))
     recent = tg.filter(pl.col("team") == t).sort(["season", "week"]).tail(4)
     last4 = team_mod.rates(recent, ["team"]) if not recent.is_empty() else None
-    return {"team": t, "season": records(row)[0] if not row.is_empty() else None,
+    h2h = (row or {}).get("_h2h") or []
+    shown = {k: _clean(v) for k, v in (row or {}).items() if not k.startswith(("faced_", "_"))} if row else None
+    return {"team": t, "season": shown,
             "last4": records(last4)[0] if last4 is not None and not last4.is_empty() else None,
-            "coach": coaches_mod.current_coaches(season).get(t)}
+            "coach": coaches_mod.current_coaches(season).get(t),
+            "blend": blend_mod.blend_info(row), "h2h": [{k: _clean(v) for k, v in x.items()} for x in h2h]}
+
+
+def _matchup_rows(offense: str, defense: str, season: int, week: int | None) -> tuple[dict | None, dict | None, pl.DataFrame]:
+    """Both teams as of ``week``, this season blended with last, each read
+    against the other."""
+    table = blend_mod.blended(season, before_week=week)
+    rows = {r["team"]: r for r in table.to_dicts()}
+    off, deff, _ = blend_mod.matchup_view(rows.get(offense), rows.get(defense), table)
+    return off, deff, table
 
 
 @app.get("/api/matchup")
-def matchup(team: str, opponent: str, season: int = CURRENT_SEASON, position: str | None = None):
-    """Team offense vs opponent defense, for the research page: the latest
-    season with games (this one once it has started, else last), with league
-    ranks, plus each side's last four regular-season games."""
+def matchup(team: str, opponent: str, season: int = CURRENT_SEASON, week: int | None = None, position: str | None = None):
+    """Team offense vs opponent defense, for the research page.
+
+    Numbers are this season blended with last as of ``week`` (see
+    :mod:`dashboard.stats.blend`), and each side is read against the other:
+    the opponent's box count is the one it should show *this* offense, not
+    the one it shows everybody. ``h2h`` on each side lists what moved.
+    """
     _need_team_table()
     team, opponent = team.upper(), opponent.upper()
-    use = coaches_mod.season_used(team, season)
-    out = {"season_used": int(use), "team": _team_block(team, use, season), "opponent": _team_block(opponent, use, season), "metrics": team_mod.metric_json()}
+    week = _week_default(season, week)
+    off, deff, _ = _matchup_rows(team, opponent, season, week)
+    out = {"season": season, "week": week, "season_used": season,
+           "team": _team_block(team, season, off), "opponent": _team_block(opponent, season, deff),
+           "metrics": team_mod.metric_json()}
     pos = position.upper() if position else None
     if pos in ctx_mod.POS_GROUPS:
-        dvp_season = use
-        table = ctx_mod.dvp_table(dvp_season, pos)
+        table = blend_mod.dvp_blended(season, pos, before_week=week)
         row = table.filter(pl.col("defense") == opponent)
+        log = pl.concat([ctx_mod.dvp_log(opponent, pos, season), ctx_mod.dvp_log(opponent, pos, season - 1)], how="diagonal_relaxed")
         out["dvp"] = {
-            "position": pos, "season": dvp_season, "stats": ctx_mod.DVP_BY_POS[pos], "labels": ctx_mod.DVP_LABELS,
+            "position": pos, "season": season, "prior_season": season - 1, "blended": True,
+            "stats": ctx_mod.DVP_BY_POS[pos], "labels": ctx_mod.DVP_LABELS,
             "season_row": records(row)[0] if not row.is_empty() else None,
             "last4": ctx_mod.dvp_recent(opponent, pos, 4),
-            "log": records(ctx_mod.dvp_log(opponent, pos, dvp_season).head(40)),
+            "log": records(log.head(40)),
         }
     return out
 
@@ -555,9 +618,14 @@ def game_matchup(game_id: str, include_sample: bool = False):
     full = scan("schedules").filter(pl.col("game_id") == game_id).collect()
     game = records(full)[0]
     home, away = game["home_team"], game["away_team"]
+    week = game["week"]
+    # Player usage (who gets the ball, who covers) is still one season: last
+    # year's until this one has four games. Team numbers are blended instead.
     use = coaches_mod.season_used(home, season)
-    blocks = {t: _team_block(t, use, season) for t in (home, away)}
-    dvp_tables = {pos: ctx_mod.dvp_table(use, pos) for pos in ctx_mod.POS_GROUPS}
+    table = blend_mod.blended(season, before_week=week)
+    through = blend_mod.through_week(season, week)
+    rows = {r["team"]: r for r in table.to_dicts()}
+    dvp_tables = {pos: blend_mod.dvp_blended(season, pos, before_week=week) for pos in ctx_mod.POS_GROUPS}
 
     def dvp_for(defense: str) -> dict:
         out = {}
@@ -571,23 +639,26 @@ def game_matchup(game_id: str, include_sample: bool = False):
     venue_info = mu_mod.venue(game)
     for off_t, def_t in ((away, home), (home, away)):
         dvp = dvp_for(def_t)
+        # Each side read against the other: the defense as it should look to
+        # this offense, and the offense as it should look into this defense.
+        off_row, def_row, _ = blend_mod.matchup_view(rows.get(off_t), rows.get(def_t), table)
+        off_block, def_block = _team_block(off_t, season, off_row), _team_block(def_t, season, def_row)
         # `use` is the season the numbers come from; `season` is the roster they
         # are read against. In September those are different years.
         off_pers = mu_mod.offense_personnel(off_t, use, roster_season=season)
         # betting spread from the offense's side: negative = favoured
         sl = game.get("spread_line")
         off_spread = None if sl is None else (-sl if off_t == home else sl)
-        team_angles = mu_mod.angles(blocks[off_t]["season"], blocks[def_t]["season"], off_t, def_t,
-                                    {p: v["season_row"] for p, v in dvp.items()})
-        team_angles += mu_mod.team_angles_extra(blocks[off_t]["season"], blocks[def_t]["season"], off_t, def_t, off_spread, venue_info)
-        team_angles.sort(key=lambda x: -x["strength"])
+        team_angles = mu_mod.side_team_angles(off_row, def_row, off_t, def_t,
+                                              {p: v["season_row"] for p, v in dvp.items()}, off_spread, venue_info)
         key_players = [p for p in off_pers if p["position"] in ("QB", "RB", "WR", "TE")][:8]
         sides.append({
             "offense": off_t, "defense": def_t,
-            "offense_block": blocks[off_t], "defense_block": blocks[def_t],
+            "offense_block": off_block, "defense_block": def_block,
             "dvp": dvp,
             "angles": team_angles,
-            "player_angles": ang_mod.for_matchup(off_t, def_t, season, use, key_players, blocks[def_t]["season"]),
+            "player_angles": mu_mod.note_adjusted(
+                ang_mod.for_matchup(off_t, def_t, season, through, key_players, def_row), def_row, off_t),
             "offense_personnel": records(pl.DataFrame(off_pers)) if off_pers else [],
             "defense_personnel": mu_mod.defense_personnel(def_t, use, roster_season=season),
         })
@@ -606,7 +677,7 @@ def game_matchup(game_id: str, include_sample: bool = False):
         l = listed.get(p.get("team") or "", {}).get(p.get("player_id") or "")
         p["status"] = l["status"] if l else None
     return {
-        "game": game, "season_used": use, "sides": sides, "metrics": team_mod.metric_json(),
+        "game": game, "season_used": use, "blend": blend_mod.blend_info(rows.get(home)), "sides": sides, "metrics": team_mod.metric_json(),
         "dvp_labels": ctx_mod.DVP_LABELS, "history": mu_mod.head_to_head(away, home),
         "venue": mu_mod.venue(game), "props": props, "lines": lines, "predictions": preds, "injuries": inj,
         "sources": sorted(set(latest["source"].to_list())) if not latest.is_empty() else [],
@@ -614,18 +685,22 @@ def game_matchup(game_id: str, include_sample: bool = False):
 
 
 @app.get("/api/teams/{team}/dvp")
-def team_dvp(team: str, position: str = "RB", season: int = CURRENT_SEASON - 1):
+def team_dvp(team: str, position: str = "RB", season: int | None = None, blend: bool | None = None):
+    season = _stats_season(season)
     pos = position.upper()
     if pos not in ctx_mod.POS_GROUPS:
         raise HTTPException(400, "position must be QB, RB, WR or TE")
-    table = ctx_mod.dvp_table(season, pos)
+    use_blend = _blend_default(season, blend)
+    table = blend_mod.dvp_blended(season, pos) if use_blend else ctx_mod.dvp_table(season, pos)
     return {"season": season, "position": pos, "stats": ctx_mod.DVP_BY_POS[pos], "labels": ctx_mod.DVP_LABELS,
+            "blended": use_blend, "prior_season": season - 1 if use_blend else None,
             "league": records(table), "team": team.upper(),
             "log": records(ctx_mod.dvp_log(team.upper(), pos, season)) if team.upper() != "ALL" else []}
 
 
 @app.get("/api/teams/{team}/usage")
-def team_usage_api(team: str, season: int = CURRENT_SEASON - 1, season_type: str = "REG"):
+def team_usage_api(team: str, season: int | None = None, season_type: str = "REG"):
+    season = _stats_season(season)
     return {"team": team.upper(), "season": season, "rows": records(ctx_mod.team_usage(team.upper(), season, season_type))}
 
 
@@ -665,11 +740,43 @@ def team_injuries_api(team: str, season: int = CURRENT_SEASON, week: int | None 
 
 
 @app.get("/api/tendencies/league")
-def league_tendencies(season: int = CURRENT_SEASON - 1):
+def league_tendencies(season: int | None = None, blend: bool | None = None):
+    """Every team's season with league ranks.
+
+    While ``season`` is under way the numbers are blended with last season's
+    by default (:mod:`dashboard.stats.blend`): one week of 2026 on its own
+    ranks teams on a single game. ``blend=false`` shows the season alone.
+    """
     _need_team_table()
-    r = coaches_mod.season_ranks().filter(pl.col("season") == season).sort("team")
+    season = _stats_season(season)
+    use_blend = _blend_default(season, blend)
+    if use_blend:
+        r = _without_faced(blend_mod.blended(season))
+    else:
+        r = coaches_mod.season_ranks().filter(pl.col("season") == season).sort("team")
     return {"season": season, "teams": records(r), "metrics": team_mod.metric_json(),
+            "blended": use_blend, "blend": _league_blend_info(r) if use_blend else None,
+            "can_blend": blend_mod.season_in_progress(season),
             "coaches": {k: v for k, v in coaches_mod.current_coaches(season).items()}}
+
+
+def _blend_default(season: int, blend: bool | None) -> bool:
+    """Blend unless asked not to, and only for a season still being played."""
+    return blend_mod.season_in_progress(season) if blend is None else (blend and blend_mod.season_in_progress(season))
+
+
+def _without_faced(df: pl.DataFrame) -> pl.DataFrame:
+    return df.drop([c for c in df.columns if c.startswith("faced_")])
+
+
+def _league_blend_info(df: pl.DataFrame) -> dict | None:
+    if df.is_empty():
+        return None
+    info = blend_mod.blend_info(df.sort("games", descending=True).to_dicts()[0])
+    info.pop("off_staff_changed", None)
+    info.pop("def_staff_changed", None)
+    info["games_min"] = int(df["games"].min())
+    return info
 
 
 def _role(role: str) -> str:
@@ -734,7 +841,7 @@ def _build_board_response(season: int, week: int, market: list[str] | None, book
         rows = [r for r in rows if any(b["book"] == book for b in r["books"])]
     if form:
         attach_form(rows, [season - 1, season])
-    proj_mod.project_rows(rows, season, week, dvp_season=coaches_mod.season_used(rows[0]["home_team"], season) if rows else None)
+    proj_mod.project_rows(rows, season, week)
     sources = sorted(set(latest["source"].to_list())) if not latest.is_empty() else []
     pulled = latest["pulled_at"].max() if not latest.is_empty() else None
     return {"season": season, "week": week, "sources": sources, "pulled_at": _clean(pulled),

@@ -290,7 +290,11 @@ def _fmt(v, key) -> str:
     if v is None:
         return "–"
     f = m.fmt if m else "dec1"
-    return f"{v * 100:.0f}%" if f == "pct" else f"{v:.2f}" if f == "dec2" else f"{v:.1f}" if f == "dec1" else f"{v:.0f}"
+    if f == "pct":
+        # Sack and interception rates live under 10%, where whole percents
+        # make a real move read as no move at all.
+        return f"{v * 100:.1f}%" if abs(v) < 0.1 else f"{v * 100:.0f}%"
+    return f"{v:.2f}" if f == "dec2" else f"{v:.1f}" if f == "dec1" else f"{v:.0f}"
 
 
 def angles(off: dict | None, deff: dict | None, off_team: str, def_team: str, dvp: dict[str, dict | None]) -> list[dict]:
@@ -409,6 +413,18 @@ def angles(off: dict | None, deff: dict | None, off_team: str, def_team: str, dv
 def venue(game: dict) -> dict:
     return {k: game.get(k) for k in ("stadium", "roof", "surface", "temp", "wind", "gameday", "gametime", "div_game")}
 
+
+
+def side_team_angles(off: dict | None, deff: dict | None, off_team: str, def_team: str,
+                     dvp: dict[str, dict | None], off_spread: float | None, venue_info: dict | None) -> list[dict]:
+    """Every team angle for one side of one game, strongest first. The
+    matchup page and the post-game grader both call this, so what gets graded
+    is what the page showed."""
+    out = angles(off, deff, off_team, def_team, dvp)
+    out += team_angles_extra(off, deff, off_team, def_team, off_spread, venue_info)
+    out = note_adjusted(out, deff, off_team) + h2h_angles(off, deff, off_team, def_team)
+    out.sort(key=lambda x: -x["strength"])
+    return out
 
 # --- more team angles: game script, ball security, downs, kicking, coverage ---
 
@@ -642,3 +658,99 @@ def player_angles(side_players: list[dict], deff: dict | None, def_team: str, si
         except Exception:      # a player without plays in the window; skip quietly
             continue
     return out
+
+
+# --- head to head: what this offense does to this defense, and back ----------
+
+#: For each metric the matchup view can move: the angle to raise when the
+#: projection rises well above the team's usual rank, and when it falls well
+#: below. ``(title, lean, tags)``; ``{d}``/``{o}`` are the defense/offense.
+_H2H_TEXT: dict[str, tuple[tuple[str, str, list[str]], tuple[str, str, list[str]]]] = {
+    "def_box_avg": (("{d} likely to load the box more than usual against {o}", "under", ["rushing", "RB"]),
+                    ("{d} likely to lighten the box against {o}: room for the run", "over", ["rushing", "RB"])),
+    "def_man_rate": (("{d} likely to play more man than usual against {o}", "neutral", ["receiving", "coverage"]),
+                     ("{d} likely to sit in zone more than usual against {o}", "neutral", ["receiving", "coverage"])),
+    "def_two_high_rate": (("{d} likely to play more two-high shells against {o}: underneath and the run open up", "neutral", ["coverage", "RB", "TE"]),
+                          ("{d} likely to play more single-high against {o}: one-on-ones outside", "neutral", ["coverage", "WR"])),
+    "def_blitz_rate": (("{d} likely to blitz more than usual against {o}", "neutral", ["passing", "pressure"]),
+                       ("{d} likely to blitz less than usual against {o}", "neutral", ["passing", "pressure"])),
+    "def_pressure_rate": (("{o}'s line gives up pressure: {d} should get home more than usual", "under", ["passing", "QB"]),
+                          ("{o} keeps the pocket clean: {d}'s pass rush should get home less than usual", "over", ["passing", "QB"])),
+    "def_sack_rate": (("{d} should sack {o} more than it sacks most teams", "over", ["sacks", "defense"]),
+                      ("{o} rarely goes down: {d}'s sack rate should dip", "under", ["sacks", "defense"])),
+    "def_pass_epa": (("{o}'s passing game beats most defenses: {d} should give up more than usual through the air", "over", ["passing", "receiving"]),
+                     ("{o}'s passing game has been easy to defend: {d} should allow less than usual", "under", ["passing", "receiving"])),
+    "def_rush_epa": (("{o}'s run game beats most defenses: {d} should give up more than usual on the ground", "over", ["rushing"]),
+                     ("{o}'s run game has been easy to stop: {d} should allow less than usual", "under", ["rushing"])),
+    "pass_rate": (("{d} is thrown on: {o} likely to pass more than usual", "over", ["pass attempts", "receiving"]),
+                  ("{d} is run on: {o} likely to lean on the ground more than usual", "over", ["carries", "rushing"])),
+    "rb_target_share": (("{d} funnels targets to backs: {o}'s RBs should see more of them", "over", ["receptions", "RB"]),
+                        ("{d} takes backs away in the passing game", "under", ["receptions", "RB"])),
+    "te_target_share": (("{d} funnels targets to tight ends: {o}'s TEs should see more of them", "over", ["receptions", "TE"]),
+                        ("{d} takes tight ends away", "under", ["receptions", "TE"])),
+}
+
+#: A projected rank has to move this far from the usual one to be an angle.
+H2H_MIN_MOVE = 6
+
+
+def h2h_angles(off: dict | None, deff: dict | None, off_team: str, def_team: str) -> list[dict]:
+    """Angles from the matchup view: where who this defense is facing should
+    change what it does, or who this offense is facing should change what it
+    does. A defense that stacks the box against everyone and a quarterback
+    whose offense draws light boxes from everyone do not meet at the
+    defense's number."""
+    out: list[dict] = []
+    for row in (deff, off):
+        for s in (row or {}).get("_h2h") or []:
+            text = _H2H_TEXT.get(s["key"])
+            if not text or s.get("usual_rank") is None or abs(s.get("moved") or 0) < H2H_MIN_MOVE:
+                continue
+            # Rank 1 is the highest value, so a smaller projected rank means
+            # the number went up.
+            (title, lean, tags) = text[0] if s["expected_rank"] < s["usual_rank"] else text[1]
+            k = s["key"]
+            n = s["n_teams"]
+            if s["side"] == "def":
+                detail = (f"{s['label']}: {def_team}'s usual is {_fmt(s['usual'], k)} (#{s['usual_rank']} of {n}). "
+                          f"Defenses facing {off_team} have shown {_fmt(s['drawn'], k)} (#{s['drawn_rank']}). "
+                          f"Projected for this game: {_fmt(s['expected'], k)}, which would rank #{s['expected_rank']}.")
+            else:
+                mirror = _OFF_MIRROR.get(k, k)
+                detail = (f"{s['label']}: {off_team}'s usual is {_fmt(s['usual'], k)} (#{s['usual_rank']} of {n}). "
+                          f"{def_team}'s opponents have come in at {_fmt(s['drawn'], mirror)} (#{s['drawn_rank']}). "
+                          f"Projected for this game: {_fmt(s['expected'], k)}, which would rank #{s['expected_rank']}.")
+            out.append({"title": title.format(d=def_team, o=off_team), "detail": detail, "lean": lean,
+                        "tags": tags + ["matchup"], "strength": 2 if abs(s["moved"]) >= 12 else 1,
+                        "offense": off_team, "defense": def_team})
+    return out
+
+
+_OFF_MIRROR = {"pass_rate": "def_pass_rate_faced", "rb_target_share": "def_rb_target_share", "te_target_share": "def_te_target_share"}
+
+#: Which adjusted numbers each existing angle quotes, found by its title.
+_ANGLE_KEYS: list[tuple[str, tuple[str, ...]]] = [
+    ("pass defense", ("def_pass_epa",)), ("run defense", ("def_rush_epa",)),
+    ("Man-coverage defense", ("def_man_rate",)), ("Pressure defense", ("def_pressure_rate", "def_blitz_rate")),
+    ("boxes", ("def_box_avg",)), ("Sacks", ("def_sack_rate",)), ("Clean pockets", ("def_sack_rate",)),
+    ("Two-high defense", ("def_two_high_rate",)), ("two-high shells", ("def_two_high_rate",)),
+    ("blitzing defense", ("def_blitz_rate",)), ("vs the blitz", ("def_blitz_rate",)),
+    ("under pressure vs", ("def_pressure_rate", "def_blitz_rate")),
+    ("vs man coverage", ("def_man_rate",)), ("vs zone coverage", ("def_man_rate",)),
+]
+
+
+def note_adjusted(angles_: list[dict], deff: dict | None, off_team: str) -> list[dict]:
+    """Say so when an angle's defensive number is the matchup projection
+    rather than the defense's usual one. The number is what fired the angle,
+    so the reader should know where it came from."""
+    moved = {s["key"]: s for s in (deff or {}).get("_h2h") or [] if abs(s.get("moved") or 0) >= 3}
+    if not moved:
+        return angles_
+    for a in angles_:
+        keys = next((ks for frag, ks in _ANGLE_KEYS if frag in a["title"]), ())
+        notes = [f"{moved[k]['label']} projected for {off_team}: {_fmt(moved[k]['expected'], k)} (#{moved[k]['expected_rank']}) "
+                 f"against a usual {_fmt(moved[k]['usual'], k)} (#{moved[k]['usual_rank']})" for k in keys if k in moved]
+        if notes:
+            a["detail"] += " " + "; ".join(notes) + "."
+    return angles_

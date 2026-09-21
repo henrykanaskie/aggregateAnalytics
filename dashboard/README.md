@@ -82,8 +82,10 @@ use; the store is what makes "opening line vs. now" possible later.
   score: over rate and error by book and market, whether the L5/L10 signals
   and line moves were predictive, and each model's side hit rate and error
   against the line's. `POST /api/grading/run` or the daily script.
-- **Baseline projection** (`baseline-v1`): recency-weighted mean of the last
-  12 games times an opponent factor from the defense-vs-position table, with
+- **Baseline projection** (`baseline-v2`): recency-weighted mean of the last
+  12 games times an opponent factor from the defense-vs-position table (this
+  season blended with last, as of the game's week; `baseline-v1` read a
+  single season), with
   a spread and P(over). Shown on the board and research page, logged through
   the prediction contract so it is graded like any model.
 - **Research extras**: with / without each key teammate (from snap counts),
