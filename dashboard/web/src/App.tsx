@@ -12,9 +12,10 @@ import Results from "./pages/Results";
 import Coaches from "./pages/Coaches";
 import Tour from "./components/Tour";
 import Welcome from "./components/Welcome";
-import { warmAll } from "./lib/prefetch";
+import { gameWeek, warmAll } from "./lib/prefetch";
 import { clearSticky, readSticky, useSticky, writeSticky } from "./lib/sticky";
 import { MetaProvider, useMeta } from "./state";
+import type { Meta } from "./api";
 
 // Which player, coach, team or game a page is showing lives in the query
 // string, and a plain link to "/coaches" would throw it away. Each tab points
@@ -25,8 +26,22 @@ const SECTIONS: [string, string][] = [
   ["/teams", "Teams"], ["/coaches", "Coaches"], ["/predictions", "Predictions"], ["/results", "Results"], ["/settings", "Settings"],
 ];
 
+// The Matchups tab remembers the game it was left on, but only while that game
+// is in the week the page would open to. Otherwise, once the league moves on,
+// the tab brings back last week's game under this week's slate.
+function tabLink(path: string, last: string | undefined, meta: Meta | null): string {
+  if (!last) return path;
+  if (path !== "/matchups" || !meta) return last;
+  const game = new URLSearchParams(last.split("?")[1] ?? "").get("game");
+  if (!game) return last;
+  const gw = gameWeek(game);
+  const week = readSticky<number | null>("matchups.week", null) ?? meta.week;
+  return gw && gw.season === meta.season && gw.week === week ? last : path;
+}
+
 function Tabs() {
   const loc = useLocation();
+  const { meta } = useMeta();
   const [last, setLast] = useSticky<Record<string, string>>("nav.last", {});
   useEffect(() => {
     const hit = SECTIONS.find(([path]) => path === loc.pathname);
@@ -39,9 +54,16 @@ function Tabs() {
   useEffect(() => { document.querySelector<HTMLElement>(".nav a.active")?.scrollIntoView({ inline: "nearest", block: "nearest" }); }, [loc.pathname]);
   return (
     <nav className="nav" data-tour="nav">
-      {SECTIONS.map(([path, label]) => <NavLink key={path} to={last[path] ?? path} data-tour={`nav:${path}`}>{label}</NavLink>)}
+      {SECTIONS.map(([path, label]) => <NavLink key={path} to={tabLink(path, last[path], meta)} data-tour={`nav:${path}`}>{label}</NavLink>)}
     </nav>
   );
+}
+
+function rollWeek(meta: Meta): void {
+  const now = `${meta.season}-${meta.week}`;
+  if (readSticky<string | null>("nfl.week", null) === now) return;
+  for (const k of ["board.week", "games.week", "matchups.week", "predictions.week", "results.week", "settings.week"]) clearSticky(k);
+  writeSticky("nfl.week", now);
 }
 
 type Stage = "welcome" | "tour" | null;
@@ -53,14 +75,11 @@ function Shell() {
   const [stage, setStage] = useState<Stage>(() => (readSticky("onboard.seen.v1", false) ? null : "welcome"));
   const close = () => { writeSticky("onboard.seen.v1", true); setStage(null); };
   // Week pickers are sticky and now outlive the browser session, so a week
-  // chosen by hand has to be let go of once the league moves past it.
-  useEffect(() => {
-    if (!meta) return;
-    const now = `${meta.season}-${meta.week}`;
-    if (readSticky<string | null>("nfl.week", null) === now) return;
-    for (const k of ["board.week", "games.week", "matchups.week", "predictions.week", "results.week", "settings.week"]) clearSticky(k);
-    writeSticky("nfl.week", now);
-  }, [meta]);
+  // chosen by hand has to be let go of once the league moves past it. Done
+  // during render rather than in an effect: the tabs and the page below read
+  // these on this same render, and an effect would only run after they had
+  // already come up on last week.
+  if (meta) rollWeek(meta);
   // Load every tab in the background as soon as meta lands, so opening one is
   // a render rather than a round trip.
   useEffect(() => { if (meta) warmAll(meta, settings); }, [meta, settings.includeSample, settings.since]);

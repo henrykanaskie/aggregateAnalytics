@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, api4, Angle, DefPlayer, GameMatchup, MatchupSideFull, ScheduleGame, TeamMetric } from "../api";
 import { Banner, Field, Headshot, SampleBanner, Spinner, TeamTag } from "../components/common";
 import { fmtLine, fmtOdds, fmtPct, fmtSpread, fmtStat } from "../lib/format";
-import { warm } from "../lib/prefetch";
+import { gameWeek, warm } from "../lib/prefetch";
 import { useSticky } from "../lib/sticky";
 import { useQuery } from "../lib/useQuery";
 import { useMeta } from "../state";
@@ -33,6 +33,13 @@ export default function Matchups() {
   useEffect(() => {
     if (schedule && meta && shown === meta.week) warm(schedule.map((g) => api4.gameMatchup.url(g.game_id, settings.includeSample)));
   }, [schedule, meta, shown, settings.includeSample]);
+  // The week picker follows the game on screen, so a game opened from a link
+  // (a past meeting, the tour) comes up under its own week's slate rather than
+  // this week's.
+  useEffect(() => {
+    const gw = gameId ? gameWeek(gameId) : null;
+    if (gw && meta && gw.season === meta.season && gw.week !== shown) setWeek(gw.week);
+  }, [gameId, meta]);
   const { data, loading, error: err } = useQuery<GameMatchup>(gameId ? api4.gameMatchup.url(gameId, settings.includeSample) : null);
   const weeks = Array.from({ length: 22 }, (_, i) => i + 1);
   if (meta && !meta.team_table_ready) return <Banner kind="warn">The team tendency table is not built yet. Run <code>python -m dashboard.stats.team</code> and reload.</Banner>;
@@ -41,7 +48,7 @@ export default function Matchups() {
       <div className="page-head"><div><h1>Matchups</h1><div className="muted small">One game, both sides: each offense's scheme against the other defense's, the angles where two tendencies collide, who plays and who covers, every past meeting, and the props posted for it.</div></div></div>
       <div className="panel" style={{ marginBottom: 12 }}>
         <div className="controls">
-          <Field label="Week"><select className="input" value={week ?? meta?.week ?? 1} onChange={(e) => setWeek(Number(e.target.value))}>{weeks.map((w) => <option key={w} value={w}>Week {w}</option>)}</select></Field>
+          <Field label="Week"><select className="input" value={week ?? meta?.week ?? 1} onChange={(e) => { setWeek(Number(e.target.value)); if (gameId) setSp({}); }}>{weeks.map((w) => <option key={w} value={w}>Week {w}</option>)}</select></Field>
           <Field label="Game">
             <div className="chips">
               {games.map((g) => <button key={g.game_id} className={`chip ${g.game_id === gameId ? "on" : ""}`} onClick={() => setSp({ game: g.game_id })}>{g.away_team} @ {g.home_team}<span className="faint tiny"> {g.gameday.slice(5)}</span></button>)}

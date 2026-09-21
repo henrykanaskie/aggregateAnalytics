@@ -46,10 +46,15 @@ async function drain(): Promise<void> {
 }
 
 /** A game id is `<season>_<week>_<away>_<home>`, so it says on its face
- *  whether it belongs to the week being played. */
+ *  which week it belongs to. Null if it is not one. */
+export function gameWeek(gameId: string): { season: number; week: number } | null {
+  const [season, wk] = gameId.split("_").map(Number);
+  return Number.isFinite(season) && Number.isFinite(wk) ? { season, week: wk } : null;
+}
+
 function isLive(gameId: string, meta: Meta): boolean {
-  const [season, wk] = gameId.split("_");
-  return Number(season) === meta.season && Number(wk) === meta.week;
+  const gw = gameWeek(gameId);
+  return !!gw && gw.season === meta.season && gw.week === meta.week;
 }
 
 // The query string is where each page keeps what it is showing, and the nav
