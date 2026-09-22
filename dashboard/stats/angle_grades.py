@@ -102,6 +102,12 @@ TEAM_CHECKS: list[tuple[str, str, str, str, str]] = [
     (r"^Mobile QB vs a run defense that leaks", "off", "qb_rush_rate", "up", "team"),
 ]
 
+#: Metrics with no in-season number, and what to grade their angles on until
+#: there is one. The stand-in keeps its own measure label, so a graded row
+#: says what it was checked on and the review can say why.
+STAND_IN = {"def_pressure_rate": "def_sack_rate"}
+STAND_IN_LABEL = {("def_pressure_rate", "def_sack_rate"): "Sack rate (for pressure)"}
+
 #: Angles that only say where to look ("check the QB's pressured split").
 #: Listed so the test can tell a context note from a forgotten check.
 CONTEXT_ONLY = (r"^Man-coverage defense", r"^Pressure defense", r"^Play-action offense",
@@ -319,10 +325,19 @@ def grade_game(game_id: str) -> list[dict]:
                 row["direction"] = c["dir"]
             if c and c["kind"] == "metric":
                 team = off_t if c["side"] == "off" else def_t
-                m = METRIC_BY_KEY[c["metric"]]
-                base = (float(table[c["metric"]].drop_nulls().mean()) if c["vs"] == "league"
-                        else (usual.get(team) or {}).get(c["metric"]))
-                row |= {"team": team, "measure": m.label, "fmt": m.fmt, "actual": actual_rows[team].get(c["metric"]),
+                key = c["metric"]
+                # Pressure comes from the NFL's participation feed, which is
+                # only published after the season. Until a game has it, the
+                # pressure calls are graded on sack rate, the part of getting
+                # home that the play-by-play does record, against the same
+                # defense's usual sack rate.
+                if key in STAND_IN and actual_rows[team].get(key) is None:
+                    key = STAND_IN[key]
+                m = METRIC_BY_KEY[key]
+                base = (float(table[key].drop_nulls().mean()) if c["vs"] == "league"
+                        else (usual.get(team) or {}).get(key))
+                row |= {"team": team, "measure": STAND_IN_LABEL.get((c["metric"], key), m.label), "fmt": m.fmt,
+                        "actual": actual_rows[team].get(key),
                         "baseline": base, "baseline_label": "league average" if c["vs"] == "league" else f"{team}'s usual"}
             elif c and c["kind"] == "pos":
                 league = dvp_blended(season, c["pos"], before_week=week)[c["stat"]].drop_nulls().mean()
@@ -589,7 +604,7 @@ def _said(r: dict) -> str:
     return f"Said {who}'s {(r['measure'] or 'number').lower()} would be {'higher' if up else 'lower'} than usual."
 
 
-_LABEL_KEY = {m.label: k for k, m in METRIC_BY_KEY.items()}
+_LABEL_KEY = {m.label: k for k, m in METRIC_BY_KEY.items()} | {label: k for (_, k), label in STAND_IN_LABEL.items()}
 
 
 def _metric_key(label: str | None) -> str | None:
@@ -649,7 +664,9 @@ def explain(rows: list[dict]) -> list[dict]:
                 top = [f"{p['player_display_name']} {int(p[stat] or 0)}" for p in who.head(3).to_dicts() if (p[stat] or 0) > 0]
                 ev = ", ".join(top) or None
         note = ("Graded on his whole game: the box score does not split out those snaps."
-                if r["kind"] == "player" and any(k in r["title"] for k in _SPLIT_ANGLE) else None)
+                if r["kind"] == "player" and any(k in r["title"] for k in _SPLIT_ANGLE)
+                else "Graded on sack rate: pressure is only published after the season, and sacks are the part of it the play-by-play records."
+                if r["measure"] in STAND_IN_LABEL.values() else None)
         r |= {"said": _said(r), "happened": _happened(r), "evidence": ev, "note": note,
               "verdict_words": _VERDICT_WORDS.get(r["verdict"] or "", "")}
     return rows
