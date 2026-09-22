@@ -209,22 +209,31 @@ def _measure(df: pl.DataFrame, key: str) -> float | None:
 #: still need a real move.
 MARGIN_REL = 0.05
 MARGIN_FLOOR = {"pct": 0.005, "dec2": 0.02, "dec1": 0.5}
+#: Numbers whose level says nothing about how far they move, so 5% of it is
+#: the wrong yardstick. Every defense puts six and a half men in the box
+#: (teams' season averages sit 0.16 apart), so 5% was a third of a defender,
+#: more than a typical game moves: 20 of the first 24 box calls of 2026 were
+#: pushes. A tenth of a defender leaves about one call in five a push, like
+#: the rest.
+MARGIN_ABS = {"Defenders in box (vs rushes)": 0.1}
 #: Baselines that are thresholds rather than a usual level: under the closing
 #: total by half a point is under, and one touchdown is at least one.
 EXACT = ("closing total", "at least one")
 
 
-def margin(base: float, fmt: str | None, baseline_label: str | None) -> float:
+def margin(base: float, fmt: str | None, baseline_label: str | None, measure: str | None = None) -> float:
     if baseline_label in EXACT:
         return 0.0
+    if measure in MARGIN_ABS:
+        return MARGIN_ABS[measure]
     return max(MARGIN_REL * abs(base), MARGIN_FLOOR.get(fmt or "", 0.0))
 
 
 def _verdict(actual: float | None, base: float | None, d: str, fmt: str | None = None,
-             baseline_label: str | None = None) -> str | None:
+             baseline_label: str | None = None, measure: str | None = None) -> str | None:
     if actual is None or base is None:
         return None
-    m = margin(base, fmt, baseline_label)
+    m = margin(base, fmt, baseline_label, measure)
     if abs(actual - base) < max(m, 1e-9):
         return "push"
     return "hit" if (actual > base) == (d == "up") else "miss"
@@ -235,8 +244,8 @@ def _with_margin(df: pl.DataFrame) -> pl.DataFrame:
     to weeks graded before it existed and changing it needs no regrade."""
     if df.is_empty():
         return df
-    return df.with_columns(pl.struct("actual", "baseline", "direction", "fmt", "baseline_label").map_elements(
-        lambda r: _verdict(r["actual"], r["baseline"], r["direction"], r["fmt"], r["baseline_label"]),
+    return df.with_columns(pl.struct("actual", "baseline", "direction", "fmt", "baseline_label", "measure").map_elements(
+        lambda r: _verdict(r["actual"], r["baseline"], r["direction"], r["fmt"], r["baseline_label"], r["measure"]),
         return_dtype=pl.String).alias("verdict"))
 
 
@@ -346,7 +355,7 @@ def grade_game(game_id: str) -> list[dict]:
                 if not hit.is_empty() and hit["actual"][0] is not None:
                     ln, act = float(hit["line"][0]), float(hit["actual"][0])
                     row |= {"line": ln, "market": mk, "line_result": "over" if act > ln else "under" if act < ln else "push"}
-        row["verdict"] = _verdict(row["actual"], row["baseline"], row["direction"], row["fmt"], row["baseline_label"])
+        row["verdict"] = _verdict(row["actual"], row["baseline"], row["direction"], row["fmt"], row["baseline_label"], row.get("measure"))
         out.append(row)
     return out
 

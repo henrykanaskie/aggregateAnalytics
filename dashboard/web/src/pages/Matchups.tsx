@@ -96,7 +96,7 @@ function GameView({ d }: { d: GameMatchup }) {
           <div className="tile"><div className="k">Implied totals</div><div className="v" style={{ fontSize: 16 }}>{implied(g, hs?.line ?? (g.spread_line === null ? null : -g.spread_line), tot?.line ?? g.total_line)}</div><div className="s">from spread and total</div></div>
           <div className="tile"><div className="k">Model · {pred?.model_version ?? "none"}</div><div className="v" style={{ fontSize: 16 }}>{pred ? `${pred.pred_margin >= 0 ? g.home_team : g.away_team} by ${Math.abs(pred.pred_margin).toFixed(1)}` : "–"}</div><div className="s">{pred ? `${g.home_team} win prob ${fmtPct(pred.pred_win_prob)} · edge ${pred.market_spread === null ? "–" : (pred.pred_margin - pred.market_spread).toFixed(1)}` : "nothing logged"}</div></div>
         </div>
-        <div className="hint" style={{ marginTop: 8 }}>Team numbers: {blendNote(d.blend)} Each defense is also read against this offense: where teams consistently play an offense differently (lighter boxes, more two-high, less pressure), the "Here" column projects this defense's number for this game, and the angles use that. Who gets the ball and who covers are {d.season_used} numbers{d.season_used < g.season ? ` until ${g.season} has four games` : ""}. Ranks are among 32 teams.</div>
+        <div className="hint" style={{ marginTop: 8 }}>Team numbers: {blendNote(d.blend)} Each defense is also read against this offense: where teams consistently play an offense differently (lighter boxes, more two-high, less pressure), the "Here" column projects this defense's number for this game, and the angles use that. Who gets the ball is this season's games before kickoff as soon as there is one, last season's before that; who covers is {d.season_used}{d.season_used < g.season ? ` until ${g.season} has four games` : ""}. Ranks are among 32 teams.</div>
       </div>
 
       {played && review && review.length > 0 && <AngleReview rows={review} home={g.home_team} away={g.away_team} score={`${g.away_team} ${g.away_score}, ${g.home_team} ${g.home_score}`} />}
@@ -104,7 +104,7 @@ function GameView({ d }: { d: GameMatchup }) {
       {played && review && review.length === 0 && <Banner kind="info">This game is final but its angles have not been graded yet. The Tuesday job does it once the box scores land (<code>python -m dashboard.stats.angle_grades</code>).</Banner>}
 
       <div className="grid" style={{ gap: 14 }} data-tour="matchup-sides">
-        {d.sides.map((s) => <SideView key={s.offense} s={s} metrics={d.metrics} labels={d.dvp_labels} usageSeason={d.season_used} track={track ? tIdx : null} trackSeason={track?.season ?? null} />)}
+        {d.sides.map((s) => <SideView key={s.offense} s={s} metrics={d.metrics} labels={d.dvp_labels} usageSeason={d.season_used} gameSeason={d.game.season} track={track ? tIdx : null} trackSeason={track?.season ?? null} />)}
       </div>
 
       <div className="grid grid-2">
@@ -194,7 +194,7 @@ function AngleGrid({ title, angles, empty, track, season, offense, defense }: { 
 }
 const rate = (r: number | null | undefined) => r === null || r === undefined ? <span className="muted">–</span> : <span className={r >= 0.6 ? "over" : r <= 0.4 ? "under" : ""}>{fmtPct(r)}</span>;
 
-function SideView({ s, metrics, labels, usageSeason, track, trackSeason }: { s: MatchupSideFull; metrics: TeamMetric[]; labels: Record<string, string>; usageSeason: number; track: TrackIndex | null; trackSeason: number | null }) {
+function SideView({ s, metrics, labels, usageSeason, gameSeason, track, trackSeason }: { s: MatchupSideFull; metrics: TeamMetric[]; labels: Record<string, string>; usageSeason: number; gameSeason: number; track: TrackIndex | null; trackSeason: number | null }) {
   const mdefs = useMemo(() => new Map(metrics.map((m) => [m.key, m])), [metrics]);
   const os = s.offense_block.season, ds = s.defense_block.season;
   // Usual number and rank first; "Here" is the projection against the other
@@ -236,9 +236,11 @@ function SideView({ s, metrics, labels, usageSeason, track, trackSeason }: { s: 
           <div className="hint">rank 1 = fewest allowed; green = generous to that position, red = stingy</div>
         </div>
         <div>
-          <h3 style={{ marginBottom: 6 }}>Who gets the ball · {s.offense}</h3>
+          <h3 style={{ marginBottom: 6 }}>Who gets the ball · {s.offense}{s.usage_label ? <span className="muted" style={{ textTransform: "none", letterSpacing: 0 }}> · {s.usage_label}</span> : null}</h3>
           <div className="tbl-wrap"><table className="tbl compact tight"><thead><tr><th className="left">Player</th><th>G</th><th>Tgt%</th><th>Car%</th><th>Tch/g</th><th>PPR/g</th></tr></thead>
-            <tbody>{s.offense_personnel.map((p) => <tr key={p.player_id}><td className="left"><Link to={`/research?player=${p.player_id}`}>{p.player_display_name}</Link> <span className="muted">{p.position}{p.depth_rank ? p.depth_rank : ""}</span> <Listed status={p.status} injury={p.injury} />{p.new_to_team && p.stats_team ? <span className="pill warn" title={`New to ${s.offense}. The numbers here are his ${usageSeason} season with ${p.stats_team}.`}>{p.stats_team}</span> : null}{!p.stats_team && p.games === 0 ? <span className="pill" title="No prior season on record">rookie</span> : null}</td><td className="num muted">{p.games}</td><td className="num">{p.position === "QB" ? "–" : fmtPct(p.target_share)}</td><td className="num">{p.position === "RB" || p.position === "QB" ? fmtPct(p.carry_share) : "–"}</td><td className="num">{(p.touches_pg ?? 0).toFixed(1)}</td><td className="num">{(p.ppr_pg ?? 0).toFixed(1)}</td></tr>)}</tbody></table></div>
+            <tbody>{s.offense_personnel.map((p) => <tr key={p.player_id}><td className="left"><Link to={`/research?player=${p.player_id}`}>{p.player_display_name}</Link> <span className="muted">{p.position}{p.depth_rank ? p.depth_rank : ""}</span> <Listed status={p.status} injury={p.injury} />{p.new_to_team && p.stats_team ? <span className="pill warn" title={`New to ${s.offense}. The numbers here are his ${s.usage_season ?? usageSeason} season with ${p.stats_team}.`}>{p.stats_team}</span> : null}{!p.stats_team && p.games === 0 ? (s.usage_season === gameSeason
+                ? <span className="pill" title={`No ${s.usage_season} snaps before this game`}>no games yet</span>
+                : <span className="pill" title="No prior season on record">rookie</span>) : null}</td><td className="num muted">{p.games}</td><td className="num">{p.position === "QB" ? "–" : fmtPct(p.target_share)}</td><td className="num">{p.position === "RB" || p.position === "QB" ? fmtPct(p.carry_share) : "–"}</td><td className="num">{(p.touches_pg ?? 0).toFixed(1)}</td><td className="num">{(p.ppr_pg ?? 0).toFixed(1)}</td></tr>)}</tbody></table></div>
           <h3 style={{ margin: "10px 0 6px" }}>Who covers · {s.defense}</h3>
           <div className="tbl-wrap"><table className="tbl compact tight"><thead><tr><th className="left">Defender</th><th>Snap%</th><th>Tgt/g</th><th>Y/tgt</th><th>Catch%</th><th>TD</th><th>Prs</th></tr></thead>
             <tbody>{(["CB", "S", "LB", "DL"] as const).flatMap((grp) => groups[grp].slice(0, grp === "DL" ? 4 : grp === "LB" ? 3 : 4).map((p) => (

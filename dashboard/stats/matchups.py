@@ -25,7 +25,7 @@ from nfl.data import scan
 from nfl.depth import load_depth_charts
 
 from ..config import CURRENT_SEASON
-from .context import DVP_BY_POS, DVP_LABELS, POS_GROUPS, USAGE_COLS, dvp_recent, dvp_table, league_usage, team_usage
+from .context import DVP_BY_POS, DVP_LABELS, POS_GROUPS, USAGE_COLS, dvp_recent, dvp_table, league_usage, snap_weeks, team_usage
 from .gamelog import players_master
 from .players import player_index
 from .team import METRIC_BY_KEY
@@ -141,23 +141,6 @@ def _who(box: pl.DataFrame) -> dict[str, tuple[str, str]]:
     return {r["player_id"]: (r["player_display_name"], r["position"]) for r in box.to_dicts()}
 
 
-@lru_cache(maxsize=64)
-def _snap_weeks(season: int, team: str) -> pl.DataFrame:
-    """(player_id, week) for everyone who took a snap for ``team``: offense,
-    defense or special teams. Snap counts are keyed on PFR ids; the players
-    table maps them to the gsis ids everything else uses."""
-    try:
-        snaps = (scan("snap_counts")
-                 .filter((pl.col("season") == season) & (pl.col("team") == team)
-                         & ((pl.col("offense_snaps").fill_null(0) + pl.col("defense_snaps").fill_null(0)
-                             + pl.col("st_snaps").fill_null(0)) > 0))
-                 .select("pfr_player_id", "week").collect())
-    except Exception:  # noqa: BLE001  no snap table in this cache
-        return pl.DataFrame(schema={"player_id": pl.String, "week": pl.Int32})
-    ids = players_master().select(pl.col("pfr_id").alias("pfr_player_id"), pl.col("gsis_id").alias("player_id")).drop_nulls()
-    return snaps.join(ids, on="pfr_player_id", how="inner").select("player_id", pl.col("week").cast(pl.Int32)).unique()
-
-
 def _games(box: pl.DataFrame) -> dict[str, int]:
     """Games played, per player, over the games ``box`` covers.
 
@@ -169,7 +152,7 @@ def _games(box: pl.DataFrame) -> dict[str, int]:
     weeks = box.select("player_id", pl.col("week").cast(pl.Int32))
     parts = [weeks]
     for (season, team), g in box.group_by("season", "team"):
-        sw = _snap_weeks(int(season), team)
+        sw = snap_weeks(int(season)).filter(pl.col("team") == team).select("player_id", "week")
         if not sw.is_empty():
             # Only the games this box is about: one game, the season so far,
             # a whole season.
@@ -461,13 +444,13 @@ def depth_chart(season: int) -> pl.DataFrame:
     return d.filter(pl.col("asof") == pl.col("asof").max().over("team"))
 
 
-def _usage_by_player(season: int) -> dict[str, dict]:
-    """Last season's line for each player, wherever he played it.
+def _usage_by_player(season: int, before_week: int | None = None) -> dict[str, dict]:
+    """Each player's line for a season (up to a week), wherever he played it.
 
     A player traded mid-season has a row per team; the one he played most of
     is the one that describes him.
     """
-    u = league_usage(season)
+    u = league_usage(season, "REG", before_week)
     if u.is_empty():
         return {}
     out: dict[str, dict] = {}
@@ -476,7 +459,7 @@ def _usage_by_player(season: int) -> dict[str, dict]:
     return out
 
 
-def offense_personnel(team: str, season: int, roster_season: int | None = None) -> list[dict]:
+def offense_personnel(team: str, season: int, roster_season: int | None = None, before_week: int | None = None) -> list[dict]:
     """Who is on the team now, next to what they did in ``season``.
 
     The roster and the production deliberately come from different years. In
@@ -493,9 +476,9 @@ def offense_personnel(team: str, season: int, roster_season: int | None = None) 
     chart = depth_chart(roster_season) if roster_season else pl.DataFrame()
     mine = chart.filter(pl.col("team") == team) if not chart.is_empty() else chart
     if mine.is_empty():
-        return _personnel_by_volume(team, season)
+        return _personnel_by_volume(team, season, before_week)
 
-    usage = _usage_by_player(season)
+    usage = _usage_by_player(season, before_week)
     heads = {r["player_id"]: r["headshot"] for r in player_index().select("player_id", "headshot").to_dicts()}
     blank = {c: 0 for c in USAGE_COLS + ["receiving_air_yards", "games", "team_games"]}
     keep = []
@@ -520,9 +503,9 @@ def offense_personnel(team: str, season: int, roster_season: int | None = None) 
     return keep
 
 
-def _personnel_by_volume(team: str, season: int) -> list[dict]:
+def _personnel_by_volume(team: str, season: int, before_week: int | None = None) -> list[dict]:
     """The team sheet as it actually played, for when no chart is published."""
-    u = team_usage(team, season)
+    u = team_usage(team, season, before_week=before_week)
     if u.is_empty():
         return []
     idx = player_index().select("player_id", "headshot")
