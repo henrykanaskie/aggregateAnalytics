@@ -1,9 +1,11 @@
 import { useState } from "react";
-import { api, OddsStatus, PullResult, signOut } from "../api";
-import { Field, Seg, Spinner } from "../components/common";
+import { api, FeedStatus, OddsStatus, PullResult, signOut } from "../api";
+import { Field, Seg, sourceName, Spinner } from "../components/common";
 import { useSticky } from "../lib/sticky";
 import { useQuery } from "../lib/useQuery";
 import { useMeta } from "../state";
+import Tailor from "../components/Tailor";
+import { describe } from "../lib/profile";
 
 export default function Settings() {
   const { meta, settings, setSettings, reloadMeta, admin, adminNote } = useMeta();
@@ -50,6 +52,12 @@ export default function Settings() {
             <button className="btn primary" style={{ marginTop: 8 }} disabled={!!busy} onClick={() => pull("espn")}>{busy === "espn" ? <Spinner /> : "Pull from ESPN"}</button>
           </div>
           <div className="panel" style={{ background: "var(--bg-2)", marginBottom: 10 }}>
+            <div className="panel-head"><b>Sports Game Odds · multi-book, free plan</b>{status?.has_sgo_key ? <span className="pill over">key found</span> : <span className="pill warn">no key</span>}</div>
+            <div className="small muted">The backup for when ESPN stops answering, and more books when it does not: DraftKings, FanDuel, BetMGM, Caesars and five more, with prices. Billed per game rather than per market, so the free plan's 2,500 games a month covers four pulls a day. Get a key at sportsgameodds.com, put <code>SGO_API_KEY=…</code> in the server's environment (or the repo's <code>.env</code> locally), and restart the API. Its terms forbid republishing the data, so these pulls stay on this server and are never committed to the public repo.</div>
+            {status?.sgo_usage && <div className="small muted" style={{ marginTop: 6 }}><b className="num">{status.sgo_usage.objects}</b> of <b className="num">{status.sgo_usage.limit}</b> games used in {status.sgo_usage.month}</div>}
+            <button className="btn primary" style={{ marginTop: 8 }} disabled={!!busy || !status?.has_sgo_key} onClick={() => pull("sgo")}>{busy === "sgo" ? <Spinner /> : "Pull from Sports Game Odds"}</button>
+          </div>
+          <div className="panel" style={{ background: "var(--bg-2)", marginBottom: 10 }}>
             <div className="panel-head"><b>The Odds API · multi-book props</b>{status?.has_odds_api_key ? <span className="pill over">key found</span> : <span className="pill warn">no key</span>}</div>
             <div className="small muted">DraftKings, FanDuel, BetMGM, Caesars, BetRivers and more, with prices. Costs credits: one per market per game. Put <code>ODDS_API_KEY=…</code> in the repo's <code>.env</code> and restart the API.</div>
             <div className="chips" style={{ margin: "8px 0" }}>
@@ -84,6 +92,8 @@ export default function Settings() {
             </table></div>
             {Object.keys(s).length === 0 && <div className="empty">No snapshots yet.</div>}
           </div>
+          <FeedHealth feeds={status?.feeds ?? {}} />
+          <TailorPanel />
           <div className="panel">
             <div className="panel-head"><h3>Defaults</h3></div>
             <div className="controls">
@@ -101,6 +111,60 @@ export default function Settings() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// The tailoring answers, what they add up to, and the panels brought back up by hand.
+function TailorPanel() {
+  const { settings, setSettings, teamByAbbr } = useMeta();
+  const [editing, setEditing] = useState(false);
+  const p = settings.profile;
+  const label = (id: string) => id.replace(/^tab:\//, "").replace(/^[a-z]+:/, "").replace(/-/g, " ");
+  return (
+    <div className="panel" id="tailor">
+      <div className="panel-head"><h3>Your layout</h3>
+        <div className="actions">
+          <button className="btn sm primary" onClick={() => setEditing(true)}>{p ? "Change answers" : "Tailor it to me"}</button>
+          {p && <button className="btn sm" title="Forget the answers and show every page and panel" onClick={() => setSettings({ profile: null })}>Show everything</button>}
+        </div>
+      </div>
+      {!p && <div className="small muted">Every page and panel is showing. A few questions about what you are here for (betting, fantasy, or following the game), the positions you follow and how much detail you want will rearrange the pages around it.</div>}
+      {p && <ul className="tailor-summary">{describe(p, p.team ? teamByAbbr.get(p.team)?.team_name : undefined).map((x) => <li key={x}>{x}</li>)}</ul>}
+      {p && p.pinned.length > 0 && (
+        <div style={{ marginTop: 10 }}>
+          <div className="hint" style={{ marginBottom: 6 }}>Brought back up by hand. Remove one to let your answers decide again.</div>
+          <div className="chips">{p.pinned.map((id) => <span key={id} className="chip on">{label(id)}<button title="remove" onClick={() => setSettings({ profile: { ...p, pinned: p.pinned.filter((x) => x !== id) } })}>×</button></span>)}</div>
+        </div>
+      )}
+      {editing && <Tailor onDone={() => setEditing(false)} onCancel={() => setEditing(false)} />}
+    </div>
+  );
+}
+
+// How each feed did on its last attempt. Visible to everyone: when the board
+// stops moving, this is where it says why.
+function FeedHealth({ feeds }: { feeds: Record<string, FeedStatus> }) {
+  const rows = Object.entries(feeds).filter(([k]) => k !== "sample");
+  const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : "never");
+  return (
+    <div className="panel">
+      <div className="panel-head"><h3>Feed health</h3><span className="hint">the last attempt at each lines feed</span></div>
+      {rows.length === 0 ? <div className="hint">No scheduled pull has run yet on this copy of the data.</div> : (
+        <div className="tbl-wrap"><table className="tbl">
+          <thead><tr><th className="left">Feed</th><th className="left">Last try</th><th>Result</th><th className="left">Last success</th></tr></thead>
+          <tbody>{rows.map(([k, f]) => (
+            <tr key={k}>
+              <td className="left">{sourceName(k)}</td>
+              <td className="left small">{when(f.at)}</td>
+              <td className={`num ${f.ok ? "over" : "under"}`} title={f.error ?? undefined}>{f.ok ? `${f.props} props, ${f.games} game lines` : "failed"}</td>
+              <td className="left small">{when(f.last_ok)}</td>
+            </tr>
+          ))}</tbody>
+        </table></div>
+      )}
+      {rows.some(([, f]) => !f.ok) && <div className="hint" style={{ marginTop: 8 }}>{rows.filter(([, f]) => !f.ok).map(([k, f]) => `${sourceName(k)}: ${f.error ?? "no lines returned"}`).join(" · ")}</div>}
+      <div className="hint" style={{ marginTop: 8 }}>The schedule pulls ESPN, and a failed pull no longer holds up the injury refresh. When ESPN is down, pull Sports Game Odds here by hand: licensed feeds are kept off the public repo, so they are not on the schedule. Stats, injuries, depth charts and the fantasy pages come from nflverse and do not depend on any of these.</div>
     </div>
   );
 }

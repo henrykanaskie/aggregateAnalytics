@@ -2,9 +2,15 @@
 matches, is a no-op with no repo configured, and deletes local snapshots only
 when ODDS_KEEP_DAYS asks it to."""
 
+import hashlib
 import json
 
 from data_handling import sync_odds
+
+
+def _sha(b: bytes) -> str:
+    """The id GitHub's tree gives a blob."""
+    return hashlib.sha1(b"blob %d\0" % len(b) + b).hexdigest()
 
 
 def _fake_github(files: dict[str, bytes]):
@@ -14,7 +20,7 @@ def _fake_github(files: dict[str, bytes]):
     def fetch(url: str, accept: str) -> bytes:
         calls.append(url)
         if "/git/trees/" in url:
-            tree = [{"path": p, "type": "blob", "size": len(b), "sha": "x"} for p, b in files.items()]
+            tree = [{"path": p, "type": "blob", "size": len(b), "sha": _sha(b)} for p, b in files.items()]
             tree.append({"path": "README.md", "type": "blob", "size": 3, "sha": "y"})
             return json.dumps({"tree": tree}).encode()
         path = url.split("/main/", 1)[1]
@@ -164,3 +170,15 @@ def test_window_reads_odds_keep_days_from_the_environment(tmp_path, monkeypatch)
     assert sync_odds.sync("o/r", "main", tmp_path, fetch=fetch) == 2
     assert sorted(q.name for q in (tmp_path / "props").iterdir()) == [
         "20260908T085048Z_espn.parquet", "20260909T023340Z_espn.parquet"]
+
+
+def test_a_rewritten_file_of_the_same_size_is_refetched(tmp_path):
+    # The feed status keeps its length from run to run; only the content moves.
+    old, new = b'{"espn": {"ok": true,  "at": "2026-09-22T10:00"}}', b'{"espn": {"ok": false, "at": "2026-09-22T16:00"}}'
+    assert len(old) == len(new)
+    fetch, _ = _fake_github({"data/odds/feed_status.json": new})
+    (tmp_path / "feed_status.json").write_bytes(old)
+    assert sync_odds.sync("o/r", "main", tmp_path, fetch=fetch) == 1
+    assert (tmp_path / "feed_status.json").read_bytes() == new
+    # ...and an identical copy is left alone.
+    assert sync_odds.sync("o/r", "main", tmp_path, fetch=fetch) == 0

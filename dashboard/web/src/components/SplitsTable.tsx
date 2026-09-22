@@ -1,13 +1,15 @@
 import type { GameRow, StatDef } from "../api";
+import { useLens } from "../lib/profile";
 import { fmtPct, fmtStat } from "../lib/format";
 import { splits, summarize } from "../lib/stats";
 
 export default function SplitsTable({ rows, statKey, stat, line, position }: { rows: GameRow[]; statKey: string; stat?: StatDef; line: number | null; position?: string | null }) {
+  const { words: w, betting } = useLens();
   const all = summarize(rows, statKey, line);
   return (
     <div className="tbl-wrap">
       <table className="tbl compact">
-        <thead><tr><th className="left">Split</th><th>G</th><th>Avg</th><th>Med</th><th>vs all</th><th>Over %</th><th>O-U-P</th></tr></thead>
+        <thead><tr><th className="left">Split</th><th>G</th><th>Avg</th><th>Med</th><th>vs all</th><th style={{ textTransform: "capitalize" }}>{w.over} %</th><th>{betting ? "O-U-P" : "Record"}</th></tr></thead>
         <tbody>
           {splits(rows, position).map((sp) => {
             const s = summarize(sp.rows, statKey, line);

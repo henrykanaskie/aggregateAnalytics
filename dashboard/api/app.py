@@ -30,15 +30,16 @@ from nfl.data import cached_datasets, scan
 from webauth import auth_router, require_admin, require_session
 
 from .. import predictions
-from ..config import CURRENT_SEASON, DEFAULT_SINCE, DERIVED_DIR, WEB_DIST, odds_api_key
+from ..config import CURRENT_SEASON, DEFAULT_SINCE, DERIVED_DIR, WEB_DIST, odds_api_key, sgo_api_key
 from nfl.data import DATA_ROOT, MANIFEST_PATH
 from ..odds import store
 from ..odds.analysis import attach_form, build_board
 from ..odds.common import current_week, schedule
 from ..odds.markets import BOOKS, market_json
 from ..odds.pull import run_pull
+from ..odds import pull as pull_mod
 from ..stats import players as players_mod
-from ..stats.catalog import GROUPS, catalog_json
+from ..stats.catalog import GROUPS, STATS, catalog_json
 from ..stats import coaches as coaches_mod
 from ..stats import context as ctx_mod
 from ..stats import angles as ang_mod
@@ -47,6 +48,7 @@ from ..stats import blend as blend_mod
 from ..stats import matchups as mu_mod
 from ..stats import extras as ex_mod
 from ..stats import availability as avail_mod
+from ..stats import fantasy as fantasy_mod
 from ..stats import projection as proj_mod
 from ..odds import grading
 from ..stats import pbp as pbp_mod
@@ -287,6 +289,9 @@ def data_version() -> str:
         st = MANIFEST_PATH.stat()
         h.update(f"manifest|{int(st.st_mtime)}|{st.st_size}\n".encode())
     h.update(repr(store.version()).encode())
+    # A stat added to the catalog changes the columns of every game log without
+    # touching a file, and browsers would keep serving logs that lack it.
+    h.update(",".join(s.key for s in STATS).encode())
     # The live injuries file sits under data/odds, outside both walks.
     from ..config import INJURIES_LIVE
     if INJURIES_LIVE.exists():
@@ -325,6 +330,8 @@ def meta():
             "has_odds_api_key": bool(odds_api_key()),
             "status": store.status(),
             "oddsapi_usage": _usage(),
+            # Whether each feed worked on its last attempt, for the outage banner.
+            "feeds": pull_mod.feed_status(),
         },
         "datasets": cached_datasets(),
         "split_dims": [{"key": d.key, "label": d.label, "roles": list(d.roles), "since": d.since, "note": d.note} for d in pbp_mod.DIMS],
@@ -611,6 +618,27 @@ def _data_stamp() -> tuple:
     from ..config import INJURIES_LIVE
     inj = INJURIES_LIVE.stat().st_mtime_ns if INJURIES_LIVE.exists() else 0
     return (store.version(), inj)
+
+
+# A week of fantasy projections is 320 players read against their opponents;
+# built once per snapshot like a matchup, since nothing in it moves between.
+_FANTASY_CACHE = _ByteCache(limit=6)
+
+
+def _deep_clean(v: Any) -> Any:
+    if isinstance(v, dict):
+        return {k: _deep_clean(x) for k, x in v.items()}
+    if isinstance(v, list):
+        return [_deep_clean(x) for x in v]
+    return _clean(v)
+
+
+@app.get("/api/fantasy/week")
+def fantasy_week_route(request: Request, season: int = CURRENT_SEASON, week: int | None = None):
+    week = _week_default(season, week)
+    entry = _FANTASY_CACHE.get((_data_stamp(), season, week),
+                               lambda: _deep_clean(fantasy_mod.week_rankings(season, week)))
+    return _cached_json(request, entry)
 
 
 @app.get("/api/matchups/{game_id}")
@@ -922,7 +950,10 @@ def odds_games(season: int = CURRENT_SEASON, week: int | None = None, include_sa
 
 @app.get("/api/odds/status")
 def odds_status():
-    return {"has_odds_api_key": bool(odds_api_key()), "status": store.status(), "oddsapi_usage": _usage()}
+    from ..odds.pull import feed_status
+    from ..odds.sgo import usage as sgo_usage
+    return {"has_odds_api_key": bool(odds_api_key()), "status": store.status(), "oddsapi_usage": _usage(),
+            "has_sgo_key": bool(sgo_api_key()), "sgo_usage": sgo_usage(), "feeds": feed_status()}
 
 
 class PullRequest(BaseModel):
@@ -945,7 +976,11 @@ def odds_pull(req: PullRequest):
                           max_credits=req.max_credits, games=req.games, with_games=req.with_games,
                           dry_run=req.dry_run, log=log.append)
     except Exception as exc:
+        if not req.dry_run and req.source != "sample":
+            pull_mod._record(req.source, None, str(exc)[:300])
         raise HTTPException(400, f"{type(exc).__name__}: {exc}") from exc
+    if not req.dry_run and req.source != "sample":
+        pull_mod._record(req.source, result, None)
     result["log"] = log
     return result
 

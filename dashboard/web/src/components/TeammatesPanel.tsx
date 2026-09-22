@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useLens } from "../lib/profile";
 import { Link } from "react-router-dom";
 import { api5, GameRow, StatDef, TeammatePresence } from "../api";
 import { fmtPct, fmtStat } from "../lib/format";
@@ -6,6 +7,7 @@ import { summarize } from "../lib/stats";
 
 /** With / without each key teammate, for the current stat and line. */
 export default function TeammatesPanel({ playerId, rows, statKey, stat, line, onFilter, active }: { playerId: string; rows: GameRow[]; statKey: string; stat?: StatDef; line: number | null; onFilter: (ids: string[] | null, label: string | null, key?: string | null) => void; active: string | null }) {
+  const { words } = useLens();
   const [data, setData] = useState<TeammatePresence | null>(null);
   useEffect(() => {
     let alive = true;
@@ -29,7 +31,7 @@ export default function TeammatesPanel({ playerId, rows, statKey, stat, line, on
     <div>
       <div className="tbl-wrap">
         <table className="tbl compact">
-          <thead><tr><th className="left">Teammate</th><th>With</th><th>Avg</th><th>Over</th><th>Without</th><th>Avg</th><th>Over</th><th>Δ avg</th></tr></thead>
+          <thead><tr><th className="left">Teammate</th><th>With</th><th>Avg</th><th style={{ textTransform: "capitalize" }}>{words.over}</th><th>Without</th><th>Avg</th><th style={{ textTransform: "capitalize" }}>{words.over}</th><th>Δ avg</th></tr></thead>
           <tbody>
             {table.map(({ t, w, wo, withIds, withoutIds }) => {
               const d = w.avg !== null && wo.avg !== null ? wo.avg - w.avg : null;

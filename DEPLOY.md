@@ -29,22 +29,30 @@ rebuild of a binary stays out of the history.
    ingests 1999 to now (expect 20 to 40 minutes), uploads one tar per dataset
    plus `_derived.tar` for the tables built from it, to a Release tagged
    `data-cache`.
-2. **The Odds API key is optional and not for the schedule.** The free tier
-   is 500 credits a month and one default pull is about 115, so the scheduled
-   job pulls ESPN only. Set `ODDS_API_KEY` in Render's environment to enable
-   the Settings page button, which shows the credit cost before spending.
-   Only if you pay for a bigger tier: add `ODDS_API_KEY` and
-   `ODDS_API_SCHEDULED=1` as GitHub secrets/variables too.
-3. **Render**: New, Blueprint, pick the repo. It reads `render.yaml`. When
+2. **Licensed lines feeds stay out of this repo.** The repo is public, and
+   the scheduled job commits what it pulls. Sports Game Odds' terms forbid
+   redistributing its data as downloadable files, and The Odds API's are no
+   looser, so their snapshots (and graded lines built from them) are
+   gitignored and the scheduled job pulls ESPN only. `tests/test_feeds.py`
+   fails if that ever stops being true. Pull the licensed feeds from the
+   site's Settings page, where the result stays on the server: set
+   `SGO_API_KEY` (free at sportsgameodds.com) and/or `ODDS_API_KEY` in
+   Render's environment. The schedule still runs `--source auto`, so a failed
+   ESPN pull no longer skips the injury refresh, and Settings shows each
+   feed's last attempt.
+3. **The Odds API key is optional.** The free tier is 500 credits a month and
+   one default pull is about 115; the Settings button shows the cost before
+   spending.
+4. **Render**: New, Blueprint, pick the repo. It reads `render.yaml`. When
    prompted, set `SITE_PASSWORD` and `ADMIN_PASSWORD` (a different string:
    the pull and grading controls are refused for everyone until it is set, and
    refused for everyone if it matches `SITE_PASSWORD`). Set `GH_TOKEN` (a fine-grained token with
    read access to contents and releases) only if the repo is private;
    `fetch_cache.py` and `sync_odds.py` both read it.
-4. **Frontend build**: `scripts/build.sh` runs `npm ci` and `npm run build`
+5. **Frontend build**: `scripts/build.sh` runs `npm ci` and `npm run build`
    in `dashboard/web/` on every deploy, so `dist/` never needs committing.
    `render.yaml` pins `NODE_VERSION`.
-5. **Deploy hook.** Render reads the cache and the derived tables only when
+6. **Deploy hook.** Render reads the cache and the derived tables only when
    it builds, so every `stats` run wants a build, and nothing that run commits
    triggers one. In the service's Settings, copy the Deploy Hook URL
    and add it to the repo as the `RENDER_DEPLOY_HOOK` secret; the workflow

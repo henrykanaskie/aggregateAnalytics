@@ -202,6 +202,10 @@ STATS: list[Stat] = [
     # --- Fantasy ----------------------------------------------------------
     Stat("fantasy_points", "Fantasy pts (std)", "Fantasy", "dec1"),
     Stat("fantasy_points_ppr", "Fantasy pts (PPR)", "Fantasy", "dec1"),
+    # Half-PPR is the midpoint of the two nflverse columns by definition: the
+    # only difference between them is one point per reception.
+    Stat("fantasy_points_half", "Fantasy pts (half PPR)", "Fantasy", "dec1",
+         expr=(pl.col("fantasy_points") + pl.col("fantasy_points_ppr")) / 2),
 ]
 
 BY_KEY: dict[str, Stat] = {s.key: s for s in STATS}

@@ -485,6 +485,34 @@ week's grade, and on Tuesdays refreshes the data. It is idempotent: every
 step appends or overwrites its own week, so running it twice does no harm.
 macOS blocks cron without Full Disk Access, hence the launchd agent.
 
+## 11c. Tailoring: one profile, many readers
+
+**Decision.** A handful of questions (what you are here for, which
+positions, how much defense, fantasy scoring, how much detail, a favorite
+team) write one `Profile` into Settings. `lib/profile.ts` turns it into a
+`Lens`, and pages only ever read the lens. Every tab and panel carries a small
+tag set (`for: ["betting"]`, `defense: "players"`, `deep: true`); `arrange()`
+splits a page's panels into the ones that fit and the ones that go under
+"More" at the bottom. Nothing is deleted, and "Always show" pins a panel back.
+
+**Why.** It is the registry idea from section 3 again. The questions and the
+pages never talk to each other directly, so a new question is a new field and
+a rule in `fits()`, and a new panel is a new tag set. A free-text "describe
+what you want" box could be added later by having Claude fill in the same
+Profile; nothing downstream would change. With no profile every page lays out
+exactly as it did before, so the feature costs nothing to anyone who skips it.
+
+**The fantasy week** (`stats/fantasy.py`, `/api/fantasy/week`) is the prop
+baseline pointed at fantasy points: the same recency weights and the same
+opponent factor, with the player pool taken from the matchup page's depth
+charts so off-season moves are already reflected. All three scoring formats
+come back in one response, so switching format re-sorts the page instead of
+asking the server again.
+
+**Detail worth copying.** Wording is part of the lens (`words.line` is
+"line" or "benchmark"), so the chart, tiles and tables say the right thing
+without each one knowing why.
+
 ## 12. Things I deliberately did not do
 
 - **No database.** Parquet plus polars covers reads; the only writes are

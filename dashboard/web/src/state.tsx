@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { api, apiFresh, Meta, session, StatDef, MarketDef, Team } from "./api";
 import { peek, syncDataVersion } from "./lib/cache";
+import type { Profile } from "./lib/profile";
 
 export interface Settings {
   since: number;            // earliest season loaded into a game log
@@ -11,6 +12,9 @@ export interface Settings {
   showPlayoffs: boolean;
   theme: "dark" | "light";
   focus: boolean;
+  /** What the tailoring questions were answered with; null until they are,
+   *  which lays every page out as it always was. */
+  profile: Profile | null;
 }
 //: 1999 is the first season in the cache, so as a floor it means "his whole
 //: career" for every player in it. The old default of 2016 was a guess that
@@ -19,7 +23,7 @@ export interface Settings {
 //: debuted after 2016 it made the setting look broken, because moving it
 //: changed nothing they could see.
 const CAREER = 1999;
-const DEFAULTS: Settings = { since: CAREER, nGames: 10, preferredBook: "", thresholdScale: 1, includeSample: true, showPlayoffs: true, theme: "dark", focus: false };
+const DEFAULTS: Settings = { since: CAREER, nGames: 10, preferredBook: "", thresholdScale: 1, includeSample: true, showPlayoffs: true, theme: "dark", focus: false, profile: null };
 const KEY = "props-dashboard-settings-v1";
 const OLD_DEFAULT_SINCE = 2016;
 

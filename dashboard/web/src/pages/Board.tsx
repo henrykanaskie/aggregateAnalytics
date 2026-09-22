@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, Board as BoardT, BoardRow } from "../api";
-import { ApplyField, Field, SampleBanner, Seg, SourceNote, Spinner } from "../components/common";
+import { ApplyField, Field, FeedBanner, SampleBanner, Seg, SourceNote, Spinner } from "../components/common";
 import { readSticky, useSticky } from "../lib/sticky";
 import { applyScale } from "../lib/outliers";
 import { useQuery } from "../lib/useQuery";
 import { fmtDate, fmtDelta, fmtLine, fmtOdds, fmtPct } from "../lib/format";
 import { useMeta } from "../state";
+import { useLens } from "../lib/profile";
 
 type SortKey = "spread" | "consensus" | "l5" | "l10" | "season" | "avg" | "player" | "moved" | "edge" | "pover";
 
@@ -70,7 +71,15 @@ export default function Board() {
   // Sensitivity is deliberately not in the URL: it only changes which cells are
   // highlighted, and that is worked out below rather than re-pulled.
   const { data, loading, stale } = useQuery<BoardT>(meta ? api.board.url({ week: week ?? meta.week, include_sample: settings.includeSample }) : null);
-  const { rows: scaledRows, alerts } = useMemo(() => applyScale(data, scale), [data, scale]);
+  const { rows: allScaled, alerts } = useMemo(() => applyScale(data, scale), [data, scale]);
+  // Defender props (tackles, sacks) stay off the board for a profile that
+  // skips individual defenders, one click from coming back.
+  const lens = useLens();
+  const [showDef, setShowDef] = useState(false);
+  const skipDef = !!lens.profile && lens.profile.defense !== "yes" && !showDef;
+  const defMarkets = useMemo(() => new Set((meta?.markets ?? []).filter((m) => m.group === "Defense").map((m) => m.key)), [meta]);
+  const scaledRows = useMemo(() => (skipDef ? allScaled.filter((r) => !defMarkets.has(r.market)) : allScaled), [allScaled, skipDef, defMarkets]);
+  const hiddenDef = allScaled.length - scaledRows.length;
 
   useEffect(() => {
     // Only while the sort is still the default one: the board refetches on
@@ -87,7 +96,7 @@ export default function Board() {
     const order = Object.keys(meta?.books ?? {});
     return [...set].sort((a, b) => (order.indexOf(a) === -1 ? 99 : order.indexOf(a)) - (order.indexOf(b) === -1 ? 99 : order.indexOf(b)));
   }, [data, meta]);
-  const marketOptions = useMemo(() => { const s = new Set(data?.rows.map((r) => r.market)); return (meta?.markets ?? []).filter((m) => s.has(m.key)); }, [data, meta]);
+  const marketOptions = useMemo(() => { const s = new Set(scaledRows.map((r) => r.market)); return (meta?.markets ?? []).filter((m) => s.has(m.key)); }, [scaledRows, meta]);
   // Teams and games come off the board itself rather than the league list, so
   // every option in the pickers has rows behind it and relocated franchises
   // (LA/LAR, OAK/LV) can never disagree with the feed.
@@ -162,12 +171,13 @@ export default function Board() {
         <SourceNote sources={data?.sources ?? []} pulled={data?.pulled_at} />
       </div>
       {data && <SampleBanner sources={data.sources} />}
+      <FeedBanner />
       {alerts.length > 0 && <AlertsPanel alerts={alerts} onPick={(a) => a.player_id && nav(`/research?player=${a.player_id}${a.market ? `&market=${a.market}` : ""}`)} />}
       <div className="panel" style={{ marginBottom: 12 }} data-tour="board-filters">
         <div className="controls">
           <ApplyField label="Week" value={week ?? meta?.week ?? 1} onApply={setWeek} show={(v) => `week ${v}`}>{(d, set) => <select className="input" value={d} onChange={(e) => set(Number(e.target.value))}>{weeks.map((w) => <option key={w} value={w}>Week {w}</option>)}</select>}</ApplyField>
           <Field label="Player"><input className="input" placeholder="filter…" value={q} onChange={(e) => setQ(e.target.value)} /></Field>
-          <Field label="Position"><Seg value={pos} options={[{ v: "", l: "All" }, { v: "QB", l: "QB" }, { v: "RB", l: "RB" }, { v: "WR", l: "WR" }, { v: "TE", l: "TE" }, { v: "K", l: "K" }, { v: "DEF", l: "DEF" }]} onChange={setPos} /></Field>
+          <Field label="Position"><Seg value={pos} options={[{ v: "", l: "All" }, { v: "QB", l: "QB" }, { v: "RB", l: "RB" }, { v: "WR", l: "WR" }, { v: "TE", l: "TE" }, { v: "K", l: "K" }, ...(skipDef ? [] : [{ v: "DEF", l: "DEF" }])]} onChange={setPos} /></Field>
           <Field label="Teams"><select className="input" value="" onChange={(e) => add(setTeams, teams, e.target.value)}><option value="">{teams.length ? `${teams.length} selected` : "All"}</option>{teamOptions.filter((t) => !teams.includes(t)).map((t) => <option key={t} value={t}>{t}</option>)}</select></Field>
           <Field label="Matchup"><select className="input" value="" onChange={(e) => add(setGames, games, e.target.value)}><option value="">{games.length ? `${games.length} selected` : "All"}</option>{matchupOptions.filter((g) => !games.includes(g.v)).map((g) => <option key={g.v} value={g.v}>{g.l}</option>)}</select></Field>
           <Field label="Book"><select className="input" value={book} onChange={(e) => setBook(e.target.value)}><option value="">Any</option>{books.map((b) => <option key={b} value={b}>{meta?.books[b] ?? b}</option>)}</select></Field>
@@ -188,7 +198,7 @@ export default function Board() {
         </div>
       </div>
       <div className="panel" data-tour="board-table">
-        <div className="panel-head"><h3>{rows.length} props{(loading || stale) && <> <Spinner /></>}</h3><span className="hint">click a row to research the player</span></div>
+        <div className="panel-head"><h3>{rows.length} props{(loading || stale) && <> <Spinner /></>}</h3><span className="hint">{(hiddenDef > 0 || showDef) && <>{showDef ? "defender props shown" : `${hiddenDef} defender props left out by your profile`} · <button className="btn sm ghost" onClick={() => setShowDef(!showDef)}>{showDef ? "hide" : "show"}</button> · </>}click a row to research the player</span></div>
         {!loading && rows.length === 0 && (
           // Filters are sticky and outlive the week they were set in, so an
           // empty table is far more often one of those than a missing pull.

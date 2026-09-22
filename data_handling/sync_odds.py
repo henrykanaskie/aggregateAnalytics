@@ -28,6 +28,7 @@ Wire into a FastAPI app with :func:`install`.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import urllib.request
@@ -66,6 +67,18 @@ def remote_files(repo: str, ref: str, *, fetch: Callable[[str, str], bytes] = _g
     ))["tree"]
     prefix = SUBDIR + "/"
     return [t for t in tree if t["type"] == "blob" and t["path"].startswith(prefix)]
+
+
+def _blob_sha(path: Path) -> str:
+    """The git blob id of a local file, to compare with the tree's ``sha``.
+
+    Snapshots are written once and never change, so their size is enough. The
+    few files that are rewritten in place (the feed status, the usage counters,
+    the live injuries) can change without changing length, a timestamp moving
+    on by a few hours being the usual case, and a size check alone left the
+    host showing the first copy it ever fetched."""
+    data = path.read_bytes()
+    return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
 
 
 def _snapshot(rel: str) -> tuple[str, str, datetime] | None:
@@ -154,7 +167,7 @@ def sync(
         if wanted is not None and _snapshot(rel) and rel not in wanted:
             continue  # outside the window: never worth the bandwidth
         local = dest / rel
-        if local.exists() and local.stat().st_size == f["size"]:
+        if local.exists() and local.stat().st_size == f["size"] and (_snapshot(rel) or _blob_sha(local) == f.get("sha")):
             continue
         local.parent.mkdir(parents=True, exist_ok=True)
         local.write_bytes(fetch(

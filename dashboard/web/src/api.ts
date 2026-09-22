@@ -9,7 +9,8 @@ export interface Team {
 export interface StatDef { key: string; label: string; group: string; fmt: "int" | "dec1" | "dec2" | "pct"; since: number; note: string; positions: string[]; }
 export interface MarketDef { key: string; label: string; stat: string | null; kind: "ou" | "yesno"; group: string; threshold: number; positions: string[]; espn: boolean; }
 export interface SourceStatus { last_pull: string | null; pulls: number; rows: number; books: number; }
-export interface OddsStatus { has_odds_api_key: boolean; status: Record<string, { props?: SourceStatus; games?: SourceStatus }>; oddsapi_usage: { at: string; remaining: number | null; used: number | null; last_cost: number | null; note: string } | null; }
+export interface FeedStatus { ok: boolean; at: string; props: number; games: number; error: string | null; last_ok: string | null }
+export interface OddsStatus { feeds?: Record<string, FeedStatus>; has_sgo_key?: boolean; sgo_usage?: { month: string; objects: number; limit: number } | null; has_odds_api_key: boolean; status: Record<string, { props?: SourceStatus; games?: SourceStatus }>; oddsapi_usage: { at: string; remaining: number | null; used: number | null; last_cost: number | null; note: string } | null; }
 export interface Meta {
   season: number; week: number; stats_season: number; data_version?: string; default_since: number; teams: Team[]; stats: StatDef[]; stat_groups: string[];
   markets: MarketDef[]; books: Record<string, string>; odds: OddsStatus; datasets: string[];
@@ -220,6 +221,23 @@ export interface GradedAngle { season: number; week: number; game_id: string; of
   said?: string; happened?: string; evidence?: string | null; note?: string | null; verdict_words?: string; }
 export interface AngleFamily { family: string; kind: "team" | "player"; n: number; hits: number; rate: number; lean: string; }
 export interface AngleTrackRecord { season: number | null; current: boolean; weeks: [number, number][]; n: number; hits: number; pushes: number; families: AngleFamily[]; by_kind: { kind: string; n: number; hits: number; rate: number }[]; best: GradedAngle[]; }
+export interface FantasyProj { value: number; low: number; high: number; base: number; last3: number }
+export interface FantasyPlayer {
+  player_id: string; name: string; position: "QB" | "RB" | "WR" | "TE"; team: string; depth_rank: number | null; headshot: string | null;
+  new_to_team: boolean; stats_team: string | null; target_share: number | null; carry_share: number | null;
+  status: string | null; injury: string | null; opponent: string; home: boolean; game_id: string; gameday: string | null; implied: number | null;
+  games: number; factor: number; matchup_rank: number | null; matchup_n: number | null;
+  proj: Record<"ppr" | "half" | "std", FantasyProj | null>; role: { last3: number; before: number } | null;
+}
+export interface FantasyWeek {
+  season: number; week: number; byes: string[]; injury_week: number | null; players: FantasyPlayer[];
+  games: { game_id: string; home_team: string; away_team: string; gameday: string | null; gametime: string | null; total: number | null; home_implied: number | null; away_implied: number | null }[];
+  method: { n_games: number; min_games: number };
+}
+export const apiFantasy = {
+  fantasyWeek: ep<FantasyWeek>()((season: number, week: number) => `/api/fantasy/week${qs({ season, week })}`),
+};
+
 export const api5 = {
   teammates: ep<TeammatePresence>()((id: string) => `/api/players/${id}/teammates`),
   correlations: ep<{ stat: string; rows: CorrRow[] }>()((id: string, stat: string) => `/api/players/${id}/correlations${qs({ stat })}`),

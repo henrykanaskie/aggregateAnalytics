@@ -92,3 +92,25 @@ def test_team_usage_shares_sum_to_one():
     u = team_usage("MIA", 2025)
     assert abs(u["target_share"].sum() - 1.0) < 1e-6
     assert abs(u["carry_share"].sum() - 1.0) < 1e-6
+
+
+def test_fantasy_projection_needs_games_and_scales_by_matchup():
+    from dashboard.stats.fantasy import MIN_GAMES, _proj, _role
+    games = [{"fantasy_points_ppr": v} for v in (10.0, 12.0, 14.0, 16.0)]
+    assert _proj(games[:MIN_GAMES - 1], "fantasy_points_ppr", 1.0) is None
+    neutral, easy = _proj(games, "fantasy_points_ppr", 1.0), _proj(games, "fantasy_points_ppr", 1.2)
+    # Recency-weighted: the latest games pull the mean above the plain average of 13.
+    assert neutral["base"] > 13 and neutral["last3"] == 14.0
+    assert easy["value"] == pytest.approx(neutral["value"] * 1.2, abs=0.1)
+    assert 0 <= neutral["low"] < neutral["value"] < neutral["high"]
+    # Role: targets plus carries for a receiver, attempts plus carries for a quarterback.
+    g = [{"targets": 4, "carries": 0, "attempts": 30}] * 5 + [{"targets": 9, "carries": 1, "attempts": 40}] * 3
+    assert _role(g, "WR") == {"last3": 10.0, "before": 4.0}
+    assert _role(g, "QB")["last3"] == 41.0
+    assert _role(g[:3], "WR") is None
+
+
+def test_half_ppr_is_the_midpoint_of_standard_and_ppr():
+    df = pl.DataFrame({"fantasy_points": [10.0, 3.5], "fantasy_points_ppr": [16.0, 5.5]})
+    half = df.select(catalog.BY_KEY["fantasy_points_half"].expr.alias("h"))["h"].to_list()
+    assert half == [13.0, 4.5]

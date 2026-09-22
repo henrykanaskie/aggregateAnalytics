@@ -16,10 +16,15 @@ import DvpTable from "../components/DvpTable";
 import { blendNote } from "../lib/blend";
 
 export default function Teams() {
-  const { meta } = useMeta();
+  const { meta, settings } = useMeta();
   const T = chartTheme();
   const [sp, setSp] = useSearchParams();
   const team = sp.get("team") ?? "";
+  // With no team picked, a favorite from the tailoring answers opens instead.
+  const fav = settings.profile?.team;
+  // Once per visit, so clearing the team afterwards is not undone.
+  const seededFav = useRef(false);
+  useEffect(() => { if (!team && fav && !seededFav.current) setSp({ team: fav }, { replace: true }); seededFav.current = true; }, [team, fav]);
   const [since, setSince] = useSticky("teams.since", 2012);
   const [side, setSide] = useSticky<"off" | "def">("teams.side", "off");
   const [metric, setMetric] = useSticky("teams.metric", "pass_rate");

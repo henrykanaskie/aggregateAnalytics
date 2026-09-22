@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { buildCast, Cast } from "../lib/tourcast";
 import { useMeta } from "../state";
+import { TABS, useLens } from "../lib/profile";
 
 // A step says where to be, what to point at, and what to say about it. `where`
 // builds a full url from the cast, so a step can open a real player or game
@@ -21,7 +22,7 @@ interface Step {
 const say = (s: React.ReactNode): ((c: Cast) => React.ReactNode) => () => s;
 const HIM = (c: Cast) => c.playerName ?? "this player";
 
-const STEPS: Step[] = [
+const ALL_STEPS: Step[] = [
   {
     where: () => "/board",
     sel: '[data-tour="brand"]',
@@ -31,7 +32,7 @@ const STEPS: Step[] = [
   {
     sel: '[data-tour="nav"]',
     title: "The tabs are the whole app",
-    body: say("Nine sections, and each one stays where you left it. Wander off to the board and come back, and the player, team or game you were on is still up."),
+    body: say("Each section stays where you left it. Wander off to the board and come back, and the player, team or game you were on is still up."),
   },
   {
     sel: '[data-tour="search"]',
@@ -70,6 +71,12 @@ const STEPS: Step[] = [
     sel: '[data-tour="research-chart"]',
     title: "Every game against the line",
     body: (c) => <>Each dot is a game {HIM(c)} has played, and the flat line across it is this week's number. Green cleared it, red did not. The panels below carry on from here: how that compares with everyone else at the same position, what changes when a teammate sits, where the sportsbooks disagree, and who is hurt.</>,
+  },
+  {
+    where: () => "/fantasy",
+    sel: '[data-tour="fantasy-table"]',
+    title: "The fantasy week",
+    body: say("Every starter on a team that plays, ranked by projected fantasy points. Next to each: how generous the opponent is to the position, the points the team is expected to score, a floor and a ceiling, and whether the player's role is growing or shrinking. Click a row for their game-by-game points."),
   },
   {
     needsCast: true,
@@ -180,6 +187,20 @@ export default function Tour({ onDone }: { onDone: () => void }) {
   const scrolled = useRef(-1);
   const nav = useNavigate();
   const loc = useLocation();
+  // Steps that open a page the tailored profile moved behind "More" are left
+  // out: a fantasy player does not need the lines board explained. The path is
+  // read with an empty cast, which every `where` falls back from cleanly.
+  const lens = useLens();
+  const [STEPS] = useState(() => {
+    const open = (s: Step) => {
+      const path = s.where?.({} as Cast)?.split("?")[0];
+      const tab = TABS.find((t) => t.path === path);
+      return !tab || lens.shows(`tab:${tab.path}`, tab.tags);
+    };
+    // The header is on every page, so its steps stay, just without the trip
+    // to a page that is not theirs.
+    return ALL_STEPS.flatMap((s) => open(s) ? [s] : /"(brand|nav|search)"/.test(s.sel ?? "") ? [{ ...s, where: undefined }] : []);
+  });
   const step = STEPS[i];
   const last = i === STEPS.length - 1;
 
