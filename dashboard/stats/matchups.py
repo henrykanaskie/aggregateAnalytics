@@ -90,7 +90,7 @@ def _stat_line(r: dict) -> str:
 
 # --- the game as it happened -------------------------------------------------
 
-_BOX = ("player_id", "player_display_name", "position", "team", "week", "carries", "targets", "rushing_yards",
+_BOX = ("player_id", "player_display_name", "position", "team", "season", "week", "carries", "targets", "rushing_yards",
         "receiving_yards", "receptions", "rushing_tds", "receiving_tds")
 
 
@@ -141,11 +141,40 @@ def _who(box: pl.DataFrame) -> dict[str, tuple[str, str]]:
     return {r["player_id"]: (r["player_display_name"], r["position"]) for r in box.to_dicts()}
 
 
+@lru_cache(maxsize=64)
+def _snap_weeks(season: int, team: str) -> pl.DataFrame:
+    """(player_id, week) for everyone who took a snap for ``team``: offense,
+    defense or special teams. Snap counts are keyed on PFR ids; the players
+    table maps them to the gsis ids everything else uses."""
+    try:
+        snaps = (scan("snap_counts")
+                 .filter((pl.col("season") == season) & (pl.col("team") == team)
+                         & ((pl.col("offense_snaps").fill_null(0) + pl.col("defense_snaps").fill_null(0)
+                             + pl.col("st_snaps").fill_null(0)) > 0))
+                 .select("pfr_player_id", "week").collect())
+    except Exception:  # noqa: BLE001  no snap table in this cache
+        return pl.DataFrame(schema={"player_id": pl.String, "week": pl.Int32})
+    ids = players_master().select(pl.col("pfr_id").alias("pfr_player_id"), pl.col("gsis_id").alias("player_id")).drop_nulls()
+    return snaps.join(ids, on="pfr_player_id", how="inner").select("player_id", pl.col("week").cast(pl.Int32)).unique()
+
+
 def _games(box: pl.DataFrame) -> dict[str, int]:
-    """Games played, per player: the weeks he has a stat line in."""
+    """Games played, per player, over the games ``box`` covers.
+
+    A game counts when he has a stat line in it or took any snap in it. The
+    stat line alone missed every game a receiver played without a catch or a
+    target, so a starter could read one game played out of two."""
     if box.is_empty():
         return {}
-    g = box.group_by("player_id").agg(pl.col("week").n_unique().alias("g"))
+    weeks = box.select("player_id", pl.col("week").cast(pl.Int32))
+    parts = [weeks]
+    for (season, team), g in box.group_by("season", "team"):
+        sw = _snap_weeks(int(season), team)
+        if not sw.is_empty():
+            # Only the games this box is about: one game, the season so far,
+            # a whole season.
+            parts.append(sw.filter(pl.col("week").is_in(g["week"].unique().cast(pl.Int32).to_list())))
+    g = pl.concat(parts).unique().group_by("player_id").len("g")
     return dict(zip(g["player_id"], (int(x) for x in g["g"])))
 
 
@@ -158,10 +187,11 @@ def _box_block(box: pl.DataFrame) -> dict:
     leaving them out of the slices while leaving them in the totals made the
     grey remainder the second-biggest slice on most teams.
 
-    ``games`` is games he has a stat line in, which is what a reader means by
-    games played; the zone blocks count their own appearances separately."""
+    ``games`` is games played: a stat line or any snap (see ``_games``). The
+    zone blocks count their own appearances separately."""
     box = box.with_columns(pl.col("carries", "targets", "rushing_yards", "receiving_yards", "receptions",
                                   "rushing_tds", "receiving_tds").fill_null(0))
+    played = _games(box)
     per = (box.group_by("player_id")
            .agg(pl.col("player_display_name").last(), pl.col("position").last(), pl.col("week").n_unique().alias("games"),
                 pl.col("carries", "targets", "rushing_yards", "receiving_yards", "receptions", "rushing_tds", "receiving_tds").sum()))
@@ -171,7 +201,7 @@ def _box_block(box: pl.DataFrame) -> dict:
         sel = per.filter(pl.col(col) > 0).sort(col, descending=True)
         car = col == "carries"
         return [{"player_id": r["player_id"], "name": r["player_display_name"], "position": r["position"],
-                 "n": int(r[col]), "share": r[col] / total if total else None, "games": int(r["games"]),
+                 "n": int(r[col]), "share": r[col] / total if total else None, "games": played.get(r["player_id"], int(r["games"])),
                  "yards": int(r["rushing_yards" if car else "receiving_yards"]),
                  "td": int(r["rushing_tds" if car else "receiving_tds"]),
                  "receptions": None if car else int(r["receptions"])} for r in sel.to_dicts()]
