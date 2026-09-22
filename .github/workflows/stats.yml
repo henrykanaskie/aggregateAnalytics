@@ -1,13 +1,18 @@
 name: stats
 
-# Weekly, Tuesday 10:00 UTC (6am ET): nflverse has Monday night's games by
-# then. Refreshes the current season in the parquet cache, rebuilds the
+# Tuesday 10:00 UTC (6am ET): nflverse has Monday night's games by then.
+# Also Monday and Friday 15:00 UTC, so Sunday's and Thursday's box scores
+# (who got the ball, the angle grades) are up without waiting for Tuesday.
+# nflverse posts them a few hours after each slate ends; a partial week is
+# regraded on the next run, as the newest week always is. Refreshes the current season in the parquet cache, rebuilds the
 # derived tables, grades the weeks that have finished, re-uploads the cache and
 # the derived tables to the data-cache Release, commits data/odds/graded/. Run
 # it by hand with full=true once to seed the cache.
 on:
   schedule:
     - cron: "0 10 * * 2"
+    - cron: "0 15 * * 1"
+    - cron: "0 15 * * 5"
   workflow_dispatch:
     inputs:
       full:

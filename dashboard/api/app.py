@@ -694,7 +694,8 @@ def game_matchup(game_id: str, include_sample: bool = False):
     return {
         "game": game, "season_used": use, "blend": blend_mod.blend_info(rows.get(home)), "sides": sides, "metrics": team_mod.metric_json(),
         "dvp_labels": ctx_mod.DVP_LABELS, "history": mu_mod.head_to_head(away, home),
-        "venue": mu_mod.venue(game), "props": props, "lines": lines, "predictions": preds, "injuries": inj,
+        "venue": mu_mod.venue(game), "props": props, "lines": lines,
+        "shares": mu_mod.game_shares(game_id, {t: coaches_mod.season_used(t, season) for t in (home, away)}) if game.get("home_score") is not None else {}, "predictions": preds, "injuries": inj,
         "sources": sorted(set(latest["source"].to_list())) if not latest.is_empty() else [],
     }
 

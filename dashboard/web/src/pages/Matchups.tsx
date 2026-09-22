@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, api4, api5, Angle, AngleTrackRecord, DefPlayer, GameMatchup, GradedAngle, MatchupSideFull, ScheduleGame, TeamMetric } from "../api";
+import { SharePies } from "../components/SharePies";
 import { AngleReview, TrackChip, TrackIndex, trackIndex, trackKey } from "../components/AngleReview";
 import { Banner, Field, Headshot, SampleBanner, Spinner, TeamTag } from "../components/common";
 import { fmtLine, fmtOdds, fmtPct, fmtSpread, fmtStat } from "../lib/format";
@@ -99,6 +100,7 @@ function GameView({ d }: { d: GameMatchup }) {
       </div>
 
       {played && review && review.length > 0 && <AngleReview rows={review} home={g.home_team} away={g.away_team} score={`${g.away_team} ${g.away_score}, ${g.home_team} ${g.home_score}`} />}
+      {played && d.shares && <SharePies shares={d.shares} sides={d.sides} usageSeason={d.season_used} score={`${g.away_team} ${g.away_score}, ${g.home_team} ${g.home_score}`} />}
       {played && review && review.length === 0 && <Banner kind="info">This game is final but its angles have not been graded yet. The Tuesday job does it once the box scores land (<code>python -m dashboard.stats.angle_grades</code>).</Banner>}
 
       <div className="grid" style={{ gap: 14 }} data-tour="matchup-sides">
