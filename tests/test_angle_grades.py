@@ -117,3 +117,27 @@ def test_track_record_falls_back_to_last_season_before_week_one(monkeypatch):
     t = ag.track_record(weeks=1)
     assert t["season"] == 2025 and not t["current"]
     assert t["weeks"] == [(2025, 18)]
+
+
+def test_a_played_games_angles_are_served_from_the_file(monkeypatch):
+    """The matchup page reads a played game's angles back instead of
+    rescanning play-by-play for every key player."""
+    import polars as pl
+    base = {k: None for k in ag.SCHEMA} | {"season": 2026, "week": 1, "game_id": "2026_01_NE_SEA",
+                                           "strength": 1, "tags": ["rushing"], "lean": "under"}
+    df = pl.DataFrame([
+        base | {"offense": "NE", "defense": "SEA", "kind": "player", "title": "A vs stacked boxes",
+                "player_id": "1", "player": "A", "position": "RB", "verdict": "hit"},
+        base | {"offense": "SEA", "defense": "NE", "kind": "player", "title": "B vs man coverage",
+                "player_id": "2", "player": "B", "position": "WR", "verdict": None},
+        base | {"offense": "NE", "defense": "SEA", "kind": "team", "title": "Heavy boxes vs the run", "verdict": "miss"},
+    ], schema=ag.SCHEMA)
+    monkeypatch.setattr(ag, "_fresh", lambda: df)
+    got = ag.pregame("2026_01_NE_SEA")
+    assert set(got) == {"NE", "SEA"}
+    # Ungraded angles come back too: they are what the page showed.
+    assert [a["title"] for a in got["SEA"]] == ["B vs man coverage"]
+    assert got["NE"][0]["tags"] == ["rushing"] and got["NE"][0]["defense"] == "SEA"
+    assert ag.pregame("2026_01_NOPE") is None
+    # The review panel only wants the ones with a verdict.
+    assert [r["title"] for r in ag.for_game("2026_01_NE_SEA")] == ["A vs stacked boxes", "Heavy boxes vs the run"]

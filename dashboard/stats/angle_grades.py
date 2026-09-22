@@ -299,41 +299,42 @@ def grade_game(game_id: str) -> list[dict]:
             "player": a.get("player"), "position": a.get("position"),
             "family": family(a["title"], off_t, def_t, a.get("player")),
         }
+        # Angles with nothing to check -- a context note, a player who did
+        # not play -- are still stored, with no verdict. They are what the
+        # matchup page showed before kickoff, and serving a played game's
+        # angles from here is what keeps an old week off the slow path
+        # (:func:`pregame`).
         if a["kind"] == "team":
             c = team_check(a["title"], off_t, def_t)
-            if not c:
-                continue
-            row["direction"] = c["dir"]
-            if c["kind"] == "metric":
+            if c:
+                row["direction"] = c["dir"]
+            if c and c["kind"] == "metric":
                 team = off_t if c["side"] == "off" else def_t
                 m = METRIC_BY_KEY[c["metric"]]
                 base = (float(table[c["metric"]].drop_nulls().mean()) if c["vs"] == "league"
                         else (usual.get(team) or {}).get(c["metric"]))
                 row |= {"team": team, "measure": m.label, "fmt": m.fmt, "actual": actual_rows[team].get(c["metric"]),
                         "baseline": base, "baseline_label": "league average" if c["vs"] == "league" else f"{team}'s usual"}
-            elif c["kind"] == "pos":
+            elif c and c["kind"] == "pos":
                 league = dvp_blended(season, c["pos"], before_week=week)[c["stat"]].drop_nulls().mean()
                 grp = box.filter((pl.col("team") == off_t) & (pl.col("position") == c["pos"]))
                 row |= {"team": off_t, "measure": f"{c['pos']} {_STAT_LABEL[c['stat']]}", "fmt": "dec1",
                         "actual": float(grp[c["stat"]].fill_null(0).sum()) if not grp.is_empty() else None,
                         "baseline": float(league), "baseline_label": f"league average to {c['pos']}s"}
-            elif c["kind"] == "total":
-                if game.get("total_line") is None:
-                    continue
+            elif c and c["kind"] == "total" and game.get("total_line") is not None:
                 row |= {"measure": "Total points", "fmt": "dec1", "actual": float(game["home_score"] + game["away_score"]),
                         "baseline": float(game["total_line"]), "baseline_label": "closing total"}
-            elif c["kind"] == "pos_td":
+            elif c and c["kind"] == "pos_td":
                 grp = box.filter((pl.col("team") == off_t) & (pl.col("position") == c["pos"]))
                 tds = float((grp["receiving_tds"].fill_null(0) + grp["rushing_tds"].fill_null(0)).sum())
                 row |= {"team": off_t, "measure": f"{c['pos']} touchdowns", "fmt": "int", "actual": tds,
                         "baseline": 0.5, "baseline_label": "at least one"}
-        else:
-            if a["lean"] not in ("over", "under"):
-                continue
+        elif a["lean"] in ("over", "under"):
             pid, pos = a["player_id"], a["position"]
             key, label, fmt = _player_measure(a["title"], pos)
             mine = box.filter(pl.col("player_id") == pid)
             if mine.is_empty():
+                out.append(row)
                 continue        # did not play; the angle had nothing to be right about
             row |= {"team": off_t, "measure": label, "fmt": fmt, "direction": "up" if a["lean"] == "over" else "down",
                     "actual": _measure(mine, key), "baseline": _measure(_player_history(pid, season, week), key),
@@ -346,8 +347,6 @@ def grade_game(game_id: str) -> list[dict]:
                     ln, act = float(hit["line"][0]), float(hit["actual"][0])
                     row |= {"line": ln, "market": mk, "line_result": "over" if act > ln else "under" if act < ln else "push"}
         row["verdict"] = _verdict(row["actual"], row["baseline"], row["direction"], row["fmt"], row["baseline_label"])
-        if row["verdict"] is None:
-            continue
         out.append(row)
     return out
 
@@ -410,7 +409,27 @@ def _json(v):
 
 
 def for_game(game_id: str) -> list[dict]:
-    return _json(_fresh().filter(pl.col("game_id") == game_id).to_dicts())
+    """The game's graded calls, for the review panel."""
+    return _json(_fresh().filter((pl.col("game_id") == game_id) & pl.col("verdict").is_not_null()).to_dicts())
+
+
+_ANGLE_COLS = ["title", "detail", "lean", "tags", "strength", "player_id", "player", "position", "defense"]
+
+
+def pregame(game_id: str, kind: str = "player") -> dict[str, list[dict]] | None:
+    """What this game's angles were before kickoff, keyed by offense, as the
+    matchup page wants them; ``None`` if the game has not been graded.
+
+    Recomputing a player angle reads that player's whole play-by-play
+    history: 2-3 seconds a game, and the reason an old week used to crawl.
+    Once the game is played that work is done and stored.
+    """
+    g = _fresh().filter((pl.col("game_id") == game_id) & (pl.col("kind") == kind))
+    if g.is_empty():
+        return None
+    return {o: [{k: r[k] for k in _ANGLE_COLS} | {"tags": list(r["tags"] or [])}
+                for r in g.filter(pl.col("offense") == o).to_dicts()]
+            for o in g["offense"].unique().to_list()}
 
 
 def record_season(season: int = CURRENT_SEASON) -> int | None:
@@ -444,6 +463,7 @@ def track_record(weeks: int = 22, min_n: int = 1) -> dict:
     if not wk:
         return out
     g = _fresh().filter((pl.col("season").cast(pl.Int64) * 100 + pl.col("week")).is_in([s * 100 + w for s, w in wk]))
+    g = g.filter(pl.col("verdict").is_not_null())
     dec = g.filter(pl.col("verdict") != "push")
     out["n"], out["hits"] = dec.height, int((dec["verdict"] == "hit").sum())
     out["pushes"] = g.height - dec.height
@@ -493,9 +513,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     for w in weeks:
         df = grade_week(a.season, w)
-        dec = df.filter(pl.col("verdict") != "push")
+        dec = df.filter(pl.col("verdict").is_not_null() & (pl.col("verdict") != "push"))
         rate = f"{(dec['verdict'] == 'hit').mean():.0%}" if dec.height else "–"
-        print(f"[angles] {a.season} wk{w:02d}: {df.height} calls graded, {rate} hit", flush=True)
+        print(f"[angles] {a.season} wk{w:02d}: {df.height} angles, {dec.height} graded, {rate} hit", flush=True)
     return 0
 
 
