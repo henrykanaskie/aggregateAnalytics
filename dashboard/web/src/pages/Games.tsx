@@ -1,5 +1,5 @@
 import { api, GamesResponse } from "../api";
-import { Field, SampleBanner, SourceNote, Spinner, TeamTag } from "../components/common";
+import { ApplyField, SampleBanner, SourceNote, Spinner, TeamTag } from "../components/common";
 import { fmtLine, fmtOdds, fmtPct, fmtSpread } from "../lib/format";
 import { useSticky } from "../lib/sticky";
 import { useQuery } from "../lib/useQuery";
@@ -17,7 +17,7 @@ export default function Games() {
         <SourceNote sources={data?.sources ?? []} />{stale && <span className="hint"> <Spinner /> refreshing</span>}
       </div>
       {data && <SampleBanner sources={data.sources} />}
-      <div className="panel" style={{ marginBottom: 12 }}><div className="controls"><Field label="Week"><select className="input" value={week ?? meta?.week ?? 1} onChange={(e) => setWeek(Number(e.target.value))}>{weeks.map((w) => <option key={w} value={w}>Week {w}</option>)}</select></Field></div></div>
+      <div className="panel" style={{ marginBottom: 12 }}><div className="controls"><ApplyField label="Week" value={week ?? meta?.week ?? 1} onApply={setWeek} show={(v) => `week ${v}`}>{(d, set) => <select className="input" value={d} onChange={(e) => set(Number(e.target.value))}>{weeks.map((w) => <option key={w} value={w}>Week {w}</option>)}</select>}</ApplyField></div></div>
       {loading && <div className="empty"><Spinner /></div>}
       <div className="grid grid-2" data-tour="games-grid">
         {data?.games.map((g) => {

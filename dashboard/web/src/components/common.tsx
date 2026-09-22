@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { useMeta } from "../state";
 
 export function Seg<T extends string | number>({ value, options, onChange }: { value: T; options: { v: T; l: string }[]; onChange: (v: T) => void }) {
@@ -13,6 +13,28 @@ export function Seg<T extends string | number>({ value, options, onChange }: { v
 export const Field = ({ label, children }: { label: string; children: React.ReactNode }) => (
   <label className="field"><span>{label}</span>{children}</label>
 );
+/** A week or season picker that changes nothing until Apply (or Enter).
+ *  Picking a value only edits a draft; the page keeps showing ``value`` and
+ *  says so until the draft is applied, so it is always clear which week or
+ *  season is on screen. */
+export function ApplyField<T>({ label, value, onApply, show, children }: {
+  label: string; value: T; onApply: (v: T) => void; show?: (v: T) => string;
+  children: (draft: T, setDraft: (v: T) => void) => React.ReactNode;
+}) {
+  const [draft, setDraft] = useState<T>(value);
+  useEffect(() => setDraft(value), [value]);
+  const dirty = draft !== value;
+  return (
+    <form className="field apply-field" onSubmit={(e) => { e.preventDefault(); if (dirty) onApply(draft); }}>
+      <span>{label}</span>
+      <div className="apply-row">
+        {children(draft, setDraft)}
+        <button type="submit" className={`btn sm ${dirty ? "primary" : ""}`} disabled={!dirty}>Apply</button>
+      </div>
+      {dirty && <span className="apply-note">showing {show ? show(value) : String(value)} until applied</span>}
+    </form>
+  );
+}
 export const Spinner = () => <span className="spin" />;
 export const Banner = ({ kind = "info", children }: { kind?: "info" | "warn" | "err"; children: React.ReactNode }) => (
   <div className={`banner ${kind}`}>{children}</div>

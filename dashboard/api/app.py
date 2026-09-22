@@ -460,9 +460,10 @@ def grading_summary(season: int | None = None):
 
 
 @app.get("/api/grading/angles/track-record")
-def angle_track_record(weeks: int = Query(8, ge=1, le=60)):
-    """How each kind of matchup angle has done over the last ``weeks`` graded
-    weeks: the number the angle was about, did it move the way it said."""
+def angle_track_record(weeks: int = Query(22, ge=1, le=22)):
+    """How each kind of matchup angle has done this season (last season's
+    until this one has a graded game), over its last ``weeks`` graded weeks:
+    the number the angle was about, did it move the way it said."""
     return ag_mod.track_record(weeks)
 
 

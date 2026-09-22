@@ -133,6 +133,11 @@ h3 { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spa
 label.field { display: inline-flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; max-width: 100%; }
 label.field > select, label.field > input { max-width: 100%; }
 label.field > * { text-transform: none; letter-spacing: normal; }
+form.apply-field { display: inline-flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; max-width: 100%; margin: 0; }
+form.apply-field > * { text-transform: none; letter-spacing: normal; }
+.apply-row { display: flex; gap: 6px; align-items: center; }
+.apply-row > select, .apply-row > input { max-width: 100%; }
+.apply-note { font-size: 11px; color: var(--push); }
 .controls { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
 .chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border-2); background: var(--bg-2); font-size: 12px; color: var(--muted); }
 .chip.on { border-color: var(--accent); color: var(--text); background: rgba(90,156,245,0.16); }

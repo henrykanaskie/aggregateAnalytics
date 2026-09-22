@@ -2,7 +2,7 @@ import { useState } from "react";
 import { api5, AngleTrackRecord, GradeSummary } from "../api";
 import { Link } from "react-router-dom";
 import { Outcome } from "../components/AngleReview";
-import { Banner, Field, Spinner } from "../components/common";
+import { ApplyField, Banner, Field, Spinner } from "../components/common";
 import { fmtPct } from "../lib/format";
 import { useSticky } from "../lib/sticky";
 import { useQuery } from "../lib/useQuery";
@@ -32,7 +32,7 @@ export default function Results() {
       <div className="page-head"><div><h1>Results</h1><div className="muted small">Closing lines and logged predictions graded against the box score. This is the feedback loop: which books post soft numbers, whether the hit-rate signals mean anything, and whether the projection beats the market.</div></div></div>
       <div className="panel" style={{ marginBottom: 12 }}>
         <div className="controls">
-          <Field label="Season"><input className="input num" type="number" value={season ?? meta?.season ?? ""} onChange={(e) => setSeason(Number(e.target.value))} /></Field>
+          <ApplyField<number | ""> label="Season" value={(season ?? meta?.season ?? "") as number | ""} onApply={(v) => { if (typeof v === "number" && v >= 1999) setSeason(v); }} show={(v) => String(v)}>{(d, set) => <input className="input num" type="number" value={d ?? ""} onChange={(e) => set(e.target.value === "" ? "" : Number(e.target.value))} />}</ApplyField>
           <Field label="Grade week (blank = last)"><input className="input num" type="number" min={1} max={22} value={week} onChange={(e) => setWeek(e.target.value === "" ? "" : Number(e.target.value))} /></Field>
           {/* Both of these write to the log, so they need the admin password.
               Absent rather than disabled: they would answer 403. */}
@@ -79,19 +79,20 @@ export default function Results() {
 /** How the matchup angles have done: each kind of angle, graded game by game
  *  on the number it was about (dashboard/stats/angle_grades.py). */
 function AngleTrack() {
-  const [weeks, setWeeks] = useSticky<number>("results.angleWeeks", 8);
+  const { meta } = useMeta();
+  const [weeks, setWeeks] = useSticky<number>("results.angleWeeks2", 22);
   const { data } = useQuery<AngleTrackRecord>(api5.angleTrack.url(weeks));
   const [show, setShow] = useState(15);
   if (!data) return null;
   if (data.n === 0) return <Banner kind="info">No matchup angles graded yet. <code>python -m dashboard.stats.angle_grades</code> grades every finished week.</Banner>;
   const Rate = ({ n, hits }: { n: number; hits: number }) => { const r = hits / n; return <span className={n < 5 ? "" : r >= 0.6 ? "over" : r <= 0.4 ? "under" : ""}>{fmtPct(r)}</span>; };
-  const span = data.weeks.length ? `${data.weeks[0][0]} W${data.weeks[0][1]} to ${data.weeks[data.weeks.length - 1][0]} W${data.weeks[data.weeks.length - 1][1]}` : "";
+  const span = data.weeks.length ? `${data.season} W${data.weeks[0][1]} to W${data.weeks[data.weeks.length - 1][1]}${data.current ? "" : `, last season: no ${meta?.season ?? "current-season"} game graded yet`}` : "";
   return (
     <div className="grid grid-2" style={{ marginBottom: 12 }}>
       <div className="panel">
         <div className="panel-head">
           <h3>Matchup angles · {data.hits} of {data.n} right (<Rate n={data.n} hits={data.hits} />){data.pushes ? <span className="muted"> · {data.pushes} pushes</span> : null}</h3>
-          <Field label="Last"><select className="input" value={weeks} onChange={(e) => setWeeks(Number(e.target.value))}>{[4, 8, 17, 40].map((w) => <option key={w} value={w}>{w} weeks</option>)}</select></Field>
+          <ApplyField label="Window" value={weeks} onApply={setWeeks} show={(v) => (v === 22 ? "the whole season" : `the last ${v} weeks`)}>{(d, set) => <select className="input" value={d} onChange={(e) => set(Number(e.target.value))}>{[[4, "Last 4 weeks"], [8, "Last 8 weeks"], [22, "Whole season"]].map(([w, l]) => <option key={w} value={w}>{l}</option>)}</select>}</ApplyField>
         </div>
         <div className="small muted" style={{ marginBottom: 6 }}>{span} · {data.by_kind.map((k) => <span key={k.kind}>{k.kind} angles {k.hits}/{k.n} (<Rate n={k.n} hits={k.hits} />) </span>)}</div>
         <div className="tbl-wrap" style={{ maxHeight: 420 }}><table className="tbl compact">
@@ -99,7 +100,7 @@ function AngleTrack() {
           <tbody>{data.families.slice(0, show).map((f) => <tr key={f.family + f.kind + f.lean}><td className="left small">{f.family} <span className={`tiny ${f.lean === "over" ? "over" : f.lean === "under" ? "under" : "muted"}`}>{f.lean === "neutral" ? "" : f.lean}</span></td><td className="muted small">{f.kind}</td><td className="num muted">{f.n}</td><td className="num">{f.hits}</td><td className="num"><Rate n={f.n} hits={f.hits} /></td></tr>)}</tbody>
         </table></div>
         {data.families.length > show && <button className="btn" style={{ marginTop: 6 }} onClick={() => setShow(data.families.length)}>Show all {data.families.length}</button>}
-        <div className="hint" style={{ marginTop: 6 }}>An angle is right when the number it was about landed on the side it said: the team's rate against its own pre-game number, the player's game against his previous 16. Rebuilt from what was known before kickoff. Moves under 5% of the usual number (half a point for rates, 0.02 for EPA) are pushes and left out of n. Colour needs five or more.</div>
+        <div className="hint" style={{ marginTop: 6 }}>An angle is right when the number it was about landed on the side it said: the team's rate against its own pre-game number, the player's game against his previous 16. This season only (last season until a game of this one is graded). Rebuilt from what was known before kickoff. Moves under 5% of the usual number (half a point for rates, 0.02 for EPA) are pushes and left out of n. Colour needs five or more.</div>
       </div>
       <div className="panel">
         <div className="panel-head"><h3>Called it · the clearest recent hits</h3></div>

@@ -413,20 +413,34 @@ def for_game(game_id: str) -> list[dict]:
     return _json(_fresh().filter(pl.col("game_id") == game_id).to_dicts())
 
 
-def recent_weeks(n: int) -> list[tuple[int, int]]:
-    g = _fresh()
-    if g.is_empty():
+def record_season(season: int = CURRENT_SEASON) -> int | None:
+    """The season the track record reads: this one once any of its games are
+    graded, last season's until then. Never both: a record that mixes last
+    December into this September says how the angles did against rosters
+    and schemes that are gone."""
+    seasons = set(_fresh()["season"].unique().to_list())
+    if season in seasons:
+        return season
+    earlier = [s for s in seasons if s < season]
+    return max(earlier) if earlier else None
+
+
+def recent_weeks(n: int, season: int | None = None) -> list[tuple[int, int]]:
+    s = record_season() if season is None else season
+    if s is None:
         return []
-    wk = g.select("season", "week").unique().sort(["season", "week"]).tail(n)
+    wk = _fresh().filter(pl.col("season") == s).select("season", "week").unique().sort("week").tail(n)
     return [(r["season"], r["week"]) for r in wk.to_dicts()]
 
 
-def track_record(weeks: int = 8, min_n: int = 1) -> dict:
-    """Hit rate per family over the last ``weeks`` graded weeks, plus the
-    calls that landed hardest. What the matchup page puts next to an angle
-    for an upcoming game."""
-    wk = recent_weeks(weeks)
-    out: dict = {"weeks": wk, "n": 0, "hits": 0, "pushes": 0, "families": [], "by_kind": [], "best": []}
+def track_record(weeks: int = 22, min_n: int = 1) -> dict:
+    """Hit rate per family over the last ``weeks`` graded weeks of the record
+    season (:func:`record_season`), plus the calls that landed hardest. What
+    the matchup page puts next to an angle for an upcoming game."""
+    season = record_season()
+    wk = recent_weeks(weeks, season) if season is not None else []
+    out: dict = {"season": season, "current": season == CURRENT_SEASON, "weeks": wk, "n": 0, "hits": 0,
+                 "pushes": 0, "families": [], "by_kind": [], "best": []}
     if not wk:
         return out
     g = _fresh().filter((pl.col("season").cast(pl.Int64) * 100 + pl.col("week")).is_in([s * 100 + w for s, w in wk]))

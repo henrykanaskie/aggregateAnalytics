@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, Board as BoardT, BoardRow } from "../api";
-import { Field, SampleBanner, Seg, SourceNote, Spinner } from "../components/common";
+import { ApplyField, Field, SampleBanner, Seg, SourceNote, Spinner } from "../components/common";
 import { readSticky, useSticky } from "../lib/sticky";
 import { applyScale } from "../lib/outliers";
 import { useQuery } from "../lib/useQuery";
@@ -165,7 +165,7 @@ export default function Board() {
       {alerts.length > 0 && <AlertsPanel alerts={alerts} onPick={(a) => a.player_id && nav(`/research?player=${a.player_id}${a.market ? `&market=${a.market}` : ""}`)} />}
       <div className="panel" style={{ marginBottom: 12 }} data-tour="board-filters">
         <div className="controls">
-          <Field label="Week"><select className="input" value={week ?? meta?.week ?? 1} onChange={(e) => setWeek(Number(e.target.value))}>{weeks.map((w) => <option key={w} value={w}>Week {w}</option>)}</select></Field>
+          <ApplyField label="Week" value={week ?? meta?.week ?? 1} onApply={setWeek} show={(v) => `week ${v}`}>{(d, set) => <select className="input" value={d} onChange={(e) => set(Number(e.target.value))}>{weeks.map((w) => <option key={w} value={w}>Week {w}</option>)}</select>}</ApplyField>
           <Field label="Player"><input className="input" placeholder="filter…" value={q} onChange={(e) => setQ(e.target.value)} /></Field>
           <Field label="Position"><Seg value={pos} options={[{ v: "", l: "All" }, { v: "QB", l: "QB" }, { v: "RB", l: "RB" }, { v: "WR", l: "WR" }, { v: "TE", l: "TE" }, { v: "K", l: "K" }, { v: "DEF", l: "DEF" }]} onChange={setPos} /></Field>
           <Field label="Teams"><select className="input" value="" onChange={(e) => add(setTeams, teams, e.target.value)}><option value="">{teams.length ? `${teams.length} selected` : "All"}</option>{teamOptions.filter((t) => !teams.includes(t)).map((t) => <option key={t} value={t}>{t}</option>)}</select></Field>

@@ -1,7 +1,7 @@
 import { api7, TeamShares, ZoneKey } from "../api";
 import { useSticky } from "../lib/sticky";
 import { useQuery } from "../lib/useQuery";
-import { Field, Spinner } from "./common";
+import { ApplyField, Spinner } from "./common";
 import { PieMode, Row, SharePie } from "./SharePies";
 
 type Scope = "all" | ZoneKey;
@@ -19,7 +19,7 @@ export default function TeamSharePies({ team, current }: { team: string; current
       <h3>Who got the ball · {team} {data?.season ?? ""}{data && data.weeks.length ? ` through week ${data.weeks[data.weeks.length - 1]}` : ""}</h3>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
         {data?.zones && <div className="chips">{SCOPES.map(([k, l]) => <button key={k} className={`chip ${scope === k ? "on" : ""}`} onClick={() => setScope(k)}>{l}</button>)}</div>}
-        <Field label="Season"><input className="input num" type="number" min={1999} max={current} value={season ?? data?.season ?? ""} onChange={(e) => setSeason(e.target.value === "" ? null : Number(e.target.value))} /></Field>
+        <ApplyField<number | ""> label="Season" value={(season ?? data?.season ?? "") as number | ""} onApply={(v) => { if (typeof v === "number" && v >= 1999) setSeason(v); }} show={(v) => String(v)}>{(d, set) => <input className="input num" type="number" min={1999} max={current} value={d ?? ""} onChange={(e) => set(e.target.value === "" ? "" : Number(e.target.value))} />}</ApplyField>
       </div>
     </div>
   );

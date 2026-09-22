@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { api6, ScatterRow } from "../api";
 import { fmtStat, shortName } from "../lib/format";
 import { useMeta } from "../state";
-import { Field } from "./common";
+import { ApplyField, Field } from "./common";
 import ScatterPlot from "./ScatterPlot";
 import StatPicker from "./StatPicker";
 import { axisEnds, describeQuadrants } from "../lib/quadrants";
@@ -107,7 +107,7 @@ export default function PlayerScatter({ playerId, position, statKey, season, nam
   return (
     <div>
       <div className="controls" style={{ marginBottom: 6 }}>
-        <Field label="Season"><input className="input num" type="number" value={yr} min={1999} max={season} onChange={(e) => setYr(Number(e.target.value))} /></Field>
+        <ApplyField<number | ""> label="Season" value={(yr) as number | ""} onApply={(v) => { if (typeof v === "number" && v >= 1999) setYr(v); }} show={(v) => String(v)}>{(d, set) => <input className="input num" type="number" min={1999} max={season} value={d ?? ""} onChange={(e) => set(e.target.value === "" ? "" : Number(e.target.value))} />}</ApplyField>
         <Field label="X axis"><StatPicker value={x} onChange={setX} position={pos} /></Field>
         <Field label="Y axis"><StatPicker value={y} onChange={setY} position={pos} /></Field>
         <Field label="Min games"><input className="input num" type="number" min={1} max={20} value={minG} onChange={(e) => setMinG(Number(e.target.value))} /></Field>

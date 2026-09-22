@@ -92,3 +92,28 @@ def test_every_team_angle_is_graded_or_marked_context():
     missing = sorted({t for t, o, d in titles
                       if ag.team_check(t, o, d) is None and not any(re.search(p, t) for p in ag.CONTEXT_ONLY)})
     assert not missing, missing
+
+
+def _graded(monkeypatch, seasons_weeks):
+    import polars as pl
+    rows = [{k: None for k in ag.SCHEMA} | {"season": s, "week": w, "game_id": f"{s}_{w:02d}_A_B", "kind": "team",
+             "family": "Heavy boxes vs the run", "lean": "under", "strength": 1, "tags": [], "verdict": "hit",
+             "actual": 1.0, "baseline": 2.0, "direction": "down", "fmt": "dec2", "baseline_label": "x"}
+            for s, w in seasons_weeks]
+    df = pl.DataFrame(rows, schema=ag.SCHEMA)
+    monkeypatch.setattr(ag, "_fresh", lambda: df)
+    monkeypatch.setattr(ag, "CURRENT_SEASON", 2026)
+
+
+def test_track_record_is_this_season_only(monkeypatch):
+    _graded(monkeypatch, [(2025, 17), (2025, 18), (2026, 1), (2026, 2)])
+    t = ag.track_record()
+    assert t["season"] == 2026 and t["current"]
+    assert t["weeks"] == [(2026, 1), (2026, 2)] and t["n"] == 2
+
+
+def test_track_record_falls_back_to_last_season_before_week_one(monkeypatch):
+    _graded(monkeypatch, [(2024, 18), (2025, 17), (2025, 18)])
+    t = ag.track_record(weeks=1)
+    assert t["season"] == 2025 and not t["current"]
+    assert t["weeks"] == [(2025, 18)]
