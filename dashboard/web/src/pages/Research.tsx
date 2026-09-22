@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, BoardRow, BookLine, GameLog, Player, PlayerLines } from "../api";
-import { Field, SampleBanner, Seg, SourceNote, Spinner } from "../components/common";
+import { ApplyField, Field, SampleBanner, Seg, SourceNote, Spinner } from "../components/common";
 import BookLines from "../components/BookLines";
 import GameLogTable from "../components/GameLogTable";
 import Histogram from "../components/Histogram";
@@ -28,6 +28,11 @@ import CorrelationsPanel from "../components/CorrelationsPanel";
 import PlayerScatter from "../components/PlayerScatter";
 import TeamSharePies from "../components/TeamSharePies";
 import { api5, DvpFactors } from "../api";
+
+// The season chips pick a set; null means every season.
+const sameSeasons = (a: number[] | null, b: number[] | null) =>
+  a === b || (!!a && !!b && a.length === b.length && [...a].sort().join() === [...b].sort().join());
+const showSeasons = (v: number[] | null) => (!v ? "all seasons" : v.length === 0 ? "no seasons" : [...v].sort().join(", "));
 
 export default function Research() {
   const { meta, settings, setSettings, statByKey, marketByKey } = useMeta();
@@ -215,11 +220,11 @@ export default function Research() {
               {player.position !== "QB" && qbs.length > 1 && <Field label="Starting QB"><select className="input" value={filters.qb ?? ""} onChange={(e) => setFilters({ ...filters, qb: e.target.value || null })}><option value="">Any</option>{qbs.map(([q, n]) => <option key={q} value={q}>{q} ({n})</option>)}</select></Field>}
               <Field label="Opp. adjusted"><button className={`chip ${adjust ? "on" : ""}`} title="Scale each game by how generous that defense was to the position that season (league average / allowed). Asks: what would this have been against an average defense?" onClick={() => setAdjust(!adjust)}>{adjust ? "on" : "off"}{adjust && factors && !factors.dvp_stat ? " (n/a for this stat)" : ""}</button></Field>
               <Field label="Min snap %"><input className="input num" type="number" min={0} max={100} step={5} value={filters.minSnapPct === null ? "" : filters.minSnapPct * 100} placeholder="–" onChange={(e) => setFilters({ ...filters, minSnapPct: e.target.value === "" ? null : Number(e.target.value) / 100 })} /></Field>
-              <Field label="Seasons">
-                <div className="chips">
-                  {seasons.map((s) => { const on = !filters.seasons || filters.seasons.includes(s); return <button key={s} className={`chip ${on ? "on" : ""}`} onClick={() => { const cur = filters.seasons ?? seasons; const next = on ? cur.filter((x) => x !== s) : [...cur, s]; setFilters({ ...filters, seasons: next.length === seasons.length ? null : next }); }}>{s}</button>; })}
-                </div>
-              </Field>
+              <ApplyField<number[] | null> label="Seasons" value={filters.seasons} onApply={(v) => setFilters({ ...filters, seasons: v })} same={sameSeasons} show={showSeasons}>
+                {(d, set) => <div className="chips">
+                  {seasons.map((s) => { const on = !d || d.includes(s); return <button type="button" key={s} className={`chip ${on ? "on" : ""}`} onClick={() => { const cur = d ?? seasons; const next = on ? cur.filter((x) => x !== s) : [...cur, s]; set(next.length === seasons.length ? null : next); }}>{s}</button>; })}
+                </div>}
+              </ApplyField>
             </div>
           </div>
 

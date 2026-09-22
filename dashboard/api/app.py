@@ -653,6 +653,11 @@ def game_matchup(game_id: str, include_sample: bool = False):
 
     sides = []
     venue_info = mu_mod.venue(game)
+    # A played game's angles were rebuilt and stored when it was graded, so
+    # read them back rather than paying the play-by-play scans again. Only
+    # the precomputed table covers an upcoming game, and only for the week it
+    # was built for, which is what used to make an old week slow.
+    stored = ag_mod.pregame(game_id) if game.get("home_score") is not None else None
     for off_t, def_t in ((away, home), (home, away)):
         dvp = dvp_for(def_t)
         # Each side read against the other: the defense as it should look to
@@ -674,7 +679,8 @@ def game_matchup(game_id: str, include_sample: bool = False):
             "dvp": dvp,
             "angles": team_angles,
             "player_angles": mu_mod.note_adjusted(
-                ang_mod.for_matchup(off_t, def_t, season, through, key_players, def_row), def_row, off_t),
+                (stored or {}).get(off_t) or ang_mod.for_matchup(off_t, def_t, season, through, key_players, def_row),
+                def_row, off_t),
             "offense_personnel": records(pl.DataFrame(off_pers)) if off_pers else [],
             "defense_personnel": mu_mod.defense_personnel(def_t, use, roster_season=season),
         })
@@ -722,16 +728,17 @@ def team_usage_api(team: str, season: int | None = None, season_type: str = "REG
 
 
 @app.get("/api/teams/{team}/shares")
-def team_shares_api(team: str, season: int | None = None):
+def team_shares_api(team: str, season: int | None = None, week: int | None = Query(None, ge=1, le=22)):
     """Who got the ball over a team's season: carries, targets, and the red
     zone, inside the 10 and the goal line, with last season's shares beside
-    them. With no season named, this one once the team has played in it."""
+    them. With no season named, this one once the team has played in it.
+    With ``week``, that one game instead, read against the season."""
     team = team.upper()
     if season is None:
         season = CURRENT_SEASON
-        out = mu_mod.team_season_shares(team, season)
-        return out if out["games"] else mu_mod.team_season_shares(team, season - 1)
-    return mu_mod.team_season_shares(team, season)
+        out = mu_mod.team_season_shares(team, season, week)
+        return out if out["games"] else mu_mod.team_season_shares(team, season - 1, week)
+    return mu_mod.team_season_shares(team, season, week)
 
 
 @app.get("/api/coaches/{name}/usage")
