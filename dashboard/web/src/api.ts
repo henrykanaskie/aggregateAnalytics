@@ -242,3 +242,16 @@ export type ScatterRow = Record<string, number | string | null> & { player_id: s
 export const api6 = {
   scatterPlayers: ep<{ season: number; position: string; rows: ScatterRow[] }>()((season: number, position: string, min_games = 4) => `/api/scatter/players${qs({ season, position, min_games })}`),
 };
+
+// --- team shares -----------------------------------------------------------------
+/** player_id -> share of this team's carries or targets. */
+type ShareMap = Record<string, number>;
+/** A team's regular season as share charts, with last season's shares with
+ *  the same team beside them (dashboard/stats/matchups.team_season_shares). */
+export interface TeamShares extends Partial<BoxShares> {
+  team: string; season: number; weeks: number[]; games: number;
+  last?: { season: number; games: number; carries?: ShareMap; targets?: ShareMap; zones?: Record<ZoneKey, { carries: ShareMap; targets: ShareMap }> };
+}
+export const api7 = {
+  teamShares: ep<TeamShares>()((team: string, season?: number) => `/api/teams/${team}/shares${qs({ season })}`),
+};

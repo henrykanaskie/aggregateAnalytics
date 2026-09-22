@@ -10,6 +10,7 @@ import { useQuery } from "../lib/useQuery";
 import { useMeta } from "../state";
 import TeamScatter from "../components/TeamScatter";
 import UsageTree from "../components/UsageTree";
+import TeamSharePies from "../components/TeamSharePies";
 import { PCT_LEGEND, rankTint, shownRank } from "../lib/rank";
 import DvpTable from "../components/DvpTable";
 import { blendNote } from "../lib/blend";
@@ -140,6 +141,7 @@ export default function Teams() {
           <div className="panel"><DvpTable season={league?.season ?? meta?.stats_season ?? 2026} blend={blend} highlight={team} onPick={(t) => setSp({ team: t })} /></div>
         </div>
       )}
+      {team && data && <div className="panel" style={{ marginBottom: 14 }} data-tour="team-shares"><TeamSharePies team={team} current={meta?.season ?? 2026} /></div>}
       {!team && (
         <div className="panel" style={{ marginBottom: 14 }}><DvpTable season={league?.season ?? meta?.stats_season ?? 2026} blend={blend} onPick={(t) => setSp({ team: t })} /></div>
       )}

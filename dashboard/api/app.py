@@ -720,6 +720,19 @@ def team_usage_api(team: str, season: int | None = None, season_type: str = "REG
     return {"team": team.upper(), "season": season, "rows": records(ctx_mod.team_usage(team.upper(), season, season_type))}
 
 
+@app.get("/api/teams/{team}/shares")
+def team_shares_api(team: str, season: int | None = None):
+    """Who got the ball over a team's season: carries, targets, and the red
+    zone, inside the 10 and the goal line, with last season's shares beside
+    them. With no season named, this one once the team has played in it."""
+    team = team.upper()
+    if season is None:
+        season = CURRENT_SEASON
+        out = mu_mod.team_season_shares(team, season)
+        return out if out["games"] else mu_mod.team_season_shares(team, season - 1)
+    return mu_mod.team_season_shares(team, season)
+
+
 @app.get("/api/coaches/{name}/usage")
 def coach_usage_api(name: str, role: str = "HC"):
     _need_team_table()

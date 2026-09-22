@@ -17,7 +17,7 @@ const SCOPES: [Scope, string][] = [["all", "All plays"], ["rz", "Red zone"], ["i
 /** One player's slice, whichever scope and span it came from. ``cmp`` is the
  *  share it is read against: his usual one for a game, this game's for the
  *  season. */
-type Row = { player_id: string; name: string; position: string; n: number; games?: number; td?: number; ez?: number | null; cmp: number | null; cmpTitle?: string; detail: string };
+export type Row = { player_id: string; name: string; position: string; n: number; games?: number; td?: number; ez?: number | null; cmp: number | null; cmpTitle?: string; detail: string };
 type Slice = { key: string; label: string; n: number; color: string; row?: Row };
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
@@ -41,7 +41,7 @@ export function SharePies({ shares, sides, usageSeason, season, week, score }: {
   const sc: Scope = hasZones ? scope : "all";
   const zone = sc === "all" ? null : teams.map((t) => pick(t).zones?.[sc]).find(Boolean) ?? null;
   const zoneLabel = zone?.label ?? "";
-  const cmpLabel = sp === "game" ? "Usual" : `Wk ${week}`;
+  const pm = modeFor(sp, sp === "game" ? "Usual" : `Wk ${week}`);
   return (
     <div className="panel" data-tour="matchup-shares">
       <div className="panel-head">
@@ -74,15 +74,15 @@ export function SharePies({ shares, sides, usageSeason, season, week, score }: {
               <div className="small" style={{ marginBottom: 6 }}><TeamTag abbr={t} name />{sp === "season" && <span className="muted"> · {plural(s.games, "game", "games")}</span>}</div>
               {sc !== "all" ? (
                 <div className="share-pair">
-                  <SharePie title={`${zoneLabel} carries`} unit="car" total={z?.carries.total ?? 0} rest="others" extra={["td"]} span={sp} cmpLabel={cmpLabel} rows={zoneRows(z?.carries.rows ?? [], "carries")} />
-                  <SharePie title={`${zoneLabel} targets`} unit="tgt" total={z?.targets.total ?? 0} rest="others" extra={["ez", "td"]} span={sp} cmpLabel={cmpLabel} rows={zoneRows(z?.targets.rows ?? [], "targets")} />
+                  <SharePie title={`${zoneLabel} carries`} unit="car" total={z?.carries.total ?? 0} rest="others" extra={["td"]} mode={pm} rows={zoneRows(z?.carries.rows ?? [], "carries")} />
+                  <SharePie title={`${zoneLabel} targets`} unit="tgt" total={z?.targets.total ?? 0} rest="others" extra={["ez", "td"]} mode={pm} rows={zoneRows(z?.targets.rows ?? [], "targets")} />
                 </div>
               ) : (
                 <div className="share-pair">
-                  <SharePie title="RB carry share" unit="car" total={s.team_carries} rest="QB and others" span={sp} cmpLabel={cmpLabel}
+                  <SharePie title="RB carry share" unit="car" total={s.team_carries} rest="QB and others" mode={pm}
                     rows={s.carries.map((r) => ({ ...r, cmp: sp === "game" ? usual.get(r.player_id)?.carry_share ?? null : gc(r.player_id), cmpTitle: sp === "season" ? `Share in week ${week}` : undefined,
                       detail: `${plural(r.n, "carry", "carries")}, ${r.yards ?? 0} yards, ${r.td} TD${sp === "season" ? ` in ${plural(r.games, "game", "games")}` : ""}` }))} />
-                  <SharePie title="WR / TE target share" unit="tgt" total={s.team_targets} rest="RBs and others" span={sp} cmpLabel={cmpLabel}
+                  <SharePie title="WR / TE target share" unit="tgt" total={s.team_targets} rest="RBs and others" mode={pm}
                     rows={s.targets.map((r) => ({ ...r, cmp: sp === "game" ? usual.get(r.player_id)?.target_share ?? null : gt(r.player_id), cmpTitle: sp === "season" ? `Share in week ${week}` : undefined,
                       detail: `${r.receptions ?? 0} of ${r.n} for ${r.yards ?? 0} yards, ${r.td} TD${sp === "season" ? ` in ${plural(r.games, "game", "games")}` : ""}` }))} />
                 </div>
@@ -105,13 +105,21 @@ export function SharePies({ shares, sides, usageSeason, season, week, score }: {
   );
 }
 
-function SharePie({ title, unit, total, rows, rest, span, cmpLabel, extra = [] }: { title: string; unit: "car" | "tgt"; total: number; rows: Row[]; rest: string; span: Span; cmpLabel: string; extra?: ("td" | "ez")[] }) {
-  if (total === 0) return <div><div className="small" style={{ fontWeight: 600 }}>{title}</div><div className="hint">None {span === "game" ? "in this game" : "so far"}.</div></div>;
+/** How a pie's table reads: whether it has a games column, which column is
+ *  coloured (the share against ``cmp``, or ``cmp`` against the share), and
+ *  what the comparison column is called. */
+export type PieMode = { games: boolean; color: "share" | "cmp"; cmpLabel: string; cmpHint: string; colorHint?: string; empty: string };
+const modeFor = (span: Span, cmpLabel: string): PieMode => span === "game"
+  ? { games: false, color: "share", cmpLabel, cmpHint: "Share before this game", colorHint: "Green: 5 points or more above his usual share; red: 5 or more below", empty: "None in this game." }
+  : { games: true, color: "cmp", cmpLabel, cmpHint: "His share in this game", empty: "None so far." };
+
+export function SharePie({ title, unit, total, rows, rest, mode, extra = [] }: { title: string; unit: "car" | "tgt"; total: number; rows: Row[]; rest: string; mode: PieMode; extra?: ("td" | "ez")[] }) {
+  if (total === 0) return <div><div className="small" style={{ fontWeight: 600 }}>{title}</div><div className="hint">{mode.empty}</div></div>;
   const named = rows.slice(0, NAMED);
   const slices: Slice[] = named.map((r, i) => ({ key: r.player_id, label: r.name, n: r.n, color: `var(--cat-${i + 1})`, row: r }));
   const left = total - named.reduce((a, r) => a + r.n, 0);
   if (left > 0) slices.push({ key: "rest", label: rows.length > NAMED ? `${rest} (${rows.length - NAMED} more)` : rest, n: left, color: OTHER });
-  const season = span === "season";
+  const season = mode.games;
   return (
     <div className="share-pie">
       <div className="small" style={{ fontWeight: 600, marginBottom: 2 }}>{title} <span className="muted num" style={{ fontWeight: 400 }}>· {total} team {unit === "car" ? (total === 1 ? "carry" : "carries") : (total === 1 ? "target" : "targets")}</span></div>
@@ -127,7 +135,7 @@ function SharePie({ title, unit, total, rows, rest, span, cmpLabel, extra = [] }
           }} />
         </PieChart>
         <table className="tbl compact tight">
-          <thead><tr><th className="left">Player</th><th>{unit === "car" ? "Car" : "Tgt"}</th>{season && <th title="Games played">G</th>}{extra.includes("ez") && <th title="Thrown into the end zone">EZ</th>}{extra.includes("td") && <th>TD</th>}<th>Share</th><th title={season ? "His share in this game" : "Share before this game"}>{cmpLabel}</th></tr></thead>
+          <thead><tr><th className="left">Player</th><th>{unit === "car" ? "Car" : "Tgt"}</th>{season && <th title="Games played">G</th>}{extra.includes("ez") && <th title="Thrown into the end zone">EZ</th>}{extra.includes("td") && <th>TD</th>}<th>Share</th><th title={mode.cmpHint}>{mode.cmpLabel}</th></tr></thead>
           <tbody>{slices.map((sl) => (
             <tr key={sl.key} title={sl.row?.detail}>
               <td className="left"><span className="sw-dot" style={{ background: sl.color }} />{sl.row ? <><Link to={`/research?player=${sl.row.player_id}`}>{sl.label}</Link> <span className="muted">{sl.row.position}</span></> : <span className="muted">{sl.label}</span>}</td>
@@ -135,8 +143,8 @@ function SharePie({ title, unit, total, rows, rest, span, cmpLabel, extra = [] }
               {season && <td className="num muted">{sl.row?.games ?? ""}</td>}
               {extra.includes("ez") && <td className="num muted">{sl.row ? sl.row.ez ?? 0 : ""}</td>}
               {extra.includes("td") && <td className="num">{sl.row ? (sl.row.td ? <b>{sl.row.td}</b> : <span className="faint">0</span>) : ""}</td>}
-              <td className={`num ${season ? "" : moved(sl, total)}`} title={!season && sl.row?.cmp != null ? "Green: 5 points or more above his usual share; red: 5 or more below" : undefined}><b>{fmtPct(sl.n / total)}</b></td>
-              <td className={`num ${season ? moved(sl, total, true) : "muted"}`} title={sl.row?.cmpTitle}>{sl.row?.cmp != null ? fmtPct(sl.row.cmp) : "–"}</td>
+              <td className={`num ${mode.color === "share" ? moved(sl, total) : ""}`} title={mode.color === "share" && sl.row?.cmp != null ? mode.colorHint : undefined}><b>{fmtPct(sl.n / total)}</b></td>
+              <td className={`num ${mode.color === "cmp" ? moved(sl, total, true) : "muted"}`} title={sl.row?.cmpTitle}>{sl.row?.cmp != null ? fmtPct(sl.row.cmp) : "–"}</td>
             </tr>
           ))}</tbody>
         </table>
