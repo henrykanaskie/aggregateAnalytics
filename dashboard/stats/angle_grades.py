@@ -520,12 +520,22 @@ def _num(v: float | None, fmt: str | None, signed: bool = False) -> str:
     return f"{v:.1f}"
 
 
+_BOX_TEXT = ("game_id", "team", "player_id", "player_display_name", "position")
+_BOX_NUM = ("completions", "attempts", "passing_yards", "passing_tds", "passing_interceptions", "sacks_suffered",
+            "carries", "rushing_yards", "rushing_tds", "targets", "receptions", "receiving_yards", "receiving_tds")
+
+
 def _box(game_ids: list[str]) -> pl.DataFrame:
-    return (scan("player_stats_week").filter(pl.col("game_id").is_in(game_ids))
-            .select("game_id", "team", "player_id", "player_display_name", "position", "completions", "attempts",
-                    "passing_yards", "passing_tds", "passing_interceptions", "sacks_suffered", "carries",
-                    "rushing_yards", "rushing_tds", "targets", "receptions", "receiving_yards", "receiving_tds")
-            .collect())
+    """The box score behind a set of graded games.
+
+    Only the "evidence" line of an explanation reads it, so a cache without
+    the table (the test runner, a partial local checkout) gets an empty one
+    and explanations without that line, rather than no explanations at all."""
+    try:
+        return (scan("player_stats_week").filter(pl.col("game_id").is_in(game_ids))
+                .select(*_BOX_TEXT, *_BOX_NUM).collect())
+    except FileNotFoundError:
+        return pl.DataFrame(schema={**{c: pl.String for c in _BOX_TEXT}, **{c: pl.Int32 for c in _BOX_NUM}})
 
 
 def _times(verb: str, n: int) -> str:
