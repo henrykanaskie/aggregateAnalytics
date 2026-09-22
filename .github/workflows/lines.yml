@@ -33,16 +33,25 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python scripts/fetch_cache.py --only _static schedules player_stats_week
+      # ESPN only here. This job commits what it pulls to a public repo, and
+      # the licensed feeds (Sports Game Odds, The Odds API) forbid
+      # redistributing their data as downloadable files, so their snapshots are
+      # gitignored and a pull here would spend quota on data that is then
+      # thrown away. Their keys are deliberately not passed to this step; pull
+      # them where the result stays private (the site's own Settings page).
       - name: Pull lines
-        env:
-          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
         run: bash scripts/pull_lines.sh
       # The season's injury reports, on the same clock as the lines: the
       # weekly cache refresh only sees them on Tuesdays, after the games. A
       # feed hiccup must not cost the snapshot, hence the || echo.
+      # The steps below run even when every lines feed failed: injuries come
+      # from nflverse, not from any sportsbook feed, and the fantasy pages need
+      # them. The job still ends red, so a dead feed still sends an email.
       - name: Refresh injury reports
+        if: ${{ !cancelled() }}
         run: python -m dashboard.odds.injuries || echo "! injuries refresh failed; keeping the last file"
       - name: Commit the snapshot
+        if: ${{ !cancelled() }}
         run: |
           git config user.name "Henry Kanaskie"
           git config user.email "howenkan13@gmail.com"

@@ -2,7 +2,8 @@
 # Daily automation for the props dashboard. Safe to run any time; every step
 # appends or is idempotent.
 #
-#   1. pull today's lines (ESPN, free; The Odds API too if a key is set)
+#   1. pull today's lines (ESPN and, with SGO_API_KEY, Sports Game Odds; The
+#      Odds API when both come back empty, and a small daily pull if a key is set)
 #   2. log the baseline projection for the current week
 #   3. grade last week's lines and predictions
 #   4. every run, refresh this season's box scores, play-by-play and
@@ -20,7 +21,7 @@ mkdir -p data/odds
 exec >>"$LOG" 2>&1
 echo "=== $(date -u +%FT%TZ) daily start"
 
-$PY -m dashboard.odds.pull --source espn
+$PY -m dashboard.odds.pull --source auto || echo "! no lines feed answered; continuing"
 $PY -m dashboard.odds.injuries || echo "[injuries] refresh failed; keeping the last file"
 if grep -q '^ODDS_API_KEY=.\+' .env 2>/dev/null; then
   $PY -m dashboard.odds.pull --source oddsapi --max-credits 60 \

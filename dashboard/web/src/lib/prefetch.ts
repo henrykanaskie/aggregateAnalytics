@@ -1,4 +1,4 @@
-import { api, api2, api3, api4, api5, apiGet, Meta, ScheduleGame } from "../api";
+import { api, api2, api3, api4, api5, apiFantasy, apiGet, Meta, ScheduleGame } from "../api";
 import { busy, isFresh } from "./cache";
 import { readSticky } from "./sticky";
 import type { Settings } from "../state";
@@ -99,6 +99,9 @@ export function warmAll(meta: Meta, settings: Settings): void {
   if (coach) urls.push(api2.coach.url(coach, role), role === "DC" ? null : api3.coachUsage.url(coach, role));
 
   urls.push(api.predictions.url(undefined, week("predictions.week")));
+  // The fantasy week costs the API a couple of seconds cold, so it is warmed
+  // only for someone who said fantasy is what they are here for.
+  if (settings.profile?.purposes.includes("fantasy")) urls.push(apiFantasy.fantasyWeek.url(meta.season, week("fantasy.week")));
   urls.push(api5.gradeSummary.url(readSticky<number | null>("results.season", null) ?? undefined));
   urls.push(api.status.url());
 

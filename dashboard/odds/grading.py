@@ -38,9 +38,12 @@ from ..config import CURRENT_SEASON, ODDS_DIR
 from ..stats.catalog import RAW_STAT_COLUMNS, STATS
 from ..stats.gamelog import recent_longest, recent_values
 from .markets import BY_KEY
-from .store import latest_props, scan_props
+from .store import LICENSED_SOURCES, latest_props, scan_props
 
 GRADED_DIR = ODDS_DIR / "graded"
+#: Graded lines from licensed feeds (store.LICENSED_SOURCES). Same file names,
+#: gitignored, so the public repo only ever carries grades of ESPN lines.
+LICENSED_DIR = GRADED_DIR / "licensed"
 
 
 def _actuals(season: int, week: int, stats: list[str]) -> pl.DataFrame:
@@ -144,7 +147,14 @@ def grade_week(season: int, week: int, write: bool = True, include_sample: bool 
     if write:
         GRADED_DIR.mkdir(parents=True, exist_ok=True)
         if not graded.is_empty():
-            graded.write_parquet(GRADED_DIR / f"lines_{season}_{week:02d}.parquet")
+            lic = pl.col("source").is_in(list(LICENSED_SOURCES))
+            for rows_, d in ((graded.filter(~lic), GRADED_DIR), (graded.filter(lic), LICENSED_DIR)):
+                path = d / f"lines_{season}_{week:02d}.parquet"
+                if rows_.is_empty():
+                    path.unlink(missing_ok=True)
+                else:
+                    d.mkdir(parents=True, exist_ok=True)
+                    rows_.write_parquet(path)
         if not preds.is_empty():
             preds.write_parquet(GRADED_DIR / f"preds_{season}_{week:02d}.parquet")
     return graded
@@ -174,8 +184,12 @@ def _grade_predictions(season: int, week: int, actual: pl.DataFrame) -> pl.DataF
     return pl.DataFrame(rows) if rows else pl.DataFrame()
 
 
+def _line_files(pattern: str = "lines_*.parquet") -> list:
+    return sorted(f for d in (GRADED_DIR, LICENSED_DIR) if d.is_dir() for f in d.glob(pattern))
+
+
 def graded_lines(season: int | None = None) -> pl.DataFrame:
-    files = sorted(GRADED_DIR.glob("lines_*.parquet")) if GRADED_DIR.is_dir() else []
+    files = _line_files()
     if season is not None:
         files = [f for f in files if f.stem.split("_")[1] == str(season)]
     return pl.concat([pl.read_parquet(f) for f in files], how="diagonal_relaxed") if files else pl.DataFrame()
@@ -253,7 +267,7 @@ def weeks_with_lines(season: int) -> set[int]:
 def graded_weeks(season: int) -> set[int]:
     if not GRADED_DIR.is_dir():
         return set()
-    return {int(f.stem.split("_")[2]) for f in GRADED_DIR.glob(f"lines_{season}_*.parquet")}
+    return {int(f.stem.split("_")[2]) for f in _line_files(f"lines_{season}_*.parquet")}
 
 
 def weeks_to_grade(season: int, week: int | None = None, regrade_all: bool = False) -> list[int]:

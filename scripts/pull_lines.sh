@@ -7,15 +7,17 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# ESPN only (DraftKings lines, free, no key). The Odds API is deliberately
-# NOT on the schedule: its free tier is 500 credits a month and one default
-# pull is ~115, so four a day would exhaust it on day one. Spend those credits
-# by hand from the Settings page, which shows the cost before pulling.
-# To put it on the schedule anyway (paid tier), set ODDS_API_SCHEDULED=1.
+# "auto" tries ESPN (free, DraftKings only) and, when SGO_API_KEY is set,
+# Sports Game Odds (free plan, nine books) independently, so losing either
+# feed does not lose the snapshot. The Odds API is spent only when both come
+# back empty, on a short market list that fits what is left of its month.
+# Its free tier is 500 credits and one full pull is ~176, so it is deliberately
+# not on the schedule for every run. To pull it every time anyway (paid tier),
+# set ODDS_API_SCHEDULED=1.
 if [ -n "${ODDS_API_KEY:-}" ] && [ "${ODDS_API_SCHEDULED:-0}" = "1" ]; then
   PULL_CMD="python -m dashboard.odds.pull --source all"
 else
-  PULL_CMD="python -m dashboard.odds.pull --source espn"
+  PULL_CMD="python -m dashboard.odds.pull --source auto"
 fi
 
 mkdir -p data/odds

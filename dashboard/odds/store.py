@@ -65,6 +65,11 @@ GAME_SCHEMA: dict[str, pl.DataType] = {
 }
 
 
+#: Sources whose terms forbid republishing their data. Their rows are kept out
+#: of anything this repo publishes (see .gitignore and grading.py).
+LICENSED_SOURCES = ("sgo", "oddsapi")
+
+
 def now_utc() -> datetime:
     return datetime.now(timezone.utc).replace(microsecond=0)
 

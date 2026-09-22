@@ -66,9 +66,27 @@ export function SampleBanner({ sources }: { sources: string[] }) {
     </Banner>
   );
 }
+export const sourceName = (s: string) => ({ espn: "ESPN (DraftKings)", oddsapi: "The Odds API", sgo: "Sports Game Odds", sample: "sample" } as Record<string, string>)[s] ?? s;
+
+/** Said on the lines pages when the last scheduled pull got nothing from any
+ *  feed: the numbers on screen are the last good pull, and how old that is. */
+export function FeedBanner() {
+  const { meta } = useMeta();
+  const feeds = Object.entries(meta?.odds.feeds ?? {}).filter(([k]) => k !== "sample");
+  if (!feeds.length || feeds.some(([, f]) => f.ok)) return null;
+  const last = feeds.map(([, f]) => f.last_ok).filter((x): x is string => !!x).sort().pop();
+  return (
+    <Banner kind="warn">
+      <b>Live lines are not coming through.</b> The last attempt at {feeds.map(([k]) => sourceName(k)).join(" and ")} failed
+      ({feeds.map(([, f]) => f.error).filter(Boolean)[0] ?? "no lines returned"}), so what you see is {last ? `the last good pull, from ${new Date(last).toLocaleString()}` : "whatever was pulled before"}.
+      Stats, matchups and the fantasy pages do not depend on these feeds and are unaffected.
+    </Banner>
+  );
+}
+
 export const SourceNote = ({ sources, pulled }: { sources: string[]; pulled?: string | null }) => (
   <span className="hint">
-    {sources.length ? `source: ${sources.map((s) => (s === "espn" ? "ESPN (DraftKings)" : s === "oddsapi" ? "The Odds API" : s)).join(", ")}` : "no lines"}
+    {sources.length ? `source: ${sources.map(sourceName).join(", ")}` : "no lines"}
     {pulled ? ` · pulled ${new Date(pulled).toLocaleString()}` : ""}
   </span>
 );

@@ -2,7 +2,7 @@ import { useEffect } from "react";
 
 // First load lands here. Two things it has to do: say what the numbers on the
 // other side are and are not, and offer the tour without making it a toll gate.
-export default function Welcome({ onTour, onSkip }: { onTour: () => void; onSkip: () => void }) {
+export default function Welcome({ onTour, onTailor, onSkip }: { onTour: () => void; onTailor: () => void; onSkip: () => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onSkip(); };
     window.addEventListener("keydown", onKey);
@@ -46,9 +46,10 @@ export default function Welcome({ onTour, onSkip }: { onTour: () => void; onSkip
         </div>
 
         <div className="welcome-actions">
-          <button className="btn primary" onClick={onTour}>Show me around</button>
+          <button className="btn primary" onClick={onTailor}>Tailor it to me</button>
+          <button className="btn" onClick={onTour}>Show me around</button>
           <button className="btn ghost" onClick={onSkip}>Skip for now</button>
-          <span className="hint">The tour takes about a minute. The <b>?</b> in the header brings it back any time.</span>
+          <span className="hint">Tailoring is six quick questions; the tour takes about a minute. Both are in the header any time.</span>
         </div>
       </div>
     </div>

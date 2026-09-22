@@ -1,4 +1,5 @@
 import { chartTheme } from "../lib/theme";
+import { useLens } from "../lib/profile";
 import { Bar, CartesianGrid, Cell, ComposedChart, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { GameRow, StatDef } from "../api";
 import { fmtStat, gameLabel } from "../lib/format";
@@ -8,6 +9,7 @@ interface Props { rows: GameRow[]; statKey: string; stat?: StatDef; line: number
 
 export default function PropChart({ rows, statKey, stat, line, height = 300, showRolling = true, rollingWindow = 5, showAvg = true, onPick, picked, compact = false }: Props) {
   const T = chartTheme();
+  const { words } = useLens();
   const roll = rolling(rows, statKey, rollingWindow);
   const vals = rows.map((r) => val(r, statKey));
   const present = vals.filter((v): v is number => v !== null);
@@ -29,7 +31,7 @@ export default function PropChart({ rows, statKey, stat, line, height = 300, sho
             <div className="tooltip">
               <div className="t">{r.season} {r.season_type === "POST" ? "playoffs" : `week ${r.week}`} · {r.home ? "vs" : "@"} {r.opponent} {r.result ? `(${r.result} ${r.team_score}-${r.opp_score})` : ""}</div>
               <div className="r"><span>{stat?.label ?? statKey}</span><b className="num" style={{ color: color(d.value) }}>{fmt(d.value)}</b></div>
-              {line !== null && <div className="r"><span>line</span><span className="num">{line}</span></div>}
+              {line !== null && <div className="r"><span>{words.line}</span><span className="num">{line}</span></div>}
               {d.roll !== null && <div className="r"><span>L{rollingWindow} avg</span><span className="num">{fmt(d.roll)}</span></div>}
               {typeof r.snap_offense_pct === "number" && <div className="r"><span>snap %</span><span className="num">{Math.round((r.snap_offense_pct as number) * 100)}%</span></div>}
               {r.team_spread !== null && <div className="r"><span>spread / total</span><span className="num">{r.team_spread! > 0 ? "+" : ""}{r.team_spread} / {r.total_line}</span></div>}
@@ -39,7 +41,7 @@ export default function PropChart({ rows, statKey, stat, line, height = 300, sho
         <Bar dataKey="value" radius={[3, 3, 0, 0]} isAnimationActive={false} onClick={(d: any) => onPick?.(d?.row?.game_id)} cursor={onPick ? "pointer" : undefined}>
           {data.map((d, i) => <Cell key={i} fill={color(d.value)} opacity={picked && picked !== d.row.game_id ? 0.45 : 1} />)}
         </Bar>
-        {line !== null && <ReferenceLine y={line} stroke={T.push} strokeDasharray="5 4" strokeWidth={1.5} label={compact ? undefined : { value: `line ${line}`, position: "insideTopRight", fill: T.push, fontSize: 11 }} />}
+        {line !== null && <ReferenceLine y={line} stroke={T.push} strokeDasharray="5 4" strokeWidth={1.5} label={compact ? undefined : { value: `${words.line} ${line}`, position: "insideTopRight", fill: T.push, fontSize: 11 }} />}
         {showAvg && avg !== null && <ReferenceLine y={avg} stroke={T.tick} strokeDasharray="2 4" label={compact ? undefined : { value: `avg ${fmt(avg)}`, position: "insideBottomRight", fill: T.tick, fontSize: 11 }} />}
         {showRolling && <Line type="monotone" dataKey="roll" stroke={T.accent} strokeWidth={1.8} dot={false} isAnimationActive={false} connectNulls />}
       </ComposedChart>

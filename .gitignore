@@ -18,6 +18,16 @@ __pycache__/
 # machine wrote it, which on this one means a username and the repo's old
 # directory name, published to a repo whose whole point is being public.
 /data/odds/*.log
+# Licensed feeds are shown on the site but must not be republished, and this
+# repo is public: Sports Game Odds' terms forbid redistributing its data as
+# downloadable files, and The Odds API's are no looser. Their snapshots, and
+# graded lines built from them, stay on the machine that pulled them (or go to
+# a private data repo); only ESPN and generated sample files are tracked here.
+/data/odds/props/*_sgo.parquet
+/data/odds/games/*_sgo.parquet
+/data/odds/props/*_oddsapi.parquet
+/data/odds/games/*_oddsapi.parquet
+/data/odds/graded/licensed/
 
 !package.json
 !package-lock.json

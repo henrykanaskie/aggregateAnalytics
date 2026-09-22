@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, BoardRow, BookLine, GameLog, Player, PlayerLines } from "../api";
-import { ApplyField, Field, SampleBanner, Seg, SourceNote, Spinner } from "../components/common";
+import { ApplyField, Field, FeedBanner, SampleBanner, Seg, SourceNote, Spinner } from "../components/common";
 import BookLines from "../components/BookLines";
 import GameLogTable from "../components/GameLogTable";
 import Histogram from "../components/Histogram";
@@ -28,6 +28,9 @@ import CorrelationsPanel from "../components/CorrelationsPanel";
 import PlayerScatter from "../components/PlayerScatter";
 import TeamSharePies from "../components/TeamSharePies";
 import { api5, DvpFactors } from "../api";
+import FantasySnapshot from "../components/FantasySnapshot";
+import More from "../components/More";
+import { arrange, isDefPos, Tags, useLens } from "../lib/profile";
 
 // The season chips pick a set; null means every season.
 const sameSeasons = (a: number[] | null, b: number[] | null) =>
@@ -36,6 +39,8 @@ const showSeasons = (v: number[] | null) => (!v ? "all seasons" : v.length === 0
 
 export default function Research() {
   const { meta, settings, setSettings, statByKey, marketByKey } = useMeta();
+  const lens = useLens();
+  const { words } = lens;
   const [sp, setSp] = useSearchParams();
   const nav = useNavigate();
   const pid = sp.get("player");
@@ -86,11 +91,19 @@ export default function Research() {
     setColumns(preset.slice(0, 6));
     setMiniKeys(preset.slice(0, 4));
     if (!sp.get("market") && !sp.get("stat")) {
-      // Default to the first market the books actually posted for this player, else the position's usual one.
-      const first = lines.markets.find((m) => m.kind === "ou") ?? null;
       const fallback = DEFAULT_MARKET_FOR[player.position] ?? DEFAULT_MARKET_FOR.DEF;
       const next = new URLSearchParams(sp);
-      next.set("market", first?.market ?? fallback);
+      if (lens.betting) {
+        // Default to the first market the books actually posted for this player, else the position's usual one.
+        const first = lines.markets.find((m) => m.kind === "ou") ?? null;
+        next.set("market", first?.market ?? fallback);
+      } else {
+        // Without betting in the profile there is no line to open on: fantasy
+        // points for a fantasy player who scores them, else the position's
+        // usual stat.
+        const fp = lens.fantasy && !isDefPos(player.position) && (log.available[lens.fantasyKey] ?? 0) > 0;
+        next.set("stat", fp ? lens.fantasyKey : marketByKey.get(fallback)?.stat ?? preset[0] ?? "receiving_yards");
+      }
       setSp(next, { replace: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -163,13 +176,93 @@ export default function Research() {
       <div>
         <div className="page-head"><h1>Player research</h1></div>
         <div className="panel" style={{ maxWidth: 720 }}>
-          <p className="muted" style={{ marginTop: 0 }}>Pick a player to see every game they have played against any stat, with the sportsbook line drawn over it. Any player who has recorded a stat line since 1999 is in here.</p>
+          <p className="muted" style={{ marginTop: 0 }}>Pick a player to see every game they have played against any stat, {lens.betting ? "with the sportsbook line drawn over it" : lens.fantasy ? "starting with their fantasy points" : "with a benchmark of your own drawn over it"}. Any player who has recorded a stat line since 1999 is in here.</p>
           <PlayerSearch autoFocus onSelect={(p) => nav(`/research?player=${p.player_id}`)} />
           <QuickPicks />
         </div>
       </div>
     );
   }
+
+  // Every panel below the controls, with who it is for. The tailoring profile
+  // decides which go on the page and which wait under "More"; with no profile
+  // they all show, in this order, as they always have.
+  type Slot = { id: string; label: string; col: "main" | "side"; tags: Tags; node: React.ReactNode };
+  const opp = player && lines?.game ? (lines.game.home_team === player.team ? lines.game.away_team : lines.game.home_team) : null;
+  const slots: Slot[] = !player || !pid ? [] : [
+    ...(lens.profile && !isDefPos(player.position) && (log?.available[lens.fantasyKey] ?? 0) > 0 ? [{
+      id: "research:fantasy", label: "Fantasy snapshot", col: "main" as const, tags: { for: ["fantasy" as const] },
+      node: <div className="panel"><div className="panel-head"><h3>Fantasy snapshot</h3></div><FantasySnapshot rows={rawRows} statKey={lens.fantasyKey} scoring={lens.profile.scoring} position={player.position} name={player.name} /></div>,
+    }] : []),
+    { id: "research:chart", label: "Game-by-game chart", col: "main", tags: {}, node: (
+      <div className="panel" data-tour="research-chart">
+        <div className="panel-head">
+          <div><h2>{stat?.label ?? statKey}{marketRow ? <span className="muted"> · {marketRow.market_label} line {line}</span> : line !== null ? <span className="muted"> · {lens.betting ? "custom line" : words.line} {line}</span> : null}</h2>{stat?.note && <div className="hint">{stat.note}</div>}</div>
+          <div className="actions">
+            <span className="legend"><span><i style={{ background: "var(--over)" }} />{words.over}</span><span><i style={{ background: "var(--under)" }} />{words.under}</span><span><i style={{ background: "var(--push)" }} />{lens.betting ? "push" : "equal"}</span><span><i style={{ background: "var(--accent)", height: 2 }} />rolling avg</span></span>
+            <Field label="Rolling"><Seg value={rollWin} options={[{ v: 3, l: "3" }, { v: 5, l: "5" }, { v: 10, l: "10" }]} onChange={setRollWin} /></Field>
+          </div>
+        </div>
+        <PropChart rows={filtered} statKey={statKey} stat={stat} line={line} rollingWindow={rollWin} onPick={(id) => setPicked((p) => (p === id ? null : id))} picked={picked} />
+      </div>
+    ) },
+    { id: "research:tiles", label: "Hit rates and averages", col: "main", tags: {}, node: <div className="panel"><StatTiles rows={filtered} allRows={allRows} statKey={statKey} stat={stat} line={line} /></div> },
+    { id: "research:gamelog", label: "Game log", col: "main", tags: {}, node: <div className="panel"><GameLogTable rows={filtered} columns={columns} setColumns={setColumns} statKey={statKey} line={line} available={log?.available} position={player.position} picked={picked} onPick={(id) => setPicked((p) => (p === id ? null : id))} important={important} /></div> },
+    { id: "research:peers", label: `Among ${player.position}s`, col: "main", tags: {}, node: (
+      <div className="panel">
+        <div className="panel-head" data-tour="research-peers"><h3>Among {player.position}s · {stat?.label ?? statKey} vs the volume behind it</h3><span className="hint">the highlighted face is {player.name}; dashed lines average the position's most-used players, not its whole roster</span></div>
+        <Defer minHeight={300} when={core}><PlayerScatter playerId={pid} position={player.position} statKey={statKey} season={meta?.stats_season ?? 2026} name={player.name} /></Defer>
+      </div>
+    ) },
+    ...(player.team ? [{ id: "research:shares", label: `${player.team} target and carry shares`, col: "main" as const, tags: {}, node: <div className="panel" data-tour="research-shares"><Defer minHeight={260} when={core}><TeamSharePies team={player.team} current={meta?.season ?? 2026} highlight={pid} stickyKey="research.shareSeason" /></Defer></div> }] : []),
+    { id: "research:mini", label: "Mini charts", col: "main", tags: { deep: true }, node: <div className="panel"><MiniCharts rows={filtered} keys={miniKeys} setKeys={setMiniKeys} available={log?.available} position={player.position} onFocus={chooseStat} /></div> },
+    { id: "research:teammates", label: "With / without teammates", col: "main", tags: { deep: true }, node: (
+      <div className="panel">
+        <div className="panel-head"><h3>With / without teammates · {stat?.label ?? statKey}{line !== null ? ` vs ${line}` : ""}</h3></div>
+        <Defer minHeight={200} when={core}><TeammatesPanel playerId={pid} rows={rawRows} statKey={statKey} stat={stat} line={line} active={gameFilter?.key ?? null} onFilter={(ids, label, key) => setGameFilter(ids && label ? { ids: new Set(ids), label, key: key ?? label } : null)} /></Defer>
+      </div>
+    ) },
+    { id: "research:pbp", label: "Play-by-play splits", col: "main", tags: { deep: true }, node: <div className="panel"><Defer minHeight={220} when={core}><Splits playerId={pid} statKey={statKey} position={player.position} since={settings.since} /></Defer></div> },
+    { id: "research:correlations", label: "Same-game correlations", col: "main", tags: { for: ["betting"], deep: true }, node: (
+      <div className="panel">
+        <div className="panel-head"><h3>Same-game correlations · {stat?.label ?? statKey}</h3></div>
+        <Defer minHeight={160} when={core}><CorrelationsPanel playerId={pid} statKey={statKey} statLabel={stat?.label ?? statKey} /></Defer>
+      </div>
+    ) },
+    { id: "research:books", label: "Books and line history", col: "side", tags: { for: ["betting"] }, node: (
+      <div className="panel">
+        <div className="panel-head"><h3>Books · {marketRow?.market_label ?? "no market"}</h3></div>
+        {marketRow ? <BookLines row={marketRow} selected={lineSource} onSelect={(b: BookLine) => setLineSource(b.book)} /> : <div className="hint">No sportsbook has posted this stat for this game. The line above is yours to set.</div>}
+        {marketRow && <div style={{ marginTop: 10 }}><LineHistory history={lines?.history ?? []} market={marketRow.market} /></div>}
+      </div>
+    ) },
+    { id: "research:distribution", label: "Distribution", col: "side", tags: { deep: true }, node: (
+      <div className="panel">
+        <div className="panel-head"><h3>Distribution · filtered games</h3></div>
+        <Histogram rows={filtered} statKey={statKey} stat={stat} line={line} />
+      </div>
+    ) },
+    { id: "research:splits", label: "Splits", col: "side", tags: { deep: true }, node: (
+      <div className="panel">
+        <div className="panel-head"><h3>Splits · all loaded games</h3><span className="hint">since {settings.since}</span></div>
+        <SplitsTable rows={applyFilters(allRows, filters, true)} statKey={statKey} stat={stat} line={line} position={player.position} />
+      </div>
+    ) },
+    { id: "research:matchup", label: "Matchup", col: "side", tags: {}, node: (
+      <div className="panel">
+        <div className="panel-head"><h3>Matchup · team tendencies</h3></div>
+        <Defer minHeight={240} when={core}><MatchupPanel team={player.team} opponent={opp} position={player.position} focus={settings.focus} /></Defer>
+      </div>
+    ) },
+    { id: "research:injuries", label: "Injuries", col: "side", tags: {}, node: (
+      <div className="panel">
+        <div className="panel-head"><h3>Injuries</h3></div>
+        <Defer minHeight={160} when={core}><InjuryPanel playerId={pid} team={player.team} opponent={opp} /></Defer>
+      </div>
+    ) },
+    { id: "research:prediction", label: "Prediction", col: "side", tags: { for: ["betting"] }, node: <Defer minHeight={120} when={core}><PredictionSlot playerId={pid} market={market} line={line} proj={marketRow?.proj ?? null} statFmt={stat?.fmt} /></Defer> },
+  ];
+  const { shown, tucked } = arrange(lens, slots);
 
   return (
     <div>
@@ -182,6 +275,7 @@ export default function Research() {
             <button className={`btn focus-toggle ${settings.focus ? "on" : ""}`} title="Highlight the stats that matter for this player and prop; dim the rest" onClick={() => setSettings({ focus: !settings.focus })}>{settings.focus ? "★ Focus on" : "☆ Focus"}</button>
           </div>
           {lines && <SampleBanner sources={lines.sources} />}
+          {lens.betting && <FeedBanner />}
           {changedTeam && <div className="banner warn"><b>New team.</b> Every game below was with <b>{lastTeam}</b>; {player.name} is now on <b>{player.team}</b>. Role, quarterback and scheme have changed, so weight recent form lightly and lean on the <Link to={`/teams?team=${player.team}`}>{player.team} usage tree</Link> and the matchup panel for the new context.</div>}
           {!changedTeam && rawRows.length > 0 && rawRows.length < 6 && <div className="banner info"><b>Small sample.</b> Only {rawRows.length} games on record; treat every rate on this page as noise until there are more.</div>}
           {gameFilter && <div className="banner info" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><span>Showing only games <b>{gameFilter.label}</b> ({gameFilter.ids.size} games)</span><button className="btn sm" onClick={() => setGameFilter(null)}>clear</button></div>}
@@ -189,10 +283,10 @@ export default function Research() {
           {/* Prop / stat selection */}
           <div className="panel" style={{ marginBottom: 14 }} data-tour="research-markets">
             <div className="panel-head">
-              <h3>Props with lines this week</h3>
-              <SourceNote sources={lines?.sources ?? []} />
+              <h3>{lens.betting ? "Props with lines this week" : "What to chart"}</h3>
+              {lens.betting && <SourceNote sources={lines?.sources ?? []} />}
             </div>
-            <div className="chips" style={{ marginBottom: 12 }}>
+            {lens.betting && <div className="chips" style={{ marginBottom: 12 }}>
               {(lines?.markets ?? []).length === 0 && <span className="muted small">No lines posted for this player yet. Choose any stat below and set your own line.</span>}
               {(lines?.markets ?? []).map((m) => (
                 <button key={m.market} className={`chip ${market === m.market ? "on" : ""} ${important && market !== m.market ? "dim" : ""}`} onClick={() => chooseMarket(m.market)} title={`${m.n_books} book(s)`}>
@@ -200,17 +294,17 @@ export default function Research() {
                   {m.outliers.length > 0 && <span className="pill warn" title={`outlier: ${m.outliers.join(", ")}`}>!</span>}
                 </button>
               ))}
-            </div>
+            </div>}
             <div className="controls">
               <Field label="Stat"><StatPicker value={statKey} onChange={chooseStat} available={log?.available} position={player.position} important={important} /></Field>
-              <Field label="Line source">
+              {(lens.betting || marketRow) && <Field label="Line source">
                 <select className="input" value={lineSource} onChange={(e) => { if (e.target.value === "custom") suggested.current = false; setLineSource(e.target.value); }}>
                   {marketRow && marketRow.kind === "ou" && <option value="consensus">Consensus (median of {marketRow.n_books})</option>}
                   {marketRow && marketRow.kind === "ou" && marketRow.books.map((b) => <option key={b.book} value={b.book}>{b.title}: {fmtLine(b.line)}</option>)}
                   <option value="custom">Custom line</option>
                 </select>
-              </Field>
-              <Field label="Line"><input className="input num" type="number" step="0.5" value={line ?? ""} onChange={(e) => { suggested.current = false; setCustomLine(e.target.value === "" ? null : Number(e.target.value)); setLineSource("custom"); }} /></Field>
+              </Field>}
+              <Field label={lens.betting ? "Line" : "Benchmark"}><input className="input num" type="number" step="0.5" value={line ?? ""} onChange={(e) => { suggested.current = false; setCustomLine(e.target.value === "" ? null : Number(e.target.value)); setLineSource("custom"); }} /></Field>
               <Field label="Last N games"><input className="input num" type="number" min={1} value={filters.n ?? ""} placeholder="all" onChange={(e) => setFilters({ ...filters, n: e.target.value === "" ? null : Number(e.target.value) })} /></Field>
               <Field label="Games"><Seg value={filters.seasonType} options={[{ v: "ALL", l: "All" }, { v: "REG", l: "Regular" }, { v: "POST", l: "Playoffs" }]} onChange={(v) => setFilters({ ...filters, seasonType: v })} /></Field>
               <Field label="Venue"><Seg value={filters.venue} options={[{ v: "ALL", l: "All" }, { v: "HOME", l: "Home" }, { v: "AWAY", l: "Away" }]} onChange={(v) => setFilters({ ...filters, venue: v })} /></Field>
@@ -229,60 +323,10 @@ export default function Research() {
           </div>
 
           <div className="grid grid-main">
-            <div className="grid" style={{ gap: 14 }}>
-              <div className="panel" data-tour="research-chart">
-                <div className="panel-head">
-                  <div><h2>{stat?.label ?? statKey}{marketRow ? <span className="muted"> · {marketRow.market_label} line {line}</span> : line !== null ? <span className="muted"> · custom line {line}</span> : null}</h2>{stat?.note && <div className="hint">{stat.note}</div>}</div>
-                  <div className="actions">
-                    <span className="legend"><span><i style={{ background: "var(--over)" }} />over</span><span><i style={{ background: "var(--under)" }} />under</span><span><i style={{ background: "var(--push)" }} />push</span><span><i style={{ background: "var(--accent)", height: 2 }} />rolling avg</span></span>
-                    <Field label="Rolling"><Seg value={rollWin} options={[{ v: 3, l: "3" }, { v: 5, l: "5" }, { v: 10, l: "10" }]} onChange={setRollWin} /></Field>
-                  </div>
-                </div>
-                <PropChart rows={filtered} statKey={statKey} stat={stat} line={line} rollingWindow={rollWin} onPick={(id) => setPicked((p) => (p === id ? null : id))} picked={picked} />
-              </div>
-              <div className="panel"><StatTiles rows={filtered} allRows={allRows} statKey={statKey} stat={stat} line={line} /></div>
-              <div className="panel"><GameLogTable rows={filtered} columns={columns} setColumns={setColumns} statKey={statKey} line={line} available={log?.available} position={player.position} picked={picked} onPick={(id) => setPicked((p) => (p === id ? null : id))} important={important} /></div>
-              <div className="panel">
-                <div className="panel-head" data-tour="research-peers"><h3>Among {player.position}s · {stat?.label ?? statKey} vs the volume behind it</h3><span className="hint">the highlighted face is {player.name}; dashed lines average the position's most-used players, not its whole roster</span></div>
-                <Defer minHeight={300} when={core}><PlayerScatter playerId={pid} position={player.position} statKey={statKey} season={meta?.stats_season ?? 2026} name={player.name} /></Defer>
-              </div>
-              {player.team && <div className="panel" data-tour="research-shares"><Defer minHeight={260} when={core}><TeamSharePies team={player.team} current={meta?.season ?? 2026} highlight={pid} stickyKey="research.shareSeason" /></Defer></div>}
-              <div className="panel"><MiniCharts rows={filtered} keys={miniKeys} setKeys={setMiniKeys} available={log?.available} position={player.position} onFocus={chooseStat} /></div>
-              <div className="panel">
-                <div className="panel-head"><h3>With / without teammates · {stat?.label ?? statKey}{line !== null ? ` vs ${line}` : ""}</h3></div>
-                <Defer minHeight={200} when={core}><TeammatesPanel playerId={pid} rows={rawRows} statKey={statKey} stat={stat} line={line} active={gameFilter?.key ?? null} onFilter={(ids, label, key) => setGameFilter(ids && label ? { ids: new Set(ids), label, key: key ?? label } : null)} /></Defer>
-              </div>
-              <div className="panel"><Defer minHeight={220} when={core}><Splits playerId={pid} statKey={statKey} position={player.position} since={settings.since} /></Defer></div>
-              <div className="panel">
-                <div className="panel-head"><h3>Same-game correlations · {stat?.label ?? statKey}</h3></div>
-                <Defer minHeight={160} when={core}><CorrelationsPanel playerId={pid} statKey={statKey} statLabel={stat?.label ?? statKey} /></Defer>
-              </div>
-            </div>
-            <div className="grid" style={{ gap: 14, alignContent: "start" }}>
-              <div className="panel">
-                <div className="panel-head"><h3>Books · {marketRow?.market_label ?? "no market"}</h3></div>
-                {marketRow ? <BookLines row={marketRow} selected={lineSource} onSelect={(b: BookLine) => setLineSource(b.book)} /> : <div className="hint">No sportsbook has posted this stat for this game. The line above is yours to set.</div>}
-                {marketRow && <div style={{ marginTop: 10 }}><LineHistory history={lines?.history ?? []} market={marketRow.market} /></div>}
-              </div>
-              <div className="panel">
-                <div className="panel-head"><h3>Distribution · filtered games</h3></div>
-                <Histogram rows={filtered} statKey={statKey} stat={stat} line={line} />
-              </div>
-              <div className="panel">
-                <div className="panel-head"><h3>Splits · all loaded games</h3><span className="hint">since {settings.since}</span></div>
-                <SplitsTable rows={applyFilters(allRows, filters, true)} statKey={statKey} stat={stat} line={line} position={player.position} />
-              </div>
-              <div className="panel">
-                <div className="panel-head"><h3>Matchup · team tendencies</h3></div>
-                <Defer minHeight={240} when={core}><MatchupPanel team={player.team} opponent={lines?.game ? (lines.game.home_team === player.team ? lines.game.away_team : lines.game.home_team) : null} position={player.position} focus={settings.focus} /></Defer>
-              </div>
-              <div className="panel">
-                <div className="panel-head"><h3>Injuries</h3></div>
-                <Defer minHeight={160} when={core}><InjuryPanel playerId={pid} team={player.team} opponent={lines?.game ? (lines.game.home_team === player.team ? lines.game.away_team : lines.game.home_team) : null} /></Defer>
-              </div>
-              <Defer minHeight={120} when={core}><PredictionSlot playerId={pid} market={market} line={line} proj={marketRow?.proj ?? null} statFmt={stat?.fmt} /></Defer>
-            </div>
+            <div className="grid" style={{ gap: 14 }}>{shown.filter((x) => x.col === "main").map((x) => <Fragment key={x.id}>{x.node}</Fragment>)}</div>
+            <div className="grid" style={{ gap: 14, alignContent: "start" }}>{shown.filter((x) => x.col === "side").map((x) => <Fragment key={x.id}>{x.node}</Fragment>)}</div>
           </div>
+          <More items={tucked} />
         </div>
       )}
     </div>
@@ -327,9 +371,14 @@ function PredictionSlot({ playerId, market, line, proj, statFmt }: { playerId: s
 }
 
 function QuickPicks() {
-  const { meta } = useMeta();
+  const { meta, settings } = useMeta();
   const nav = useNavigate();
-  const [team, setTeam] = useState("");
+  const [team, setTeam] = useState(settings.profile?.team ?? "");
+  // The positions someone follows come first, in the order they are listed.
+  const want = settings.profile?.positions ?? [];
+  const rank = (pos: string) => { const i = want.indexOf(pos as never); return i === -1 ? want.length : i; };
+  // Defenders are left out for a profile that does not follow them.
+  const skipDef = !!settings.profile && settings.profile.defense !== "yes";
   const [rows, setRows] = useState<{ player_id: string; name: string; position: string; games: number; ppr: number }[]>([]);
   useEffect(() => {
     if (!team || !meta) { setRows([]); return; }
@@ -345,7 +394,7 @@ function QuickPicks() {
       </div>
       {rows.length > 0 && (
         <div className="chips" style={{ marginTop: 10 }}>
-          {rows.slice(0, 24).map((r) => <button key={r.player_id} className="chip" onClick={() => nav(`/research?player=${r.player_id}`)}>{r.name} <span className="muted">{r.position}</span></button>)}
+          {rows.filter((r) => !skipDef || !isDefPos(r.position)).sort((a, b) => rank(a.position) - rank(b.position)).slice(0, 24).map((r) => <button key={r.player_id} className="chip" onClick={() => nav(`/research?player=${r.player_id}`)}>{r.name} <span className="muted">{r.position}</span></button>)}
         </div>
       )}
     </div>

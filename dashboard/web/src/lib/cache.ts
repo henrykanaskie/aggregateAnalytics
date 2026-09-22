@@ -41,7 +41,7 @@ const MINUTE = 60_000;
 // immediately while the refetch runs.
 const TTL: [RegExp, number][] = [
   [/^\/api\/players\/[^/]+\/lines/, 5 * MINUTE],
-  [/^\/api\/(odds|schedule|predictions|matchups|grading)\b/, 5 * MINUTE],
+  [/^\/api\/(odds|schedule|predictions|matchups|grading|fantasy)\b/, 5 * MINUTE],
   [/^\/api\/meta\b/, 10 * MINUTE],
 ];
 const DEFAULT_TTL = 60 * MINUTE;   // historical stats only move on ingest
