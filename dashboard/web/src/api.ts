@@ -193,11 +193,13 @@ export interface MatchupSideFull { offense: string; defense: string; offense_blo
 export interface H2H { game_id: string; season: number; week: number; game_type: string; gameday: string; home_team: string; away_team: string; roof: string | null; a: string; b: string; a_home: boolean; a_pts: number; b_pts: number; margin: number; total: number; a_spread: number | null; total_line: number | null; a_cover: boolean | null; over: boolean | null; a_coach: string | null; b_coach: string | null; a_qb: string | null; b_qb: string | null; stars: { team: string; player_id: string; name: string; position: string; line: string; ppr: number }[]; }
 export interface GameMatchup { game: ScheduleGame & Record<string, any>; season_used: number; blend: BlendInfo | null; sides: MatchupSideFull[]; metrics: TeamMetric[]; dvp_labels: Record<string, string>; history: H2H[]; venue: Record<string, any>; props: (BoardRow & { status?: string | null })[]; lines: any[]; predictions: GamePrediction[]; injuries: Record<string, InjuryRow[]>; sources: string[]; shares?: Record<string, GameShares>; }
 /** Who got the ball in a played game (dashboard/stats/matchups.game_shares). */
-export interface ShareRow { player_id: string; name: string; position: string; n: number; share: number | null; yards: number | null; receptions: number | null; }
-export interface ZoneRow { player_id: string; name: string; position: string; n: number; share: number; td: number; ez: number | null; usual: number | null; usual_n: number | null; }
+export interface ShareRow { player_id: string; name: string; position: string; n: number; share: number | null; games: number; yards: number | null; td: number; receptions: number | null; }
+export interface ZoneRow { player_id: string; name: string; position: string; n: number; games: number; share: number; td: number; ez: number | null; usual: number | null; usual_n: number | null; }
 export interface ZoneShares { label: string; yards: number; carries: { total: number; rows: ZoneRow[] }; targets: { total: number; rows: ZoneRow[] }; }
 export type ZoneKey = "rz" | "i10" | "gl";
-export interface GameShares { team_carries: number; team_targets: number; carries: ShareRow[]; targets: ShareRow[]; zones?: Record<ZoneKey, ZoneShares>; }
+export interface BoxShares { team_carries: number; team_targets: number; games: number; carries: ShareRow[]; targets: ShareRow[]; zones?: Record<ZoneKey, ZoneShares>; }
+/** One game, and the team's season through that game's week (nothing after it). */
+export interface GameShares extends BoxShares { season?: BoxShares & { weeks: number[] }; }
 export const api4 = {
   gameMatchup: ep<GameMatchup>()((gameId: string, includeSample = false) => `/api/matchups/${gameId}${qs({ include_sample: includeSample })}`),
 };

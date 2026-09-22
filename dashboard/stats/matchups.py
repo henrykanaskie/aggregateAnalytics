@@ -90,6 +90,10 @@ def _stat_line(r: dict) -> str:
 
 # --- the game as it happened -------------------------------------------------
 
+_BOX = ("player_id", "player_display_name", "position", "team", "week", "carries", "targets", "rushing_yards",
+        "receiving_yards", "receptions", "rushing_tds", "receiving_tds")
+
+
 def game_shares(game_id: str, usage_seasons: dict[str, int] | None = None) -> dict[str, dict]:
     """Who got the ball in a played game, per team: each back's carries and
     each receiver's and tight end's targets, with shares of the team's totals
@@ -98,33 +102,65 @@ def game_shares(game_id: str, usage_seasons: dict[str, int] | None = None) -> di
 
     ``zones`` adds the red zone, inside the 10 and the goal line from the
     play-by-play, every position, with each player's usual share there from
-    ``usage_seasons`` (team -> season, the one the usage table reads)."""
-    df = (
-        scan("player_stats_week")
-        .filter(pl.col("game_id") == game_id)
-        .select("player_id", "player_display_name", "position", "team", "carries", "targets", "rushing_yards", "receiving_yards", "receptions")
-        .collect()
-        .with_columns(pl.col("carries", "targets").fill_null(0))
-    )
-    out: dict[str, dict] = {}
-    for team, g in df.group_by("team"):
-        tc, tt = int(g["carries"].sum()), int(g["targets"].sum())
+    ``usage_seasons`` (team -> season, the one the usage table reads).
 
-        def rows(pos: tuple[str, ...], col: str, total: int) -> list[dict]:
-            sel = g.filter(pl.col("position").is_in(pos) & (pl.col(col) > 0)).sort(col, descending=True)
-            return [{"player_id": r["player_id"], "name": r["player_display_name"], "position": r["position"],
-                     "n": int(r[col]), "share": r[col] / total if total else None,
-                     "yards": r["rushing_yards" if col == "carries" else "receiving_yards"],
-                     "receptions": r["receptions"] if col == "targets" else None} for r in sel.to_dicts()]
-        out[team[0]] = {"team_carries": tc, "team_targets": tt,
-                        "carries": rows(("RB", "FB"), "carries", tc), "targets": rows(("WR", "TE"), "targets", tt)}
-    if out:
-        who = {r["player_id"]: (r["player_display_name"], r["position"]) for r in df.to_dicts()}
-        season, week = (int(x) for x in game_id.split("_")[:2])
-        for team, zones in _zone_shares(game_id, season, week, who, usage_seasons or {}).items():
-            if team in out:
-                out[team]["zones"] = zones
+    ``season`` is the same again over the team's season through this game's
+    week, this game included and nothing after it, so an old game reads the
+    season as it stood then."""
+    season, week = (int(x) for x in game_id.split("_")[:2])
+    game = (scan("player_stats_week").filter(pl.col("game_id") == game_id).select(_BOX).collect())
+    if game.is_empty():
+        return {}
+    teams = game["team"].unique().to_list()
+    to_date = (scan("player_stats_week")
+               .filter((pl.col("season") == season) & (pl.col("week") <= week) & pl.col("team").is_in(teams))
+               .select(_BOX).collect())
+    plays_game = _zone_plays(scan("pbp").filter(pl.col("game_id") == game_id))
+    plays_season = _zone_plays(scan("pbp").filter((pl.col("season") == season) & (pl.col("week") <= week)
+                                                  & pl.col("posteam").is_in(teams)))
+    usage_seasons = usage_seasons or {}
+    out: dict[str, dict] = {}
+    for team in teams:
+        g = game.filter(pl.col("team") == team)
+        sd = to_date.filter(pl.col("team") == team)
+        use = usage_seasons.get(team, season)
+        usual = _usual_zone_cached(use, week if use == season else None)
+        block = _box_block(g)
+        if not plays_game.is_empty():
+            block["zones"] = _zone_block(plays_game.filter(pl.col("posteam") == team), team, _who(g), usual)
+        sb = _box_block(sd)
+        sb["weeks"] = sorted(int(w) for w in sd["week"].unique())
+        if not plays_season.is_empty():
+            sb["zones"] = _zone_block(plays_season.filter(pl.col("posteam") == team), team, _who(sd), None)
+        block["season"] = sb
+        out[team] = block
     return out
+
+
+def _who(box: pl.DataFrame) -> dict[str, tuple[str, str]]:
+    return {r["player_id"]: (r["player_display_name"], r["position"]) for r in box.to_dicts()}
+
+
+def _box_block(box: pl.DataFrame) -> dict:
+    """Carries among the backs and targets among the receivers and tight
+    ends, from box-score rows (one game or several)."""
+    box = box.with_columns(pl.col("carries", "targets", "rushing_yards", "receiving_yards", "receptions",
+                                  "rushing_tds", "receiving_tds").fill_null(0))
+    per = (box.group_by("player_id")
+           .agg(pl.col("player_display_name").last(), pl.col("position").last(), pl.col("week").n_unique().alias("games"),
+                pl.col("carries", "targets", "rushing_yards", "receiving_yards", "receptions", "rushing_tds", "receiving_tds").sum()))
+    tc, tt = int(box["carries"].sum()), int(box["targets"].sum())
+
+    def rows(pos: tuple[str, ...], col: str, total: int) -> list[dict]:
+        sel = per.filter(pl.col("position").is_in(pos) & (pl.col(col) > 0)).sort(col, descending=True)
+        car = col == "carries"
+        return [{"player_id": r["player_id"], "name": r["player_display_name"], "position": r["position"],
+                 "n": int(r[col]), "share": r[col] / total if total else None, "games": int(r["games"]),
+                 "yards": int(r["rushing_yards" if car else "receiving_yards"]),
+                 "td": int(r["rushing_tds" if car else "receiving_tds"]),
+                 "receptions": None if car else int(r["receptions"])} for r in sel.to_dicts()]
+    return {"team_carries": tc, "team_targets": tt, "games": int(box["week"].n_unique()),
+            "carries": rows(("RB", "FB"), "carries", tc), "targets": rows(("WR", "TE"), "targets", tt)}
 
 
 # Scoring territory, by yards to the goal line. Every position counts here:
@@ -169,43 +205,42 @@ def _usual_zone(season: int, before_week: int | None) -> pl.DataFrame:
 _usual_zone_cached = lru_cache(maxsize=8)(_usual_zone)
 
 
-def _zone_shares(game_id: str, season: int, week: int, who: dict[str, tuple[str, str]], usage_seasons: dict[str, int]) -> dict[str, dict]:
-    plays = _zone_plays(scan("pbp").filter(pl.col("game_id") == game_id))
-    out: dict[str, dict] = {}
-    for team in plays["posteam"].unique().to_list():
-        use = usage_seasons.get(team, season)
-        usual = _usual_zone_cached(use, week if use == season else None)
-        tp = plays.filter(pl.col("posteam") == team)
-        zones = {}
-        for key, label, yds in ZONES:
-            z = tp.filter(pl.col("yardline_100") <= yds)
-            block = {"label": label, "yards": yds}
-            for kind, col, name, td in (("carries", "carrier", "rusher_player_name", "rush_touchdown"),
-                                        ("targets", "target", "receiver_player_name", "pass_touchdown")):
-                t = z.filter(pl.col(col).is_not_null())
-                total = t.height
-                agg = (t.group_by(col).agg(pl.len().alias("n"), pl.col(name).first().alias("name"),
-                                           pl.col(td).fill_null(0).sum().alias("td"),
-                                           (pl.col("air_yards") >= pl.col("yardline_100")).fill_null(False).sum().alias("ez"))
-                       .sort(["n", "td"], descending=True))
-                u = usual.filter((pl.col("zone") == key) & (pl.col("kind") == kind)) if not usual.is_empty() else usual
-                rows = []
-                for r in agg.to_dicts():
-                    pid = r[col]
-                    mine = u.filter(pl.col("player_id") == pid) if not u.is_empty() else u
+def _zone_block(tp: pl.DataFrame, team: str, who: dict[str, tuple[str, str]], usual: pl.DataFrame | None) -> dict:
+    """One team's zone plays (one game or several) as shares, each player
+    with his usual share there when ``usual`` is given."""
+    zones = {}
+    for key, label, yds in ZONES:
+        z = tp.filter(pl.col("yardline_100") <= yds)
+        block = {"label": label, "yards": yds}
+        for kind, col, name, td in (("carries", "carrier", "rusher_player_name", "rush_touchdown"),
+                                    ("targets", "target", "receiver_player_name", "pass_touchdown")):
+            t = z.filter(pl.col(col).is_not_null())
+            total = t.height
+            agg = (t.group_by(col).agg(pl.len().alias("n"), pl.col(name).first().alias("name"),
+                                       pl.col("game_id").n_unique().alias("games"),
+                                       pl.col(td).fill_null(0).sum().alias("td"),
+                                       (pl.col("air_yards") >= pl.col("yardline_100")).fill_null(False).sum().alias("ez"))
+                   .sort(["n", "td"], descending=True))
+            u = usual.filter((pl.col("zone") == key) & (pl.col("kind") == kind)) if usual is not None and not usual.is_empty() else None
+            rows = []
+            for r in agg.to_dicts():
+                pid = r[col]
+                pick = None
+                if u is not None:
+                    mine = u.filter(pl.col("player_id") == pid)
                     # The share with this team if he had one, else with the
                     # team he played for most, as the season usage table does.
-                    here = mine.filter(pl.col("posteam") == team) if not mine.is_empty() else mine
-                    pick = here if not here.is_empty() else mine.sort("n", descending=True).head(1) if not mine.is_empty() else mine
-                    name, position = who.get(pid, (r["name"], ""))
-                    rows.append({"player_id": pid, "name": name, "position": position, "n": int(r["n"]),
-                                 "share": r["n"] / total, "td": int(r["td"]), "ez": int(r["ez"]) if kind == "targets" else None,
-                                 "usual": (pick["n"][0] / pick["team_n"][0]) if not pick.is_empty() else None,
-                                 "usual_n": int(pick["n"][0]) if not pick.is_empty() else None})
-                block[kind] = {"total": total, "rows": rows}
-            zones[key] = block
-        out[team] = zones
-    return out
+                    here = mine.filter(pl.col("posteam") == team)
+                    pick = here if not here.is_empty() else mine.sort("n", descending=True).head(1)
+                    pick = None if pick.is_empty() else pick
+                name, position = who.get(pid, (r["name"], ""))
+                rows.append({"player_id": pid, "name": name, "position": position, "n": int(r["n"]), "games": int(r["games"]),
+                             "share": r["n"] / total, "td": int(r["td"]), "ez": int(r["ez"]) if kind == "targets" else None,
+                             "usual": (pick["n"][0] / pick["team_n"][0]) if pick is not None else None,
+                             "usual_n": int(pick["n"][0]) if pick is not None else None})
+            block[kind] = {"total": total, "rows": rows}
+        zones[key] = block
+    return zones
 
 
 # --- personnel ---------------------------------------------------------------

@@ -100,7 +100,7 @@ function GameView({ d }: { d: GameMatchup }) {
       </div>
 
       {played && review && review.length > 0 && <AngleReview rows={review} home={g.home_team} away={g.away_team} score={`${g.away_team} ${g.away_score}, ${g.home_team} ${g.home_score}`} />}
-      {played && d.shares && <SharePies shares={d.shares} sides={d.sides} usageSeason={d.season_used} score={`${g.away_team} ${g.away_score}, ${g.home_team} ${g.home_score}`} />}
+      {played && d.shares && <SharePies shares={d.shares} sides={d.sides} usageSeason={d.season_used} season={g.season} week={g.week} score={`${g.away_team} ${g.away_score}, ${g.home_team} ${g.home_score}`} />}
       {played && review && review.length === 0 && <Banner kind="info">This game is final but its angles have not been graded yet. The Tuesday job does it once the box scores land (<code>python -m dashboard.stats.angle_grades</code>).</Banner>}
 
       <div className="grid" style={{ gap: 14 }} data-tour="matchup-sides">
