@@ -10,8 +10,8 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 
 /** The matchup page's who-got-the-ball pies over a team's whole regular
  *  season so far, each player next to his share with this team last season. */
-export default function TeamSharePies({ team, current }: { team: string; current: number }) {
-  const [season, setSeason] = useSticky<number | null>("teams.shareSeason", null);
+export default function TeamSharePies({ team, current, highlight, stickyKey = "teams.shareSeason" }: { team: string; current: number; highlight?: string; stickyKey?: string }) {
+  const [season, setSeason] = useSticky<number | null>(stickyKey, null);
   const [scope, setScope] = useSticky<Scope>("matchups.shareScope", "all");
   const { data, loading } = useQuery<TeamShares>(api7.teamShares.url(team, season ?? undefined));
   const head = (
@@ -43,13 +43,13 @@ export default function TeamSharePies({ team, current }: { team: string; current
       <div className="small muted" style={{ marginBottom: 6 }}>{plural(data.games, "game", "games")}</div>
       {z ? (
         <div className="share-pair">
-          <SharePie title={`${z.label} carries`} unit="car" total={z.carries.total} rest="others" extra={["td"]} mode={mode} rows={zoneRows("carries")} />
-          <SharePie title={`${z.label} targets`} unit="tgt" total={z.targets.total} rest="others" extra={["ez", "td"]} mode={mode} rows={zoneRows("targets")} />
+          <SharePie title={`${z.label} carries`} unit="car" total={z.carries.total} rest="others" extra={["td"]} mode={mode} highlight={highlight} rows={zoneRows("carries")} />
+          <SharePie title={`${z.label} targets`} unit="tgt" total={z.targets.total} rest="others" extra={["ez", "td"]} mode={mode} highlight={highlight} rows={zoneRows("targets")} />
         </div>
       ) : (
         <div className="share-pair">
-          <SharePie title="RB carry share" unit="car" total={data.team_carries!} rest="QB and others" mode={mode} rows={allRows("carries")} />
-          <SharePie title="WR / TE target share" unit="tgt" total={data.team_targets!} rest="RBs and others" mode={mode} rows={allRows("targets")} />
+          <SharePie title="RB carry share" unit="car" total={data.team_carries!} rest="QB and others" mode={mode} highlight={highlight} rows={allRows("carries")} />
+          <SharePie title="WR / TE target share" unit="tgt" total={data.team_targets!} rest="RBs and others" mode={mode} highlight={highlight} rows={allRows("targets")} />
         </div>
       )}
       <div className="hint" style={{ marginTop: 8 }}>

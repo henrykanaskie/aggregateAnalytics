@@ -26,6 +26,7 @@ import { shownRank } from "../lib/rank";
 import TeammatesPanel from "../components/TeammatesPanel";
 import CorrelationsPanel from "../components/CorrelationsPanel";
 import PlayerScatter from "../components/PlayerScatter";
+import TeamSharePies from "../components/TeamSharePies";
 import { api5, DvpFactors } from "../api";
 
 export default function Research() {
@@ -240,6 +241,7 @@ export default function Research() {
                 <div className="panel-head" data-tour="research-peers"><h3>Among {player.position}s · {stat?.label ?? statKey} vs the volume behind it</h3><span className="hint">the highlighted face is {player.name}; dashed lines average the position's most-used players, not its whole roster</span></div>
                 <Defer minHeight={300} when={core}><PlayerScatter playerId={pid} position={player.position} statKey={statKey} season={meta?.stats_season ?? 2026} name={player.name} /></Defer>
               </div>
+              {player.team && <div className="panel" data-tour="research-shares"><Defer minHeight={260} when={core}><TeamSharePies team={player.team} current={meta?.season ?? 2026} highlight={pid} stickyKey="research.shareSeason" /></Defer></div>}
               <div className="panel"><MiniCharts rows={filtered} keys={miniKeys} setKeys={setMiniKeys} available={log?.available} position={player.position} onFocus={chooseStat} /></div>
               <div className="panel">
                 <div className="panel-head"><h3>With / without teammates · {stat?.label ?? statKey}{line !== null ? ` vs ${line}` : ""}</h3></div>

@@ -26,7 +26,13 @@ export default function PlayerScatter({ playerId, position, statKey, season, nam
   const [yr, setYr] = useState(season);
   const [x, setX] = useState<string>(RELATED[statKey] ?? PAIR[pos ?? "WR"]?.[0] ?? "targets");
   const [y, setY] = useState<string>(statKey);
-  const [minG, setMinG] = useState(6);
+  // The games bar scales with the season: a third of the most games anyone
+  // has played, at most six. A fixed six emptied the chart for the first six
+  // weeks of every season (two weeks in, nobody has six games), leaving only
+  // this player with no field and no averages. A number typed in wins.
+  const [minGSet, setMinG] = useState<number | null>(null);
+  const maxG = useMemo(() => (rows ?? []).reduce((m, r) => Math.max(m, r.games as number), 0), [rows]);
+  const minG = minGSet ?? Math.min(6, Math.max(1, Math.ceil(maxG / 3)));
   useEffect(() => { setY(statKey); setX(RELATED[statKey] ?? PAIR[pos ?? "WR"]?.[0] ?? "targets"); }, [statKey, pos]);
   // Fetched unfiltered and cut by games below, because this player has to be on
   // the chart whether or not he clears the bar. It is 87KB more than the
@@ -40,6 +46,7 @@ export default function PlayerScatter({ playerId, position, statKey, season, nam
     // faster one's heading.
     let alive = true;
     setRows(null);
+    setMinG(null);
     api6.scatterPlayers(yr, pos, 1).then((d) => alive && setRows(d.rows)).catch(() => alive && setRows([]));
     return () => { alive = false; };
   }, [pos, yr]);
@@ -110,9 +117,10 @@ export default function PlayerScatter({ playerId, position, statKey, season, nam
         <ApplyField<number | ""> label="Season" value={(yr) as number | ""} onApply={(v) => { if (typeof v === "number" && v >= 1999) setYr(v); }} show={(v) => String(v)}>{(d, set) => <input className="input num" type="number" min={1999} max={season} value={d ?? ""} onChange={(e) => set(e.target.value === "" ? "" : Number(e.target.value))} />}</ApplyField>
         <Field label="X axis"><StatPicker value={x} onChange={setX} position={pos} /></Field>
         <Field label="Y axis"><StatPicker value={y} onChange={setY} position={pos} /></Field>
-        <Field label="Min games"><input className="input num" type="number" min={1} max={20} value={minG} onChange={(e) => setMinG(Number(e.target.value))} /></Field>
+        <Field label="Min games"><input className="input num" type="number" min={1} max={20} value={minG} title={minGSet === null ? "Set from the season: a third of the most games played, at most 6" : undefined} onChange={(e) => setMinG(e.target.value === "" ? null : Number(e.target.value))} /></Field>
         <span className="hint" style={{ alignSelf: "center" }}>the {avg.n} most-used {pos}s{dots.length > avg.n ? ", plus this one" : ""} · dashed lines average the same {avg.n} · the top {LABELS} are named, hover any dot for the rest · counting stats are per game, rates from season totals · click a dot to open that player</span>
       </div>
+      {rows !== null && maxG > 0 && maxG < 4 && <div className="hint" style={{ marginBottom: 6 }}>Nobody has more than {maxG} {maxG === 1 ? "game" : "games"} in {yr} yet, so every dot is a small sample and the field will move a lot. Last season is a steadier picture.</div>}
       {missing === "season" && <div className="banner info">{name ?? "This player"} has no {yr} season on record, so there is nothing to place on this chart. Pick another season.</div>}
       {missing === "stat" && <div className="banner info">{name ?? "This player"} has no {gaps.map((k) => statByKey.get(k)?.label ?? k).join(" and no ")} recorded for {yr}, so there is no point to place. Change that axis to see him.</div>}
       {me && (me.games as number) < minG && <div className="hint" style={{ marginBottom: 6 }}>Shown despite {me.games as number} games, under the {minG}-game minimum: the minimum trims the field, never the player you are looking at.</div>}
