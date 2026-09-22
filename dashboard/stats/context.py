@@ -96,8 +96,33 @@ USAGE_COLS = ["targets", "receptions", "receiving_yards", "receiving_tds", "carr
               "attempts", "passing_yards", "passing_tds", "fantasy_points_ppr"]
 
 
-@lru_cache(maxsize=4)
-def league_usage(season: int, season_type: str = "REG") -> pl.DataFrame:
+@lru_cache(maxsize=8)
+def snap_weeks(season: int, season_type: str = "ALL") -> pl.DataFrame:
+    """(player_id, team, week) for every player who took a snap: offense,
+    defense or special teams.
+
+    Games played can't come from box-score lines alone: a player only has one
+    when he records a stat, so a receiver who played a full game without a
+    target lost it. Snap counts are keyed on PFR ids, mapped here to the gsis
+    ids everything else uses."""
+    empty = pl.DataFrame(schema={"player_id": pl.String, "team": pl.String, "week": pl.Int32})
+    try:
+        lf = scan("snap_counts").filter(pl.col("season") == season)
+        if season_type in ("REG", "POST"):
+            lf = lf.filter(pl.col("game_type") == season_type) if season_type == "REG" else lf.filter(pl.col("game_type") != "REG")
+        snaps = (lf.filter((pl.col("offense_snaps").fill_null(0) + pl.col("defense_snaps").fill_null(0)
+                            + pl.col("st_snaps").fill_null(0)) > 0)
+                 .select("pfr_player_id", "team", "week").collect())
+    except Exception:  # noqa: BLE001  no snap table in this cache
+        return empty
+    from .gamelog import players_master
+    ids = players_master().select(pl.col("pfr_id").alias("pfr_player_id"), pl.col("gsis_id").alias("player_id")).drop_nulls()
+    return (snaps.join(ids, on="pfr_player_id", how="inner")
+            .select("player_id", "team", pl.col("week").cast(pl.Int32)).unique())
+
+
+@lru_cache(maxsize=8)
+def league_usage(season: int, season_type: str = "REG", before_week: int | None = None) -> pl.DataFrame:
     """Every player in a season with shares of their own team's targets,
     carries and air yards.
 
@@ -105,10 +130,16 @@ def league_usage(season: int, season_type: str = "REG") -> pl.DataFrame:
     team the touches came from, and a player who moved in the off-season has to
     be read against the team he played for, not the one he is on now. A player
     traded mid-season gets one row per team.
+
+    ``before_week`` keeps only the games before it: a game's page reads the
+    season as it stood at kickoff. ``games`` is games played, a stat line or
+    any snap, so the per-game numbers count the quiet games too.
     """
     lf = scan("player_stats_week").filter(pl.col("season") == season)
     if season_type in ("REG", "POST"):
         lf = lf.filter(pl.col("season_type") == season_type)
+    if before_week is not None:
+        lf = lf.filter(pl.col("week") < before_week)
     df = lf.select(["player_id", "player_display_name", "position", "team", "week", "receiving_air_yards"] + USAGE_COLS).collect()
     if df.is_empty():
         return df
@@ -118,9 +149,16 @@ def league_usage(season: int, season_type: str = "REG") -> pl.DataFrame:
         pl.col("carries").sum().alias("_c"),
         pl.col("receiving_air_yards").sum().alias("_ay"),
     )
+    # Games played per (player, team): stat-line weeks and snap weeks, within
+    # the weeks the team actually has in this table.
+    team_weeks = df.select("team", pl.col("week").cast(pl.Int32)).unique()
+    sw = snap_weeks(season, season_type).join(team_weeks, on=["team", "week"], how="inner")
+    played = (pl.concat([df.select("player_id", "team", pl.col("week").cast(pl.Int32)), sw]).unique()
+              .group_by("player_id", "team").len("games"))
     return (
         df.group_by(["player_id", "player_display_name", "position", "team"])
-        .agg([pl.len().alias("games")] + [pl.col(c).sum() for c in USAGE_COLS] + [pl.col("receiving_air_yards").sum()])
+        .agg([pl.col(c).sum() for c in USAGE_COLS] + [pl.col("receiving_air_yards").sum()])
+        .join(played, on=["player_id", "team"], how="left")
         .join(totals, on="team", how="left")
         .with_columns(
             target_share=pl.col("targets") / pl.max_horizontal(pl.col("_t"), pl.lit(1)),
@@ -136,10 +174,10 @@ def league_usage(season: int, season_type: str = "REG") -> pl.DataFrame:
     )
 
 
-def team_usage(team: str, season: int, season_type: str = "REG") -> pl.DataFrame:
+def team_usage(team: str, season: int, season_type: str = "REG", before_week: int | None = None) -> pl.DataFrame:
     """Every player on a team-season with shares of targets, carries and
     air yards, so 'who gets the touches' is one table."""
-    return league_usage(season, season_type).filter(pl.col("team") == team)
+    return league_usage(season, season_type, before_week).filter(pl.col("team") == team)
 
 
 def coach_usage(team_seasons: list[tuple[str, int]]) -> list[dict]:

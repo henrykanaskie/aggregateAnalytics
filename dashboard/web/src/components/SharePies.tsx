@@ -96,7 +96,7 @@ export function SharePies({ shares, sides, usageSeason, season, week, score }: {
           : <>From the play-by-play: plays snapped {zone?.yards} yards or fewer from the goal line, every position, with kneels, sacks and two-point tries left out. EZ = targets thrown into the end zone. Small numbers: one play moves these a long way. </>}
         {sp === "game"
           ? (sc === "all"
-            ? <>"Usual" is the player's {usageSeason} share of his team's carries or targets as it stood before this game (the same numbers as Who gets the ball below; for a player who changed teams, his share with the old one); blank when there is nothing to go on.</>
+            ? <>"Usual" is the player's share of his team's carries or targets as it stood before this game, the same numbers as Who gets the ball below: this season's games before this one, or last season's for a team's first game (for a player who changed teams, his share with the old one). Blank when there is nothing to go on.</>
             : <>"Usual" is his share of his team's {zoneLabel.toLowerCase()} carries or targets in {usageSeason}, the season Who gets the ball reads, counting only games before this one (with his old team if he moved; hover for the count).</>)
           : <>Season = this team's {season} games through week {week}, this one included and nothing after it, so an older game shows the season as it stood then. G = games he played (in the zone views, hover for how many of them he had one there). "Wk {week}" is his share in this game.</>}
       </div>

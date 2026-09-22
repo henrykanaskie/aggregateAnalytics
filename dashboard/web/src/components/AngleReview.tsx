@@ -64,7 +64,7 @@ export function AngleReview({ rows, home, away, score }: { rows: GradedAngle[]; 
         <h3>How the calls did · final {score}</h3>
         <span className="hint"><b className={hits / Math.max(1, dec.length) >= 0.5 ? "over" : "under"}>{hits} of {dec.length}</b> right ({fmtPct(hits / Math.max(1, dec.length))}){pushes ? ` · ${pushes} push${pushes > 1 ? "es" : ""}` : ""}</span>
       </div>
-      <div className="hint" style={{ marginBottom: 8 }}>Every angle below is rebuilt from what was known before kickoff (team numbers through the week before, player splits up to this game), then checked on the number it was about. A team angle is right when that team's number in this game landed on the side of its usual that the angle said; a player angle when his game landed on that side of his previous 16. A move of less than 5% of the usual number (at least half a point for rates, 0.02 for EPA) is a push and does not count either way. Where a prop line was posted it is shown too.</div>
+      <div className="hint" style={{ marginBottom: 8 }}>Every angle below is rebuilt from what was known before kickoff (team numbers through the week before, player splits up to this game), then checked on the number it was about. A team angle is right when that team's number in this game landed on the side of its usual that the angle said; a player angle when his game landed on that side of his previous 16. A move of less than 5% of the usual number (at least half a point for rates, 0.02 for EPA; a tenth of a defender for box counts, which sit near six and a half for everyone) is a push and does not count either way. Where a prop line was posted it is shown too.</div>
       <div className="grid grid-2">
         {sides.map(({ off, rows: rs }) => (
           <div key={off}>

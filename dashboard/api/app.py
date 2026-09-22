@@ -667,6 +667,16 @@ def game_matchup(game_id: str, include_sample: bool = False):
         # `use` is the season the numbers come from; `season` is the roster they
         # are read against. In September those are different years.
         off_pers = mu_mod.offense_personnel(off_t, use, roster_season=season)
+        # What the page shows as who gets the ball: this season's games before
+        # this one as soon as there is one, so a rookie with two weeks of
+        # carries is not a row of zeros until October. ``off_pers`` above stays
+        # on ``use``: it picks the key players the precomputed angles were
+        # built for.
+        played = ctx_mod.team_usage(off_t, season, before_week=week)
+        shown_pers = (mu_mod.offense_personnel(off_t, season, roster_season=season, before_week=week)
+                      if not played.is_empty() else off_pers)
+        usage_label = (f"{season} through week {int(played['team_games'][0])}" if int(played["team_games"][0]) == week - 1
+                       else f"{season}, {int(played['team_games'][0])} games") if not played.is_empty() else str(use)
         # betting spread from the offense's side: negative = favoured
         sl = game.get("spread_line")
         off_spread = None if sl is None else (-sl if off_t == home else sl)
@@ -681,7 +691,8 @@ def game_matchup(game_id: str, include_sample: bool = False):
             "player_angles": mu_mod.note_adjusted(
                 (stored or {}).get(off_t) or ang_mod.for_matchup(off_t, def_t, season, through, key_players, def_row),
                 def_row, off_t),
-            "offense_personnel": records(pl.DataFrame(off_pers)) if off_pers else [],
+            "offense_personnel": records(pl.DataFrame(shown_pers)) if shown_pers else [],
+            "usage_season": season if not played.is_empty() else use, "usage_label": usage_label,
             "defense_personnel": mu_mod.defense_personnel(def_t, use, roster_season=season),
         })
     latest = store.latest_props(season, game["week"], include_sample)
