@@ -194,7 +194,7 @@ export interface H2H { game_id: string; season: number; week: number; game_type:
 export interface GameMatchup { game: ScheduleGame & Record<string, any>; season_used: number; blend: BlendInfo | null; sides: MatchupSideFull[]; metrics: TeamMetric[]; dvp_labels: Record<string, string>; history: H2H[]; venue: Record<string, any>; props: (BoardRow & { status?: string | null })[]; lines: any[]; predictions: GamePrediction[]; injuries: Record<string, InjuryRow[]>; sources: string[]; shares?: Record<string, GameShares>; }
 /** Who got the ball in a played game (dashboard/stats/matchups.game_shares). */
 export interface ShareRow { player_id: string; name: string; position: string; n: number; share: number | null; games: number; yards: number | null; td: number; receptions: number | null; }
-export interface ZoneRow { player_id: string; name: string; position: string; n: number; games: number; share: number; td: number; ez: number | null; usual: number | null; usual_n: number | null; }
+export interface ZoneRow { player_id: string; name: string; position: string; n: number; games: number; games_here: number; share: number; td: number; ez: number | null; usual: number | null; usual_n: number | null; }
 export interface ZoneShares { label: string; yards: number; carries: { total: number; rows: ZoneRow[] }; targets: { total: number; rows: ZoneRow[] }; }
 export type ZoneKey = "rz" | "i10" | "gl";
 export interface BoxShares { team_carries: number; team_targets: number; games: number; carries: ShareRow[]; targets: ShareRow[]; zones?: Record<ZoneKey, ZoneShares>; }
@@ -246,12 +246,16 @@ export const api6 = {
 // --- team shares -----------------------------------------------------------------
 /** player_id -> share of this team's carries or targets. */
 type ShareMap = Record<string, number>;
-/** A team's regular season as share charts, with last season's shares with
- *  the same team beside them (dashboard/stats/matchups.team_season_shares). */
+export interface TeamGame { week: number; opponent: string; game_id: string }
+/** A team's regular season, or one game of it, as share charts, with the
+ *  shares they are read against (dashboard/stats/matchups.team_season_shares). */
 export interface TeamShares extends Partial<BoxShares> {
   team: string; season: number; weeks: number[]; games: number;
-  last?: { season: number; games: number; carries?: ShareMap; targets?: ShareMap; zones?: Record<ZoneKey, { carries: ShareMap; targets: ShareMap }> };
+  /** Set when one game is asked for rather than the whole season. */
+  week?: number | null; game?: TeamGame | null; schedule: TeamGame[];
+  /** What the charts are read against: last season, or the season a single game belongs to. */
+  last?: { label: string; games: number; carries?: ShareMap; targets?: ShareMap; zones?: Record<ZoneKey, { carries: ShareMap; targets: ShareMap }> };
 }
 export const api7 = {
-  teamShares: ep<TeamShares>()((team: string, season?: number) => `/api/teams/${team}/shares${qs({ season })}`),
+  teamShares: ep<TeamShares>()((team: string, season?: number, week?: number) => `/api/teams/${team}/shares${qs({ season, week })}`),
 };

@@ -728,16 +728,17 @@ def team_usage_api(team: str, season: int | None = None, season_type: str = "REG
 
 
 @app.get("/api/teams/{team}/shares")
-def team_shares_api(team: str, season: int | None = None):
+def team_shares_api(team: str, season: int | None = None, week: int | None = Query(None, ge=1, le=22)):
     """Who got the ball over a team's season: carries, targets, and the red
     zone, inside the 10 and the goal line, with last season's shares beside
-    them. With no season named, this one once the team has played in it."""
+    them. With no season named, this one once the team has played in it.
+    With ``week``, that one game instead, read against the season."""
     team = team.upper()
     if season is None:
         season = CURRENT_SEASON
-        out = mu_mod.team_season_shares(team, season)
-        return out if out["games"] else mu_mod.team_season_shares(team, season - 1)
-    return mu_mod.team_season_shares(team, season)
+        out = mu_mod.team_season_shares(team, season, week)
+        return out if out["games"] else mu_mod.team_season_shares(team, season - 1, week)
+    return mu_mod.team_season_shares(team, season, week)
 
 
 @app.get("/api/coaches/{name}/usage")

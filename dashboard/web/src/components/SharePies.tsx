@@ -22,9 +22,8 @@ type Slice = { key: string; label: string; n: number; color: string; row?: Row }
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
-/** One played game, or the team's season through that game's week: how each
- *  backfield split the carries and how the targets went among wide receivers
- *  and tight ends. The red zone, inside the 10 and the goal line count every
+/** One played game, or the team's season through that game's week: where a
+ *  team's carries and targets went, every position in both. The red zone, inside the 10 and the goal line count every
  *  position, since that is where the quarterback sneak and the back's target
  *  decide who scores. */
 export function SharePies({ shares, sides, usageSeason, season, week, score }: { shares: Record<string, GameShares>; sides: MatchupSideFull[]; usageSeason: number; season: number; week: number; score: string }) {
@@ -66,7 +65,7 @@ export function SharePies({ shares, sides, usageSeason, season, week, score }: {
             return rows.map((r) => ({ ...r,
               cmp: sp === "game" ? r.usual : g(r.player_id),
               cmpTitle: sp === "game" ? (r.usual_n === null ? undefined : `${r.usual_n} ${zoneLabel.toLowerCase()} ${kind} before this game`) : `Share in week ${week}`,
-              detail: `${kind === "carries" ? plural(r.n, "carry", "carries") : plural(r.n, "target", "targets")}${kind === "targets" ? `, ${r.ez ?? 0} into the end zone` : ""}, ${r.td} TD${sp === "season" ? ` in ${plural(r.games, "game", "games")}` : ""}` }));
+              detail: `${kind === "carries" ? plural(r.n, "carry", "carries") : plural(r.n, "target", "targets")}${kind === "targets" ? `, ${r.ez ?? 0} into the end zone` : ""}, ${r.td} TD${sp === "season" ? ` in ${r.games_here} of ${plural(r.games, "game", "games")}` : ""}` }));
           };
           const gc = gameShare(game.carries, game.team_carries), gt = gameShare(game.targets, game.team_targets);
           return (
@@ -79,10 +78,10 @@ export function SharePies({ shares, sides, usageSeason, season, week, score }: {
                 </div>
               ) : (
                 <div className="share-pair">
-                  <SharePie title="RB carry share" unit="car" total={s.team_carries} rest="QB and others" mode={pm}
+                  <SharePie title="Carry share" unit="car" total={s.team_carries} rest="others" mode={pm}
                     rows={s.carries.map((r) => ({ ...r, cmp: sp === "game" ? usual.get(r.player_id)?.carry_share ?? null : gc(r.player_id), cmpTitle: sp === "season" ? `Share in week ${week}` : undefined,
                       detail: `${plural(r.n, "carry", "carries")}, ${r.yards ?? 0} yards, ${r.td} TD${sp === "season" ? ` in ${plural(r.games, "game", "games")}` : ""}` }))} />
-                  <SharePie title="WR / TE target share" unit="tgt" total={s.team_targets} rest="RBs and others" mode={pm}
+                  <SharePie title="Target share" unit="tgt" total={s.team_targets} rest="others" mode={pm}
                     rows={s.targets.map((r) => ({ ...r, cmp: sp === "game" ? usual.get(r.player_id)?.target_share ?? null : gt(r.player_id), cmpTitle: sp === "season" ? `Share in week ${week}` : undefined,
                       detail: `${r.receptions ?? 0} of ${r.n} for ${r.yards ?? 0} yards, ${r.td} TD${sp === "season" ? ` in ${plural(r.games, "game", "games")}` : ""}` }))} />
                 </div>
@@ -93,25 +92,24 @@ export function SharePies({ shares, sides, usageSeason, season, week, score }: {
       </div>
       <div className="hint" style={{ marginTop: 8 }}>
         {sc === "all"
-          ? <>From the box score. Slices are shares of the team's carries and targets. </>
+          ? <>From the box score. Slices are shares of the team's carries and targets, every position in both: a quarterback's runs and a back's catches are part of how the ball was shared. </>
           : <>From the play-by-play: plays snapped {zone?.yards} yards or fewer from the goal line, every position, with kneels, sacks and two-point tries left out. EZ = targets thrown into the end zone. Small numbers: one play moves these a long way. </>}
         {sp === "game"
           ? (sc === "all"
             ? <>"Usual" is the player's {usageSeason} share of his team's carries or targets as it stood before this game (the same numbers as Who gets the ball below; for a player who changed teams, his share with the old one); blank when there is nothing to go on.</>
             : <>"Usual" is his share of his team's {zoneLabel.toLowerCase()} carries or targets in {usageSeason}, the season Who gets the ball reads, counting only games before this one (with his old team if he moved; hover for the count).</>)
-          : <>Season = this team's {season} games through week {week}, this one included and nothing after it, so an older game shows the season as it stood then. G = games he played (in the zone views, games he got one there). "Wk {week}" is his share in this game.</>}
+          : <>Season = this team's {season} games through week {week}, this one included and nothing after it, so an older game shows the season as it stood then. G = games he played (in the zone views, hover for how many of them he had one there). "Wk {week}" is his share in this game.</>}
       </div>
     </div>
   );
 }
 
-/** How a pie's table reads: whether it has a games column, which column is
- *  coloured (the share against ``cmp``, or ``cmp`` against the share), and
- *  what the comparison column is called. */
-export type PieMode = { games: boolean; color: "share" | "cmp"; cmpLabel: string; cmpHint: string; colorHint?: string; empty: string };
+/** How a pie's table reads: whether it has a games column, and what the
+ *  column the share is compared with is called. */
+export type PieMode = { games: boolean; cmpLabel: string; cmpHint: string; empty: string };
 const modeFor = (span: Span, cmpLabel: string): PieMode => span === "game"
-  ? { games: false, color: "share", cmpLabel, cmpHint: "Share before this game", colorHint: "Green: 5 points or more above his usual share; red: 5 or more below", empty: "None in this game." }
-  : { games: true, color: "cmp", cmpLabel, cmpHint: "His share in this game", empty: "None so far." };
+  ? { games: false, cmpLabel, cmpHint: "His share before this game, and the change since", empty: "None in this game." }
+  : { games: true, cmpLabel, cmpHint: "His share in this game, and the change from it", empty: "None so far." };
 
 export function SharePie({ title, unit, total, rows, rest, mode, extra = [], highlight }: { title: string; unit: "car" | "tgt"; total: number; rows: Row[]; rest: string; mode: PieMode; extra?: ("td" | "ez")[]; highlight?: string }) {
   if (total === 0) return <div><div className="small" style={{ fontWeight: 600 }}>{title}</div><div className="hint">{mode.empty}</div></div>;
@@ -147,8 +145,8 @@ export function SharePie({ title, unit, total, rows, rest, mode, extra = [], hig
               {season && <td className="num muted">{sl.row?.games ?? ""}</td>}
               {extra.includes("ez") && <td className="num muted">{sl.row ? sl.row.ez ?? 0 : ""}</td>}
               {extra.includes("td") && <td className="num">{sl.row ? (sl.row.td ? <b>{sl.row.td}</b> : <span className="faint">0</span>) : ""}</td>}
-              <td className={`num ${mode.color === "share" ? moved(sl, total) : ""}`} title={mode.color === "share" && sl.row?.cmp != null ? mode.colorHint : undefined}><b>{fmtPct(sl.n / total)}</b></td>
-              <td className={`num ${mode.color === "cmp" ? moved(sl, total, true) : "muted"}`} title={sl.row?.cmpTitle}>{sl.row?.cmp != null ? fmtPct(sl.row.cmp) : "–"}</td>
+              <td className="num"><b>{fmtPct(sl.n / total)}</b></td>
+              <td className="num muted" title={sl.row?.cmpTitle}>{sl.row?.cmp != null ? <>{fmtPct(sl.row.cmp)} <Delta share={sl.n / total} cmp={sl.row.cmp} /></> : "–"}</td>
             </tr>
           ))}</tbody>
         </table>
@@ -157,10 +155,19 @@ export function SharePie({ title, unit, total, rows, rest, mode, extra = [], hig
   );
 }
 
-// Coloured only where the two shares sit five points or more apart: the game
-// against his usual share, or this game against his season.
-const moved = (sl: Slice, total: number, flip = false) => {
-  if (!sl.row || sl.row.cmp == null) return "";
-  const d = (sl.n / total - sl.row.cmp) * (flip ? -1 : 1);
-  return d >= 0.05 ? "over" : d <= -0.05 ? "under" : "";
-};
+/** The change from the comparison share, in points of share.
+ *
+ *  Only this is coloured, and always the same way: green for a bigger share
+ *  than the number beside it, red for a smaller one. The shares themselves
+ *  stay plain, because a share is a size, not a good or a bad result: a back
+ *  with 58% of the carries was reading red whenever that was under his usual,
+ *  which looks like a low number.  Under five points is noise, so it is left
+ *  grey. */
+function Delta({ share, cmp }: { share: number; cmp: number }) {
+  // From the two rounded percentages, not the raw shares, so the change
+  // always equals what the reader can subtract on screen (58% next to 60%
+  // reads -2, never -1).
+  const d = Math.round(share * 100) - Math.round(cmp * 100);
+  const cls = d >= 5 ? "over" : d <= -5 ? "under" : "faint";
+  return <span className={`tiny ${cls}`} title={`${d > 0 ? "+" : ""}${d} points of share`}>{d > 0 ? "+" : d < 0 ? "−" : "±"}{Math.abs(d)}</span>;
+}
