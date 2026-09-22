@@ -1,7 +1,7 @@
 import { api7, TeamShares, ZoneKey } from "../api";
 import { useSticky } from "../lib/sticky";
 import { useQuery } from "../lib/useQuery";
-import { Field, Spinner } from "./common";
+import { ApplyField, Spinner } from "./common";
 import { PieMode, Row, SharePie } from "./SharePies";
 
 type Scope = "all" | ZoneKey;
@@ -10,8 +10,8 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 
 /** The matchup page's who-got-the-ball pies over a team's whole regular
  *  season so far, each player next to his share with this team last season. */
-export default function TeamSharePies({ team, current }: { team: string; current: number }) {
-  const [season, setSeason] = useSticky<number | null>("teams.shareSeason", null);
+export default function TeamSharePies({ team, current, highlight, stickyKey = "teams.shareSeason" }: { team: string; current: number; highlight?: string; stickyKey?: string }) {
+  const [season, setSeason] = useSticky<number | null>(stickyKey, null);
   const [scope, setScope] = useSticky<Scope>("matchups.shareScope", "all");
   const { data, loading } = useQuery<TeamShares>(api7.teamShares.url(team, season ?? undefined));
   const head = (
@@ -19,7 +19,7 @@ export default function TeamSharePies({ team, current }: { team: string; current
       <h3>Who got the ball · {team} {data?.season ?? ""}{data && data.weeks.length ? ` through week ${data.weeks[data.weeks.length - 1]}` : ""}</h3>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
         {data?.zones && <div className="chips">{SCOPES.map(([k, l]) => <button key={k} className={`chip ${scope === k ? "on" : ""}`} onClick={() => setScope(k)}>{l}</button>)}</div>}
-        <Field label="Season"><input className="input num" type="number" min={1999} max={current} value={season ?? data?.season ?? ""} onChange={(e) => setSeason(e.target.value === "" ? null : Number(e.target.value))} /></Field>
+        <ApplyField<number | ""> label="Season" value={(season ?? data?.season ?? "") as number | ""} onApply={(v) => { if (typeof v === "number" && v >= 1999) setSeason(v); }} show={(v) => String(v)}>{(d, set) => <input className="input num" type="number" min={1999} max={current} value={d ?? ""} onChange={(e) => set(e.target.value === "" ? "" : Number(e.target.value))} />}</ApplyField>
       </div>
     </div>
   );
@@ -43,13 +43,13 @@ export default function TeamSharePies({ team, current }: { team: string; current
       <div className="small muted" style={{ marginBottom: 6 }}>{plural(data.games, "game", "games")}</div>
       {z ? (
         <div className="share-pair">
-          <SharePie title={`${z.label} carries`} unit="car" total={z.carries.total} rest="others" extra={["td"]} mode={mode} rows={zoneRows("carries")} />
-          <SharePie title={`${z.label} targets`} unit="tgt" total={z.targets.total} rest="others" extra={["ez", "td"]} mode={mode} rows={zoneRows("targets")} />
+          <SharePie title={`${z.label} carries`} unit="car" total={z.carries.total} rest="others" extra={["td"]} mode={mode} highlight={highlight} rows={zoneRows("carries")} />
+          <SharePie title={`${z.label} targets`} unit="tgt" total={z.targets.total} rest="others" extra={["ez", "td"]} mode={mode} highlight={highlight} rows={zoneRows("targets")} />
         </div>
       ) : (
         <div className="share-pair">
-          <SharePie title="RB carry share" unit="car" total={data.team_carries!} rest="QB and others" mode={mode} rows={allRows("carries")} />
-          <SharePie title="WR / TE target share" unit="tgt" total={data.team_targets!} rest="RBs and others" mode={mode} rows={allRows("targets")} />
+          <SharePie title="RB carry share" unit="car" total={data.team_carries!} rest="QB and others" mode={mode} highlight={highlight} rows={allRows("carries")} />
+          <SharePie title="WR / TE target share" unit="tgt" total={data.team_targets!} rest="RBs and others" mode={mode} highlight={highlight} rows={allRows("targets")} />
         </div>
       )}
       <div className="hint" style={{ marginTop: 8 }}>

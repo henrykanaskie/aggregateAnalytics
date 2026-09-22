@@ -24,14 +24,14 @@ export type TrackIndex = Map<string, { n: number; hits: number }>;
 export const trackIndex = (t: AngleTrackRecord | null | undefined): TrackIndex =>
   new Map((t?.families ?? []).map((f) => [`${f.family}|${f.lean}`, { n: f.n, hits: f.hits }]));
 
-/** "7-3 last 8 wks": how this kind of angle has done lately. */
-export function TrackChip({ rec, weeks }: { rec?: { n: number; hits: number }; weeks: number }) {
+/** "7-3 in 2026": how this kind of angle has done this season. */
+export function TrackChip({ rec, season }: { rec?: { n: number; hits: number }; season: number | null }) {
   // No record: either a context note that is never graded, or a kind of
   // angle that has not come up in a graded game yet. Neither has a number.
   if (!rec) return null;
   const r = rec.hits / rec.n;
   const cls = rec.n >= 5 ? (r >= 0.6 ? "over" : r <= 0.4 ? "under" : "") : "";
-  return <span className={`pill ${cls}`} style={{ whiteSpace: "nowrap", flexShrink: 0, textTransform: "none", letterSpacing: 0 }} title={`This kind of angle was right ${rec.hits} of ${rec.n} times in the last ${weeks} graded weeks: the number it was about moved the way it said`}>{rec.hits}-{rec.n - rec.hits} · {weeks} wks</span>;
+  return <span className={`pill ${cls}`} style={{ whiteSpace: "nowrap", flexShrink: 0, textTransform: "none", letterSpacing: 0 }} title={`This kind of angle was right ${rec.hits} of ${rec.n} times in ${season}: the number it was about moved the way it said`}>{rec.hits}-{rec.n - rec.hits} in {season}</span>;
 }
 
 const ORDER = { hit: 0, miss: 1, push: 2 } as const;

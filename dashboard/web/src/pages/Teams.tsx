@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { api2, LeagueTendencies, TeamMetric, TeamTendencies } from "../api";
-import { Banner, Field, Seg, Spinner, TeamTag } from "../components/common";
+import { ApplyField, Banner, Field, Seg, Spinner, TeamTag } from "../components/common";
 import { fmtStat } from "../lib/format";
 import { useSticky } from "../lib/sticky";
 import { useQuery } from "../lib/useQuery";
@@ -60,7 +60,7 @@ export default function Teams() {
           <Field label={team ? "Charted metric" : "Rank the league by"}><select className="input" value={mdef?.key ?? ""} onChange={(e) => setMetric(e.target.value)}>{metrics.map((m) => <option key={m.key} value={m.key}>{m.label}{m.since > 1999 ? ` (${m.since}+)` : ""}</option>)}</select></Field>
           {/* Only ever used to fetch one team's season history, so with no team
               picked it was a control that changed nothing. */}
-          {team && <Field label="History since"><input className="input num" type="number" min={1999} max={2026} value={since} onChange={(e) => setSince(Number(e.target.value))} /></Field>}
+          {team && <ApplyField<number | ""> label="History since" value={(since) as number | ""} onApply={(v) => { if (typeof v === "number" && v >= 1999) setSince(v); }} show={(v) => `since ${v}`}>{(d, set) => <input className="input num" type="number" min={1999} max={2026} value={d ?? ""} onChange={(e) => set(e.target.value === "" ? "" : Number(e.target.value))} />}</ApplyField>}
           {mdef?.note && <div className="hint" style={{ maxWidth: 380 }}>{mdef.note}</div>}
         </div>
       </div>
@@ -156,7 +156,7 @@ export default function Teams() {
           <h3>League table · {league?.season}{league?.blended ? ` blended with ${league.season - 1}` : ""}</h3>
           <span className="hint">sorted by {mdef?.label ?? active}, high to low{mdef?.good === "low" ? " (low is better here)" : ""} · click any column to sort by it</span>
           {league?.can_blend && <Seg value={blend ? "blend" : "season"} options={[{ v: "blend", l: "Blended" }, { v: "season", l: `${league.season} only` }]} onChange={(v) => setBlend(v === "blend")} />}
-          <Field label="Season"><input className="input num" type="number" min={1999} max={meta?.season ?? 2026} value={leagueSeason ?? league?.season ?? ""} onChange={(e) => setLeagueSeason(Number(e.target.value))} /></Field>
+          <ApplyField<number | ""> label="Season" value={(leagueSeason ?? league?.season ?? "") as number | ""} onApply={(v) => { if (typeof v === "number" && v >= 1999) setLeagueSeason(v); }} show={(v) => String(v)}>{(d, set) => <input className="input num" type="number" min={1999} max={meta?.season ?? 2026} value={d ?? ""} onChange={(e) => set(e.target.value === "" ? "" : Number(e.target.value))} />}</ApplyField>
         </div>
         {league?.blended && <div className="hint" style={{ marginBottom: 6 }}>{blendNote(league.blend)}</div>}
         <div className="tbl-wrap" style={{ maxHeight: 640 }} ref={leagueWrap}>

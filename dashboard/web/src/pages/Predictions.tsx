@@ -1,5 +1,5 @@
 import { api, PredictionsResponse } from "../api";
-import { Field, TeamTag } from "../components/common";
+import { ApplyField, TeamTag } from "../components/common";
 import { fmtPct, fmtSpread } from "../lib/format";
 import { useSticky } from "../lib/sticky";
 import { useQuery } from "../lib/useQuery";
@@ -13,7 +13,7 @@ export default function Predictions() {
   return (
     <div>
       <div className="page-head"><div><h1>Predictions</h1><div className="muted small">What the model has logged. This page only reads the log; it never computes anything.</div></div></div>
-      <div className="panel" style={{ marginBottom: 12 }}><div className="controls"><Field label="Week"><select className="input" value={week ?? meta?.week ?? 1} onChange={(e) => setWeek(Number(e.target.value))}>{weeks.map((w) => <option key={w} value={w}>Week {w}</option>)}</select></Field></div></div>
+      <div className="panel" style={{ marginBottom: 12 }}><div className="controls"><ApplyField label="Week" value={week ?? meta?.week ?? 1} onApply={setWeek} show={(v) => `week ${v}`}>{(d, set) => <select className="input" value={d} onChange={(e) => set(Number(e.target.value))}>{weeks.map((w) => <option key={w} value={w}>Week {w}</option>)}</select>}</ApplyField></div></div>
       <div className="grid grid-2">
         <div className="panel" data-tour="predictions-games">
           <div className="panel-head"><h3>Game predictions · data/predictions.parquet</h3><span className="hint">{data?.games.length ?? 0} rows</span></div>

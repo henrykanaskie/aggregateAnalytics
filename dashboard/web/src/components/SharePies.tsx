@@ -113,9 +113,13 @@ const modeFor = (span: Span, cmpLabel: string): PieMode => span === "game"
   ? { games: false, color: "share", cmpLabel, cmpHint: "Share before this game", colorHint: "Green: 5 points or more above his usual share; red: 5 or more below", empty: "None in this game." }
   : { games: true, color: "cmp", cmpLabel, cmpHint: "His share in this game", empty: "None so far." };
 
-export function SharePie({ title, unit, total, rows, rest, mode, extra = [] }: { title: string; unit: "car" | "tgt"; total: number; rows: Row[]; rest: string; mode: PieMode; extra?: ("td" | "ez")[] }) {
+export function SharePie({ title, unit, total, rows, rest, mode, extra = [], highlight }: { title: string; unit: "car" | "tgt"; total: number; rows: Row[]; rest: string; mode: PieMode; extra?: ("td" | "ez")[]; highlight?: string }) {
   if (total === 0) return <div><div className="small" style={{ fontWeight: 600 }}>{title}</div><div className="hint">{mode.empty}</div></div>;
-  const named = rows.slice(0, NAMED);
+  // The player a page is about always gets his own slice, even from outside
+  // the top five, and the rest fade back.
+  let named = rows.slice(0, NAMED);
+  const hl = highlight ? rows.find((r) => r.player_id === highlight) : undefined;
+  if (hl && !named.includes(hl)) named = [...named.slice(0, NAMED - 1), hl];
   const slices: Slice[] = named.map((r, i) => ({ key: r.player_id, label: r.name, n: r.n, color: `var(--cat-${i + 1})`, row: r }));
   const left = total - named.reduce((a, r) => a + r.n, 0);
   if (left > 0) slices.push({ key: "rest", label: rows.length > NAMED ? `${rest} (${rows.length - NAMED} more)` : rest, n: left, color: OTHER });
@@ -126,7 +130,7 @@ export function SharePie({ title, unit, total, rows, rest, mode, extra = [] }: {
       <div className="share-row">
         <PieChart width={120} height={120}>
           <Pie data={slices} dataKey="n" nameKey="label" innerRadius={32} outerRadius={56} startAngle={90} endAngle={-270} stroke="var(--panel)" strokeWidth={2} isAnimationActive={false}>
-            {slices.map((sl) => <Cell key={sl.key} fill={sl.color} />)}
+            {slices.map((sl) => <Cell key={sl.key} fill={sl.color} fillOpacity={hl && sl.key !== hl.player_id ? 0.35 : 1} />)}
           </Pie>
           <Tooltip content={({ active, payload }) => {
             if (!active || !payload?.length) return null;
@@ -137,7 +141,7 @@ export function SharePie({ title, unit, total, rows, rest, mode, extra = [] }: {
         <table className="tbl compact tight">
           <thead><tr><th className="left">Player</th><th>{unit === "car" ? "Car" : "Tgt"}</th>{season && <th title="Games played">G</th>}{extra.includes("ez") && <th title="Thrown into the end zone">EZ</th>}{extra.includes("td") && <th>TD</th>}<th>Share</th><th title={mode.cmpHint}>{mode.cmpLabel}</th></tr></thead>
           <tbody>{slices.map((sl) => (
-            <tr key={sl.key} title={sl.row?.detail}>
+            <tr key={sl.key} title={sl.row?.detail} className={hl && sl.key === hl.player_id ? "hl" : undefined}>
               <td className="left"><span className="sw-dot" style={{ background: sl.color }} />{sl.row ? <><Link to={`/research?player=${sl.row.player_id}`}>{sl.label}</Link> <span className="muted">{sl.row.position}</span></> : <span className="muted">{sl.label}</span>}</td>
               <td className="num">{sl.n}</td>
               {season && <td className="num muted">{sl.row?.games ?? ""}</td>}

@@ -4,7 +4,7 @@ import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAx
 import { api2, SplitGames, Splits as SplitsT } from "../api";
 import { fmtStat } from "../lib/format";
 import { useMeta } from "../state";
-import { Field, Seg, Spinner } from "./common";
+import { ApplyField, Field, Seg, Spinner } from "./common";
 
 const PRIMARY: Record<string, string> = { rush: "ypc", rec: "ypt", pass: "ypa" };
 const EXTRA = ["#ef5f5f", "#b28dff", "#4dd0e1", "#ff9f6e", "#c6d36f", "#9a9a9a"];
@@ -67,7 +67,7 @@ export default function Splits({ playerId, statKey, position, since }: { playerI
         <div className="actions">
           <Field label="Role"><Seg value={data?.role ?? "rush"} options={Object.entries(data?.roles ?? {}).filter(([, n]) => n > 0).map(([r, n]) => ({ v: r, l: `${ROLE_LABEL[r]} (${n})` }))} onChange={(v) => setWant(v)} /></Field>
           <Field label="Games"><Seg value={seasonType} options={[{ v: "ALL", l: "All" }, { v: "REG", l: "Reg" }, { v: "POST", l: "Post" }]} onChange={setSeasonType} /></Field>
-          <Field label="Since"><input className="input num" type="number" min={1999} max={2026} value={from} onChange={(e) => setFrom(Number(e.target.value))} /></Field>
+          <ApplyField<number | ""> label="Since" value={(from) as number | ""} onApply={(v) => { if (typeof v === "number" && v >= 1999) setFrom(v); }} show={(v) => `since ${v}`}>{(d, set) => <input className="input num" type="number" min={1999} max={2026} value={d ?? ""} onChange={(e) => set(e.target.value === "" ? "" : Number(e.target.value))} />}</ApplyField>
           {loading && <Spinner />}
         </div>
       </div>
