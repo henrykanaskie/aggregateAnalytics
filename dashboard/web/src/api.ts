@@ -215,7 +215,9 @@ export interface GradeSummary { n: number; weeks: [number, number][]; by_book: {
 // A matchup angle rebuilt as of kickoff and checked against the game: the
 // number it was about (measure), where that number usually sits (baseline) and
 // where it landed (actual). dashboard/stats/angle_grades.py.
-export interface GradedAngle { season: number; week: number; game_id: string; offense: string; defense: string; kind: "team" | "player"; family: string; title: string; detail: string; lean: "over" | "under" | "neutral"; strength: number; tags: string[]; player_id: string | null; player: string | null; position: string | null; team: string | null; measure: string; direction: "up" | "down"; baseline: number | null; baseline_label: string; actual: number | null; fmt: string; verdict: "hit" | "miss" | "push"; line: number | null; line_result: "over" | "under" | "push" | null; market: string | null; }
+export interface GradedAngle { season: number; week: number; game_id: string; offense: string; defense: string; kind: "team" | "player"; family: string; title: string; detail: string; lean: "over" | "under" | "neutral"; strength: number; tags: string[]; player_id: string | null; player: string | null; position: string | null; team: string | null; measure: string; direction: "up" | "down"; baseline: number | null; baseline_label: string; actual: number | null; fmt: string; verdict: "hit" | "miss" | "push"; line: number | null; line_result: "over" | "under" | "push" | null; market: string | null;
+  /** Plain-sentence versions, built by the server when the grades are read. */
+  said?: string; happened?: string; evidence?: string | null; note?: string | null; verdict_words?: string; }
 export interface AngleFamily { family: string; kind: "team" | "player"; n: number; hits: number; rate: number; lean: string; }
 export interface AngleTrackRecord { season: number | null; current: boolean; weeks: [number, number][]; n: number; hits: number; pushes: number; families: AngleFamily[]; by_kind: { kind: string; n: number; hits: number; rate: number }[]; best: GradedAngle[]; }
 export const api5 = {

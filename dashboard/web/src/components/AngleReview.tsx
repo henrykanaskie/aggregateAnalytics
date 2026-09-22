@@ -3,11 +3,6 @@ import { Angle, AngleTrackRecord, GradedAngle } from "../api";
 import { fmtLine, fmtPct } from "../lib/format";
 import { TeamTag } from "./common";
 
-// Rates such as sack rate live under 10%, where whole percents make 7.1% and
-// 7.0% read as the same number and a correct call look like a tie.
-export const fmtMeasure = (v: number | null, fmt: string) =>
-  v === null ? "–" : fmt === "pct" ? `${(v * 100).toFixed(Math.abs(v) < 0.1 ? 1 : 0)}%` : fmt === "dec2" ? (Number(v.toFixed(2)) > 0 ? "+" : "") + v.toFixed(2).replace(/^-0\.00$/, "0.00") : fmt === "int" ? v.toFixed(0) : v.toFixed(1);
-
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** The angle with its names taken out, matching angle_grades.family() on the
@@ -38,16 +33,23 @@ const ORDER = { hit: 0, miss: 1, push: 2 } as const;
 const Mark = ({ v }: { v: GradedAngle["verdict"] }) =>
   <span className={`pill ${v === "hit" ? "over" : v === "miss" ? "under" : ""}`} style={{ minWidth: 58, textAlign: "center" }}>{v === "hit" ? "✓ called it" : v === "miss" ? "✗ missed" : "≈ push"}</span>;
 
+const MARKET_STAT: Record<string, string> = { player_pass_yds: "passing yards", player_rush_yds: "rushing yards", player_reception_yds: "receiving yards" };
+
+/** What the angle said, what happened, and the box score behind it. */
 export function Outcome({ a }: { a: GradedAngle }) {
-  const arrow = a.direction === "up" ? "above" : "below";
+  const tone = a.verdict === "hit" ? "over" : a.verdict === "miss" ? "under" : "";
+  const lineAgreed = a.line_result === (a.lean === "over" ? "over" : "under");
   return (
-    <span className="small">
-      {a.team && a.kind === "team" ? <b>{a.team} </b> : null}{a.measure}: <b className={`num ${a.verdict === "hit" ? "over" : a.verdict === "miss" ? "under" : ""}`}>{fmtMeasure(a.actual, a.fmt)}</b>
-      {a.baseline_label === "at least one"
-        ? <span className="muted"> (said at least one)</span>
-        : <span className="muted"> vs {fmtMeasure(a.baseline, a.fmt)} {a.baseline_label} (said {arrow})</span>}
-      {a.line !== null && <span className="muted"> · line {fmtLine(a.line)}, went <b className={a.line_result === (a.lean === "over" ? "over" : "under") ? "over" : a.line_result === "push" ? "" : "under"}>{a.line_result}</b></span>}
-    </span>
+    <div className="small" style={{ display: "grid", gap: 2 }}>
+      <div className="muted">{a.said}</div>
+      <div><b className={tone}>{a.happened}</b></div>
+      {a.evidence && <div className="muted">{a.evidence}.</div>}
+      {a.line !== null && a.line_result && (
+        <div className="muted">Prop line was {fmtLine(a.line)} {a.market ? MARKET_STAT[a.market] ?? "" : ""}: he went <b className={a.line_result === "push" ? "" : lineAgreed ? "over" : "under"}>{a.line_result}</b>{a.line_result === "push" ? "" : lineAgreed ? ", the way the angle leaned" : ", against the angle"}.</div>
+      )}
+      {a.verdict === "push" && <div className="faint">{a.verdict_words}</div>}
+      {a.note && <div className="faint">{a.note}</div>}
+    </div>
   );
 }
 
@@ -64,7 +66,7 @@ export function AngleReview({ rows, home, away, score }: { rows: GradedAngle[]; 
         <h3>How the calls did · final {score}</h3>
         <span className="hint"><b className={hits / Math.max(1, dec.length) >= 0.5 ? "over" : "under"}>{hits} of {dec.length}</b> right ({fmtPct(hits / Math.max(1, dec.length))}){pushes ? ` · ${pushes} push${pushes > 1 ? "es" : ""}` : ""}</span>
       </div>
-      <div className="hint" style={{ marginBottom: 8 }}>Every angle below is rebuilt from what was known before kickoff (team numbers through the week before, player splits up to this game), then checked on the number it was about. A team angle is right when that team's number in this game landed on the side of its usual that the angle said; a player angle when his game landed on that side of his previous 16. A move of less than 5% of the usual number (at least half a point for rates, 0.02 for EPA; a tenth of a defender for box counts, which sit near six and a half for everyone) is a push and does not count either way. Where a prop line was posted it is shown too.</div>
+      <div className="hint" style={{ marginBottom: 8 }}>Each call is what the matchup page said before kickoff, using only what was known then. It is right when the number it was about moved the way it said, against that team's or player's usual. A move smaller than 5% of the usual is too close to call and counts neither way.</div>
       <div className="grid grid-2">
         {sides.map(({ off, rows: rs }) => (
           <div key={off}>

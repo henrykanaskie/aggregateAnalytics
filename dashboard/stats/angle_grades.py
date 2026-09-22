@@ -417,9 +417,248 @@ def _json(v):
     return v
 
 
+# --- saying it in words -------------------------------------------------------
+#
+# A graded row is numbers: a measure, a direction, a usual value and an
+# actual one. On its own that reads as "Pass rate: 69% vs 61% LAC's usual
+# (said below)", which does not say what the angle predicted or why 69%
+# makes it wrong. explain() turns each row into what the angle said would
+# happen, what did, and the box score behind it.
+
+#: For each team metric, what "up" and "down" mean in words, completing
+#: "Said {team} would ...".
+_SAID: dict[str, tuple[str, str]] = {
+    "pass_epa": ("pass better than it usually does", "pass worse than it usually does"),
+    "rush_epa": ("run the ball better than it usually does", "run the ball worse than it usually does"),
+    "def_pass_epa": ("give up more than usual through the air", "give up less than usual through the air"),
+    "def_rush_epa": ("give up more than usual on the ground", "give up less than usual on the ground"),
+    "rb_target_share": ("throw to its running backs more than usual", "throw to its running backs less than usual"),
+    "te_target_share": ("throw to its tight ends more than usual", "throw to its tight ends less than usual"),
+    "plays_pg": ("run more plays than an average offense", "run fewer plays than an average offense"),
+    "rz_td_rate": ("turn more of its red-zone trips into touchdowns than usual", "settle for field goals in the red zone more than usual"),
+    "pass_rate": ("throw more than it usually does", "run more than it usually does"),
+    "sack_rate_taken": ("give up more sacks than usual", "give up fewer sacks than usual"),
+    "def_sack_rate": ("sack the quarterback more than usual", "sack the quarterback less than usual"),
+    "int_rate": ("throw more interceptions than usual", "throw fewer interceptions than usual"),
+    "def_int_rate": ("intercept more passes than usual", "intercept fewer passes than usual"),
+    "third_down_conv": ("convert more third downs than usual", "convert fewer third downs than usual"),
+    "fga_pg": ("kick more field goals than usual", "kick fewer field goals than usual"),
+    "explosive_rate": ("hit more big plays than usual", "hit fewer big plays than usual"),
+    "qb_rush_rate": ("have its quarterback run more than usual", "have its quarterback run less than usual"),
+    "def_box_avg": ("put more defenders in the box than usual", "put fewer defenders in the box than usual"),
+    "def_man_rate": ("play more man coverage than usual", "play more zone than usual"),
+    "def_two_high_rate": ("play more two-high shells than usual", "play more single-high than usual"),
+    "def_blitz_rate": ("blitz more than usual", "blitz less than usual"),
+    "def_pressure_rate": ("get pressure more often than usual", "get pressure less often than usual"),
+    "def_rb_target_share": ("let running backs catch more of the targets than usual", "take running backs out of the passing game"),
+    "def_te_target_share": ("let tight ends catch more of the targets than usual", "take tight ends out of the passing game"),
+}
+
+#: Which part of the box score backs up each metric: the offense's run game,
+#: its passing game, or who it threw to.
+_EVIDENCE = {
+    "rush_epa": "run", "def_rush_epa": "run", "def_box_avg": "run", "qb_rush_rate": "run",
+    "pass_epa": "pass", "def_pass_epa": "pass", "sack_rate_taken": "pass", "def_sack_rate": "pass",
+    "int_rate": "pass", "def_int_rate": "pass", "def_blitz_rate": "pass", "def_pressure_rate": "pass",
+    "def_man_rate": "pass", "def_two_high_rate": "pass", "explosive_rate": "pass",
+    "pass_rate": "mix", "plays_pg": "mix", "third_down_conv": "mix",
+    "rb_target_share": "targets", "te_target_share": "targets", "def_rb_target_share": "targets", "def_te_target_share": "targets",
+}
+
+#: The metric as a noun in a sentence: "PIT's {noun} was 6.7".
+_NOUN: dict[str, str] = {
+    "pass_epa": "EPA per dropback", "rush_epa": "EPA per carry",
+    "def_pass_epa": "passing EPA allowed per dropback", "def_rush_epa": "rushing EPA allowed per carry",
+    "rb_target_share": "share of targets to running backs", "te_target_share": "share of targets to tight ends",
+    "def_rb_target_share": "share of targets allowed to running backs", "def_te_target_share": "share of targets allowed to tight ends",
+    "plays_pg": "play count", "rz_td_rate": "red-zone touchdown rate", "pass_rate": "pass rate",
+    "sack_rate_taken": "sack rate (sacks per dropback)", "def_sack_rate": "sack rate (sacks per dropback)",
+    "int_rate": "interception rate", "def_int_rate": "interception rate", "third_down_conv": "third-down conversion rate",
+    "fga_pg": "field-goal attempts", "explosive_rate": "big-play rate", "qb_rush_rate": "quarterback run rate",
+    "def_box_avg": "average defenders in the box on runs", "def_man_rate": "man-coverage rate",
+    "def_two_high_rate": "two-high rate", "def_blitz_rate": "blitz rate", "def_pressure_rate": "pressure rate",
+}
+
+#: Per-game counts read better as counts than as a rate.
+_COUNTS = {"plays_pg": ("ran", "plays"), "fga_pg": ("tried", "field goals")}
+
+#: Player angles about one kind of snap (blitzes, man coverage, stacked
+#: boxes) are graded on the whole game: the box score does not split by
+#: coverage. Said so, because two angles on one player then share a number.
+_SPLIT_ANGLE = ("vs the blitz", "man coverage", "zone coverage", "two-high", "under pressure", "stacked boxes", "light boxes")
+
+_VERDICT_WORDS = {"hit": "So the call was right.", "miss": "So the call was wrong.",
+                  "push": "Too close to call: the move was inside the margin, so it counts neither way."}
+
+
+def _num(v: float | None, fmt: str | None, signed: bool = False) -> str:
+    """``signed`` for EPA, where the sign is the point: +0.19 is good."""
+    if v is None:
+        return "–"
+    if fmt == "pct":
+        return f"{v * 100:.1f}%" if abs(v) < 0.1 else f"{v * 100:.0f}%"
+    if fmt == "dec2":
+        t = f"{v:.2f}" if round(v, 2) != 0 else "0.00"
+        return ("+" if signed and round(v, 2) > 0 else "") + t
+    if fmt == "int":
+        return f"{v:.0f}"
+    return f"{v:.1f}"
+
+
+def _box(game_ids: list[str]) -> pl.DataFrame:
+    return (scan("player_stats_week").filter(pl.col("game_id").is_in(game_ids))
+            .select("game_id", "team", "player_id", "player_display_name", "position", "completions", "attempts",
+                    "passing_yards", "passing_tds", "passing_interceptions", "sacks_suffered", "carries",
+                    "rushing_yards", "rushing_tds", "targets", "receptions", "receiving_yards", "receiving_tds")
+            .collect())
+
+
+def _times(verb: str, n: int) -> str:
+    return f"never {verb}" if n == 0 else f"{verb} once" if n == 1 else f"{verb} {n} times"
+
+
+def _sum(df: pl.DataFrame, col: str) -> int:
+    return int(df[col].fill_null(0).sum()) if not df.is_empty() else 0
+
+
+def _team_evidence(kind: str, off: pl.DataFrame, team: str) -> str | None:
+    if off.is_empty():
+        return None
+    qb = off.filter(pl.col("position") == "QB")
+    if kind == "run":
+        c, y = _sum(off, "carries"), _sum(off, "rushing_yards")
+        return f"{team} ran {c} times for {y} yards, {y / c:.1f} a carry" if c else None
+    if kind == "pass":
+        a = _sum(qb, "attempts")
+        if not a:
+            return None
+        return (f"{team}'s quarterbacks went {_sum(qb, 'completions')} of {a} for {_sum(qb, 'passing_yards')} yards, "
+                f"{_sum(qb, 'passing_tds')} TD, {_sum(qb, 'passing_interceptions')} INT, {_times('sacked', _sum(qb, 'sacks_suffered'))}")
+    if kind == "mix":
+        return f"{team} threw {_sum(qb, 'attempts') + _sum(qb, 'sacks_suffered')} times and ran {_sum(off, 'carries')}"
+    if kind == "targets":
+        t = _sum(off, "targets")
+        if not t:
+            return None
+        by = {p: _sum(off.filter(pl.col("position") == p), "targets") for p in ("RB", "WR", "TE")}
+        return f"of {team}'s {t} targets, running backs saw {by['RB']}, wide receivers {by['WR']}, tight ends {by['TE']}"
+    return None
+
+
+def _player_evidence(me: pl.DataFrame, pos: str | None) -> str | None:
+    if me.is_empty():
+        return None
+    r = me.to_dicts()[0]
+    n = r["player_display_name"]
+    g = lambda k: int(r[k] or 0)
+    if pos == "QB":
+        return (f"{n} went {g('completions')} of {g('attempts')} for {g('passing_yards')} yards, "
+                f"{g('passing_tds')} TD, {g('passing_interceptions')} INT, {_times('sacked', g('sacks_suffered'))}")
+    if pos == "RB":
+        return f"{n} ran {g('carries')} times for {g('rushing_yards')} yards" + (
+            f" and caught {g('receptions')} for {g('receiving_yards')}" if g("receptions") else "")
+    return f"{n} caught {g('receptions')} of {g('targets')} targets for {g('receiving_yards')} yards" + (
+        f" and {g('receiving_tds')} TD" if g("receiving_tds") else "")
+
+
+def _said(r: dict) -> str:
+    up = r["direction"] == "up"
+    who = r["team"] or r["offense"]
+    if r["kind"] == "player":
+        name = r["player"] or "he"
+        m = r["measure"]
+        if m == "EPA / dropback":
+            return f"Said {name} would {'play better' if up else 'struggle more'} than usual throwing the ball."
+        if m == "yards / carry":
+            return f"Said {name} would average {'more' if up else 'fewer'} yards a carry than usual."
+        return f"Said {name} would have {'more' if up else 'fewer'} {m} than usual."
+    label = r["baseline_label"] or ""
+    if label.startswith("league average to "):
+        pos = label.removeprefix("league average to ")
+        stat = (r["measure"] or " yards").split(" ", 1)[1]
+        return (f"Said {r['defense']} would give up {'more' if up else 'fewer'} {stat} to {pos} than a typical "
+                f"defense does ({_num(r['baseline'], 'int')} a game).")
+    if label == "closing total":
+        return "Said the game would go under the total."
+    if label == "at least one":
+        return f"Said a {r['offense']} tight end would score."
+    key = _metric_key(r["measure"])
+    words = _SAID.get(key)
+    if words:
+        return f"Said {who} would {words[0] if up else words[1]}."
+    return f"Said {who}'s {(r['measure'] or 'number').lower()} would be {'higher' if up else 'lower'} than usual."
+
+
+_LABEL_KEY = {m.label: k for k, m in METRIC_BY_KEY.items()}
+
+
+def _metric_key(label: str | None) -> str | None:
+    return _LABEL_KEY.get(label or "")
+
+
+def _happened(r: dict) -> str:
+    f = r["fmt"]
+    a, b = _num(r["actual"], f), _num(r["baseline"], f)
+    label = r["baseline_label"] or ""
+    if label == "at least one":
+        n = int(r["actual"] or 0)
+        return f"{r['offense']}'s tight ends scored {n} touchdown{'s' if n != 1 else ''}."
+    if label == "closing total":
+        return f"The teams scored {a} points against a total of {b}."
+    if label.startswith("league average to "):
+        pos = label.removeprefix("league average to ")
+        return f"{r['offense']}'s {pos} had {_num(r['actual'], 'int')} {(r['measure'] or ' yards').split(' ', 1)[1]} against {r['defense']}."
+    signed = "EPA" in (r["measure"] or "")
+    a, b = _num(r["actual"], f, signed), _num(r["baseline"], f, signed)
+    if r["kind"] == "player":
+        m = r["measure"]
+        if m in ("passing yards", "rushing yards", "receiving yards"):
+            return f"{r['player']} had {_num(r['actual'], 'int')} {m}, against {_num(r['baseline'], 'dec1')} a game over his previous 16."
+        if m == "yards / carry":
+            return f"{r['player']} averaged {a} yards a carry, against {b} over his previous 16 games."
+        return f"{r['player']} had {a} EPA per dropback, against {b} over his previous 16 games."
+    key = _metric_key(r["measure"])
+    if key in _COUNTS:
+        verb, what = _COUNTS[key]
+        base = "the league average of" if label == "league average" else "its usual"
+        return f"{r['team']} {verb} {_num(r['actual'], 'int')} {what}, against {base} {_num(r['baseline'], 'dec1')} a game."
+    noun = _NOUN.get(key or "", (r["measure"] or "").lower())
+    usual = "the league average of" if label == "league average" else "its usual"
+    return f"{r['team']}'s {noun} was {a}, against {usual} {b}."
+
+
+def explain(rows: list[dict]) -> list[dict]:
+    """Add ``said``, ``happened``, ``evidence`` and ``verdict_words`` to graded
+    rows, in plain sentences, with the box score that backs them up."""
+    if not rows:
+        return rows
+    box = _box(sorted({r["game_id"] for r in rows}))
+    for r in rows:
+        gb = box.filter(pl.col("game_id") == r["game_id"])
+        ev = None
+        if r["kind"] == "player":
+            ev = _player_evidence(gb.filter(pl.col("player_id") == r["player_id"]), r["position"])
+        else:
+            kind = _EVIDENCE.get(_metric_key(r["measure"]) or "")
+            if kind:
+                ev = _team_evidence(kind, gb.filter(pl.col("team") == r["offense"]), r["offense"])
+            elif (r["baseline_label"] or "").startswith("league average to "):
+                pos = (r["measure"] or "").split(" ", 1)[0]
+                stat = _DVP_STAT.get(pos)
+                who = gb.filter((pl.col("team") == r["offense"]) & (pl.col("position") == pos)).sort(stat, descending=True)
+                top = [f"{p['player_display_name']} {int(p[stat] or 0)}" for p in who.head(3).to_dicts() if (p[stat] or 0) > 0]
+                ev = ", ".join(top) or None
+        note = ("Graded on his whole game: the box score does not split out those snaps."
+                if r["kind"] == "player" and any(k in r["title"] for k in _SPLIT_ANGLE) else None)
+        r |= {"said": _said(r), "happened": _happened(r), "evidence": ev, "note": note,
+              "verdict_words": _VERDICT_WORDS.get(r["verdict"] or "", "")}
+    return rows
+
+
 def for_game(game_id: str) -> list[dict]:
     """The game's graded calls, for the review panel."""
-    return _json(_fresh().filter((pl.col("game_id") == game_id) & pl.col("verdict").is_not_null()).to_dicts())
+    g = _fresh().filter((pl.col("game_id") == game_id) & pl.col("verdict").is_not_null())
+    return _json(explain(g.to_dicts()))
 
 
 _ANGLE_COLS = ["title", "detail", "lean", "tags", "strength", "player_id", "player", "position", "defense"]
@@ -489,7 +728,7 @@ def track_record(weeks: int = 22, min_n: int = 1) -> dict:
     hits = dec.filter((pl.col("verdict") == "hit") & pl.col("baseline").is_not_null() & (pl.col("baseline").abs() > 1e-6))
     if not hits.is_empty():
         hits = hits.with_columns(((pl.col("actual") - pl.col("baseline")).abs() / pl.col("baseline").abs()).alias("_move"))
-        out["best"] = hits.sort(["strength", "_move"], descending=True).head(12).drop("_move").to_dicts()
+        out["best"] = explain(hits.sort(["strength", "_move"], descending=True).head(12).drop("_move").to_dicts())
     return _json(out)
 
 
