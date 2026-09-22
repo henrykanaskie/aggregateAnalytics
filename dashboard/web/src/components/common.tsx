@@ -17,13 +17,15 @@ export const Field = ({ label, children }: { label: string; children: React.Reac
  *  Picking a value only edits a draft; the page keeps showing ``value`` and
  *  says so until the draft is applied, so it is always clear which week or
  *  season is on screen. */
-export function ApplyField<T>({ label, value, onApply, show, children }: {
+export function ApplyField<T>({ label, value, onApply, show, same = Object.is, children }: {
   label: string; value: T; onApply: (v: T) => void; show?: (v: T) => string;
+  /** When two values are the same pick; lists need more than ``===``. */
+  same?: (a: T, b: T) => boolean;
   children: (draft: T, setDraft: (v: T) => void) => React.ReactNode;
 }) {
   const [draft, setDraft] = useState<T>(value);
   useEffect(() => setDraft(value), [value]);
-  const dirty = draft !== value;
+  const dirty = !same(draft, value);
   return (
     <form className="field apply-field" onSubmit={(e) => { e.preventDefault(); if (dirty) onApply(draft); }}>
       <span>{label}</span>
