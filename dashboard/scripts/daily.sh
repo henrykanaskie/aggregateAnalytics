@@ -5,8 +5,11 @@
 #   1. pull today's lines (ESPN, free; The Odds API too if a key is set)
 #   2. log the baseline projection for the current week
 #   3. grade last week's lines and predictions
-#   4. on Tuesdays, refresh last week's box scores, snaps, play-by-play,
-#      schedules and injuries from nflverse and rebuild the team table
+#   4. every run, refresh this season's box scores, play-by-play and
+#      schedule, so a game's shares (red zone too) show up the morning after
+#      it is played (nflverse posts them a few hours after each slate)
+#   5. on Tuesdays, refresh snaps, injuries and the rest from nflverse and
+#      rebuild the team table
 #
 # Install with:  dashboard/scripts/install_cron.sh
 set -u
@@ -39,6 +42,9 @@ if week > 1:
     g = grading.grade_week(season, week - 1)
     print(f"[grade] week {week - 1}: {g.height} lines graded")
 PYEOF
+
+$PY data_handling/ingest.py --only schedules player_stats_week pbp --start 2026 --end 2026 --refresh \
+  || echo "[ingest] box score refresh failed; keeping the last files"
 
 if [ "$(date +%u)" = "2" ]; then
   echo "[ingest] Tuesday refresh"

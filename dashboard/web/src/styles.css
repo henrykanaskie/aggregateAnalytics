@@ -19,6 +19,8 @@
   --pct-red: #ef5f5f; --pct-orange: #f28c3a; --pct-yellow: #e8c547; --pct-purple: #a982f0; --pct-green: #3fc07f;
   --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   --sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  /* Categorical slices (share pies), ordered by size; none of them reads as over/under. */
+  --cat-1: #5a9cf5; --cat-2: #a982f0; --cat-3: #f28c3a; --cat-4: #e8c547; --cat-5: #3fb6c4;
   --radius: 10px;
   color-scheme: dark;
 }
@@ -39,6 +41,7 @@
   --push: #b57a10;
   --warn: #b57a10;
   --pct-red: #d43d3d; --pct-orange: #d9731a; --pct-yellow: #c9a00c; --pct-purple: #6f42c1; --pct-green: #1f9a58;
+  --cat-1: #2b6fd4; --cat-2: #6f42c1; --cat-3: #d9731a; --cat-4: #b8920a; --cat-5: #1e8f9c;
   color-scheme: light;
 }
 * { box-sizing: border-box; }
@@ -329,3 +332,11 @@ pre { font-family: var(--mono); font-size: 12px; background: var(--bg-2); paddin
   .tbl tr:hover td { background: transparent; }
   .search .row { padding: 9px 10px; }
 }
+
+/* Share pies on a played matchup: two per team, side by side until the panel is narrow. */
+.share-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+@media (max-width: 1400px) { .share-pair { grid-template-columns: 1fr; } }
+.share-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.share-row .tbl { flex: 1 1 220px; min-width: 0; }
+.share-row .tbl td.left { white-space: normal; }
+.sw-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
