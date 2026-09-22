@@ -163,6 +163,40 @@ def _box_block(box: pl.DataFrame) -> dict:
             "carries": rows(("RB", "FB"), "carries", tc), "targets": rows(("WR", "TE"), "targets", tt)}
 
 
+def team_season_shares(team: str, season: int) -> dict:
+    """A team's regular season so far (or all of it, once it is over) as the
+    same share charts as a game, with each player's share of this team's
+    carries or targets the season before next to it."""
+    def box(yr: int) -> pl.DataFrame:
+        return (scan("player_stats_week")
+                .filter((pl.col("season") == yr) & (pl.col("team") == team) & (pl.col("season_type") == "REG"))
+                .select(_BOX).collect())
+
+    def plays(yr: int) -> pl.DataFrame:
+        return _zone_plays(scan("pbp").filter((pl.col("season") == yr) & (pl.col("posteam") == team)
+                                              & (pl.col("season_type") == "REG")))
+    cur, prev = box(season), box(season - 1)
+    if cur.is_empty():
+        return {"team": team, "season": season, "weeks": [], "games": 0}
+    out = _box_block(cur)
+    out["weeks"] = sorted(int(w) for w in cur["week"].unique())
+    cp = plays(season)
+    if not cp.is_empty():
+        out["zones"] = _zone_block(cp, team, _who(cur), None)
+    # Last season with this team, by player: the comparison column.
+    last = {"season": season - 1, "games": 0}
+    if not prev.is_empty():
+        pb = _box_block(prev)
+        last = {"season": season - 1, "games": pb["games"],
+                "carries": {r["player_id"]: r["share"] for r in pb["carries"]},
+                "targets": {r["player_id"]: r["share"] for r in pb["targets"]}}
+        pp = plays(season - 1)
+        if not pp.is_empty():
+            last["zones"] = {k: {kind: {r["player_id"]: r["share"] for r in z[kind]["rows"]} for kind in ("carries", "targets")}
+                             for k, z in _zone_block(pp, team, _who(prev), None).items()}
+    return {"team": team, "season": season, **out, "last": last}
+
+
 # Scoring territory, by yards to the goal line. Every position counts here:
 # the quarterback's sneak and the back's target inside the five are the point.
 ZONES = (("rz", "Red zone", 20), ("i10", "Inside the 10", 10), ("gl", "Goal line", 5))
