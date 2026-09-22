@@ -441,7 +441,43 @@ def depth_chart(season: int) -> pl.DataFrame:
         return pl.DataFrame()
     if d.is_empty():
         return d
-    return d.filter(pl.col("asof") == pl.col("asof").max().over("team"))
+    return _repair_ids(d.filter(pl.col("asof") == pl.col("asof").max().over("team")), season)
+
+
+def _repair_ids(d: pl.DataFrame, season: int) -> pl.DataFrame:
+    """Fix the chart's player ids where nflverse matched a name to the wrong
+    man.
+
+    The published chart gives some rookies the id of a retired namesake (Mike
+    Washington Jr., a 2026 back with carries in both games, came through as a
+    Mike Washington who last played in 1984) or no id at all, and a wrong id
+    means none of his numbers attach: he reads as never having played. An id
+    whose player cannot be on a roster this season (last season two or more
+    back, not a rookie now) is re-resolved by exact name among current
+    players, on this team if one matches there, and kept as published when
+    the name does not settle it."""
+    pm = players_master().select(pl.col("gsis_id"), pl.col("display_name"), pl.col("latest_team"),
+                                  pl.col("last_season"), pl.col("rookie_season"))
+    current = pm.filter((pl.col("last_season").fill_null(0) >= season - 1) | (pl.col("rookie_season").fill_null(0) >= season))
+    ok = set(current["gsis_id"].to_list())
+    bad = d.filter(pl.col("player_name").is_not_null() & ~pl.col("gsis_id").is_in(ok).fill_null(False))
+    if bad.is_empty():
+        return d
+    by_name: dict[str, list[dict]] = {}
+    for r in current.drop_nulls("display_name").to_dicts():
+        by_name.setdefault(r["display_name"].lower(), []).append(r)
+    fixes: dict[tuple[str, str], str] = {}
+    for team, name in bad.select("team", "player_name").unique().iter_rows():
+        cands = by_name.get(name.lower(), [])
+        here = [c for c in cands if c["latest_team"] == team]
+        pick = here if len(here) == 1 else cands if len(cands) == 1 else []
+        if pick:
+            fixes[(team, name)] = pick[0]["gsis_id"]
+    if not fixes:
+        return d
+    fx = pl.DataFrame([{"team": t, "player_name": n, "_fixed": g} for (t, n), g in fixes.items()])
+    return (d.join(fx, on=["team", "player_name"], how="left")
+            .with_columns(pl.coalesce("_fixed", "gsis_id").alias("gsis_id")).drop("_fixed"))
 
 
 def _usage_by_player(season: int, before_week: int | None = None) -> dict[str, dict]:
@@ -457,6 +493,31 @@ def _usage_by_player(season: int, before_week: int | None = None) -> dict[str, d
     for r in u.sort("games", descending=True).to_dicts():
         out.setdefault(r["player_id"], r)
     return out
+
+
+@lru_cache(maxsize=8)
+def _quiet_games(season: int, before_week: int | None = None) -> dict[str, dict]:
+    """Games played for everyone who took a regular-season snap, whether or
+    not he touched the ball: {player_id: {games, team, team_games}}.
+
+    The usage table only keeps players with a target, carry or pass, which is
+    right for its shares and wrong for a depth chart: a back who played every
+    week on special teams and a few snaps on offense came out as never having
+    played. Keyed to the team he played most games for, as the usage table
+    is."""
+    sw = snap_weeks(season, "REG")
+    box = (scan("player_stats_week").filter((pl.col("season") == season) & (pl.col("season_type") == "REG"))
+           .select("player_id", "team", pl.col("week").cast(pl.Int32)).collect())
+    if before_week is not None:
+        sw, box = sw.filter(pl.col("week") < before_week), box.filter(pl.col("week") < before_week)
+    both = pl.concat([sw, box]).unique()
+    if both.is_empty():
+        return {}
+    team_games = both.group_by("team").agg(pl.col("week").n_unique().alias("team_games"))
+    per = (both.group_by("player_id", "team").len("games").join(team_games, on="team")
+           .sort("games", descending=True).unique(subset="player_id", keep="first"))
+    return {r["player_id"]: {"games": int(r["games"]), "team": r["team"], "team_games": int(r["team_games"])}
+            for r in per.to_dicts()}
 
 
 def offense_personnel(team: str, season: int, roster_season: int | None = None, before_week: int | None = None) -> list[dict]:
@@ -481,21 +542,32 @@ def offense_personnel(team: str, season: int, roster_season: int | None = None, 
     usage = _usage_by_player(season, before_week)
     heads = {r["player_id"]: r["headshot"] for r in player_index().select("player_id", "headshot").to_dicts()}
     blank = {c: 0 for c in USAGE_COLS + ["receiving_air_yards", "games", "team_games"]}
+    quiet = _quiet_games(season, before_week)
     keep = []
     for pos, n in _OFF_SLOTS:
         sub = mine.filter(pl.col("position") == pos).sort("rank").head(n)
         for d in sub.to_dicts():
             pid = d["gsis_id"]
             u = usage.get(pid)
-            row = dict(u) if u else dict(blank, target_share=None, carry_share=None, air_share=None,
-                                         targets_pg=0.0, carries_pg=0.0, ppr_pg=0.0, touches_pg=0.0)
+            q = quiet.get(pid)
+            if u:
+                row = dict(u)
+            elif q:
+                # Played, touched nothing: a third back who is on the field
+                # for a handful of snaps. His share is zero, not unknown, and
+                # his games are games.
+                row = dict(blank, games=q["games"], team_games=q["team_games"], target_share=0.0, carry_share=0.0,
+                           air_share=0.0, targets_pg=0.0, carries_pg=0.0, ppr_pg=0.0, touches_pg=0.0, team=q["team"])
+            else:
+                row = dict(blank, target_share=None, carry_share=None, air_share=None,
+                           targets_pg=0.0, carries_pg=0.0, ppr_pg=0.0, touches_pg=0.0)
             row.update({
                 "player_id": pid,
                 "player_display_name": (u or {}).get("player_display_name") or d["player_name"],
                 "position": pos,                       # the chart's slot, not last year's
                 "depth_rank": d["rank"],
-                "stats_team": (u or {}).get("team"),
-                "new_to_team": bool(u) and u.get("team") != team,
+                "stats_team": (u or q or {}).get("team"),
+                "new_to_team": bool(u or q) and (u or q).get("team") != team,
                 "headshot": heads.get(pid),
             })
             row.pop("team", None)
