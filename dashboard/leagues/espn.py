@@ -28,9 +28,9 @@ from ..odds.espn_proj import ESPN_TEAMS, POSITION
 from .common import TIMEOUT, LeagueError, Roster, dst_entry, match_player, scoring_from_rec, slots_from_counts
 
 URL = "https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl/seasons/{season}/segments/0/leagues/{league}"
-#: ESPN lineup slot ids -> the site's slots. RB/WR (3) and WR/TE (5) count as
-#: FLEX; OP (7, any offensive player) is a superflex.
-SLOT = {0: "QB", 2: "RB", 3: "FLEX", 4: "WR", 5: "FLEX", 6: "TE", 7: "SFLEX", 16: "DST", 17: "K", 23: "FLEX"}
+#: ESPN lineup slot ids -> the site's slots: RB/WR (3), WR/TE (5), FLEX (23),
+#: and OP (7, any offensive player) as a superflex.
+SLOT = {0: "QB", 2: "RB", 3: "RBWR", 4: "WR", 5: "WRTE", 6: "TE", 7: "SFLEX", 16: "DST", 17: "K", 23: "FLEX"}
 BENCH, IR = 20, 21
 RECEPTIONS = 53
 

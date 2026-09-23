@@ -45,15 +45,16 @@ const MARKET_STAT: Record<string, string> = { player_pass_yds: "passing yards", 
 /** What the angle said, what happened, and the box score behind it. */
 export function Outcome({ a }: { a: GradedAngle }) {
   const tone = a.verdict === "hit" ? "over" : a.verdict === "miss" ? "under" : "";
-  const lineAgreed = a.line_result === (a.lean === "over" ? "over" : "under");
   return (
     <div className="small" style={{ display: "grid", gap: 2 }}>
       <div className="muted">{a.said}</div>
       <div><b className={tone}>{a.happened}</b></div>
       {a.evidence && <div className="muted">{a.evidence}.</div>}
-      {a.line !== null && a.line_result && (
-        <div className="muted">Prop line was {fmtLine(a.line)} {a.market ? MARKET_STAT[a.market] ?? "" : ""}: he went <b className={a.line_result === "push" ? "" : lineAgreed ? "over" : "under"}>{a.line_result}</b>{a.line_result === "push" ? "" : lineAgreed ? ", the way the angle leaned" : ", against the angle"}.</div>
-      )}
+      {a.line_words
+        ? <div><b className={a.line_verdict === "hit" ? "over" : a.line_verdict === "miss" ? "under" : ""}>{a.line_words}</b></div>
+        : a.line !== null && a.line_result && (
+          <div className="muted">Prop line was {fmtLine(a.line)} {a.market ? MARKET_STAT[a.market] ?? "" : ""}: {a.line_result}.</div>
+        )}
       {(a.verdict === "push" || a.verdict === "absent") && <div className="faint">{a.verdict_words}</div>}
       {a.note && <div className="faint">{a.note}</div>}
     </div>

@@ -25,7 +25,7 @@ type Slot = keyof Slots;
 
 const POSITIONS: Pos[] = ["QB", "RB", "WR", "TE", "K", "DST"];
 // Kicker and defense come last and never flex (fitsSlot only matches them to their own slot).
-const SHORT: Record<Slot, string> = { QB: "QB", RB: "RB", WR: "WR", TE: "TE", FLEX: "FLEX", SFLEX: "SFLX", K: "K", DST: "D/ST" };
+const SHORT: Record<Slot, string> = { QB: "QB", RB: "RB", WR: "WR", TE: "TE", RBWR: "R/W", WRTE: "W/T", FLEX: "FLEX", SFLEX: "SFLX", K: "K", DST: "D/ST" };
 const OUT = ["Out", "Doubtful", "IR", "Suspended", "Not playing"];
 /** Common league shapes, one tap each. Anything else is the steppers. */
 const PRESETS: { label: string; slots: Slots }[] = [
@@ -324,7 +324,7 @@ export default function MyTeam({ data, scoring, loading, roster, setRoster, slot
             </div>
             <div className="mt-steppers">
               {SLOT_ORDER.map((s) => (
-                <span key={s} className="mt-stepper" title={s === "FLEX" ? "RB, WR or TE" : s === "SFLEX" ? "Superflex: QB, RB, WR or TE" : undefined}>
+                <span key={s} className="mt-stepper" title={{ FLEX: "RB, WR or TE", SFLEX: "Superflex: QB, RB, WR or TE", RBWR: "RB or WR", WRTE: "WR or TE" }[s as string]}>
                   <b>{SHORT[s]}</b>
                   <button className="mt-btn" aria-label={`Fewer ${s}`} disabled={slots[s] <= 0} onClick={() => setSlots({ ...slots, [s]: slots[s] - 1 })}>−</button>
                   <span className="num">{slots[s]}</span>
@@ -332,7 +332,7 @@ export default function MyTeam({ data, scoring, loading, roster, setRoster, slot
                 </span>
               ))}
             </div>
-            <div className="hint">FLEX takes an RB, WR or TE; SFLX (superflex) also takes a QB. An import sets these from your league.</div>
+            <div className="hint">R/W takes an RB or WR, W/T a WR or TE, FLEX any of RB, WR, TE; SFLX (superflex) also takes a QB. An import sets these from your league.</div>
           </div>
         )}
         <div className="mt-list">{current.filled.map((f, i) => f.id ? row(f.id, f.slot) : <div key={`empty-${i}`} className="mt-row empty"><span className="mt-slot">{SHORT[f.slot]}</span><span className="muted small">Empty</span></div>)}</div>

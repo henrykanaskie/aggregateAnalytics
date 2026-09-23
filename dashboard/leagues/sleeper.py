@@ -32,9 +32,8 @@ PLAYERS_PATH = DATA_ROOT / "leagues" / "sleeper_players.json"
 PLAYERS_MAX_AGE = 24 * 3600
 KEEP = ("full_name", "position", "team", "gsis_id", "espn_id")
 POSITIONS = {"QB", "RB", "WR", "TE", "K", "DEF"}
-#: Sleeper roster_positions -> the site's slots. Its narrower flexes (RB/WR,
-#: WR/TE) count as FLEX, the nearest the site has.
-SLOT = {"QB": "QB", "RB": "RB", "WR": "WR", "TE": "TE", "FLEX": "FLEX", "WRRB_FLEX": "FLEX", "REC_FLEX": "FLEX",
+#: Sleeper roster_positions -> the site's slots, the narrow flexes included.
+SLOT = {"QB": "QB", "RB": "RB", "WR": "WR", "TE": "TE", "FLEX": "FLEX", "WRRB_FLEX": "RBWR", "REC_FLEX": "WRTE",
         "SUPER_FLEX": "SFLEX", "K": "K", "DEF": "DST"}
 
 

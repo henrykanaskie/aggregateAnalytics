@@ -33,7 +33,7 @@ from ..odds.common import team_abbr
 
 FANTASY_POSITIONS = ("QB", "RB", "WR", "TE", "K")
 #: The site's lineup slots (web/src/components/MyRoster.tsx, Slots).
-SLOT_KEYS = ("QB", "RB", "WR", "TE", "FLEX", "SFLEX", "K", "DST")
+SLOT_KEYS = ("QB", "RB", "WR", "TE", "RBWR", "WRTE", "FLEX", "SFLEX", "K", "DST")
 TIMEOUT = 20
 
 

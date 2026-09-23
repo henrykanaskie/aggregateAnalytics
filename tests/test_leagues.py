@@ -82,7 +82,7 @@ def test_sleeper_import_finds_the_users_own_roster(monkeypatch):
     out = sleeper.import_user("@henry", 2026)
     lg = out["leagues"][0]
     assert out["platform"] == "sleeper" and lg["name"] == "Work league" and lg["scoring"]["format"] == "half"
-    assert lg["slots"] == {"QB": 1, "RB": 2, "WR": 2, "TE": 1, "FLEX": 1, "SFLEX": 1, "K": 1, "DST": 1}
+    assert lg["slots"] == {"QB": 1, "RB": 2, "WR": 2, "TE": 1, "RBWR": 0, "WRTE": 0, "FLEX": 1, "SFLEX": 1, "K": 1, "DST": 1}
     team = lg["teams"][0]
     assert [p["player_id"] for p in team["players"]] == ["00-ARSB", "00-JA", "DST-KC"]
     assert team["starters"] == ["00-ARSB", "DST-KC"]
@@ -115,7 +115,7 @@ ESPN_LEAGUE = {
 def test_espn_league_parses_every_team_with_slots_and_scoring():
     lg = espn.parse(ESPN_LEAGUE, 2026)["leagues"][0]
     assert lg["name"] == "The Big One" and lg["scoring"] == {"format": "ppr", "rec": 1.0}
-    assert lg["slots"] == {"QB": 1, "RB": 2, "WR": 2, "TE": 1, "FLEX": 1, "SFLEX": 0, "K": 1, "DST": 1}
+    assert lg["slots"] == {"QB": 1, "RB": 2, "WR": 2, "TE": 1, "RBWR": 0, "WRTE": 0, "FLEX": 1, "SFLEX": 0, "K": 1, "DST": 1}
     team = lg["teams"][0]
     assert team["name"] == "Gibbs Me Points" and team["owner"] == "hkan"
     assert [p["player_id"] for p in team["players"]] == ["00-ARSB", "00-KW3", "DST-WAS"]
@@ -217,3 +217,11 @@ def test_sleeper_route_turns_errors_into_readable_answers(client, monkeypatch):
     monkeypatch.setattr(sleeper, "_get", lambda path: None)
     r = client.get("/api/leagues/sleeper", params={"username": "ghost"})
     assert r.status_code == 404 and "no user called ghost" in r.json()["detail"]
+
+
+def test_narrow_flex_slots_come_through_from_every_platform():
+    assert sleeper.league_slots(["QB", "WRRB_FLEX", "REC_FLEX", "FLEX"])["RBWR"] == 1
+    assert sleeper.league_slots(["REC_FLEX"])["WRTE"] == 1
+    lg = espn.parse({**ESPN_LEAGUE, "settings": {**ESPN_LEAGUE["settings"], "rosterSettings": {"lineupSlotCounts": {"3": 1, "5": 1, "23": 1}}}}, 2026)
+    assert {k: v for k, v in lg["leagues"][0]["slots"].items() if v} == {"RBWR": 1, "WRTE": 1, "FLEX": 1}
+    assert yahoo.SLOT["W/T"] == "WRTE" and yahoo.SLOT["W/R"] == "RBWR"

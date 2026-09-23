@@ -71,6 +71,13 @@ function FamilyBody({ d }: { d: Extract<Drill, { type: "angle" }> }) {
         <div className="hint" style={{ marginTop: 4 }}>{span}. Right means {g ? <><b>{g.measure}</b> came in <b>{g.direction === "up" ? "higher" : "lower"}</b> than {g.baseline_label}</> : "the number moved the way the angle said"}.</div>
       </div>
 
+      {data.prop && (
+        <div className="drawer-sec">
+          <h4>Against the closing line</h4>
+          <div className="small">Landed on the side of the closing line the angle leaned in <b>{data.prop.agreed} of {data.prop.n}</b> ({fmtPct(data.prop.agreed / data.prop.n)}) of the games that had one{d.kind === "team" ? " (for a position, the sum of its players' lines)" : ""}. That is the betting question: was the line set too high or too low, the way the angle said. The record above is against {g?.baseline_label ?? "the usual number"}, so the two can disagree when the line already priced the matchup in.</div>
+        </div>
+      )}
+
       {p && (
         <div className="drawer-sec">
           <h4>Did {premiseWord}?</h4>
@@ -114,7 +121,7 @@ function FamilyBody({ d }: { d: Extract<Drill, { type: "angle" }> }) {
                   {hasPremise && <td className="num">{ig ? <>{perSnap(ig.on_sum, ig.on_n)} <span className="faint">/</span> {perSnap(ig.off_sum, ig.off_n)}</> : "–"}</td>}
                   <td className={`num ${a.verdict === "hit" ? "over" : a.verdict === "miss" ? "under" : ""}`}>{num(a.actual, f, signed)}</td>
                   <td className="num muted">{num(a.baseline, f, signed)}</td>
-                  {hasProp && <td className="num">{a.line_result ? <span className={a.line_result === d.lean ? "over" : a.line_result === "push" ? "" : "under"}>{a.line_result}</span> : <span className="faint">–</span>}</td>}
+                  {hasProp && <td className="num">{a.line_result ? <span className={a.line_verdict === "hit" ? "over" : a.line_verdict === "miss" ? "under" : ""} title={a.line !== null ? `line ${a.line}${a.line_actual != null ? `, had ${a.line_actual}` : ""}` : undefined}>{a.line_result}</span> : <span className="faint">–</span>}</td>}
                   <td><Mark v={a.verdict} /></td>
                 </tr>
                 {open && (
@@ -142,12 +149,6 @@ function FamilyBody({ d }: { d: Extract<Drill, { type: "angle" }> }) {
         </div>
       )}
 
-      {data.prop && (
-        <div className="drawer-sec">
-          <h4>Against the prop line</h4>
-          <div className="small">Went <b className={d.lean}>{d.lean}</b> the closing line in <b>{data.prop.agreed} of {data.prop.n}</b> ({fmtPct(data.prop.agreed / data.prop.n)}) of the games that had one. The angle is graded on {g?.measure ?? "its own number"}, not the line, so the two can disagree.</div>
-        </div>
-      )}
     </>
   );
 }

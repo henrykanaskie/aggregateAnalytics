@@ -38,7 +38,9 @@ TOKEN_URL = "https://api.login.yahoo.com/oauth2/get_token"
 API = "https://fantasysports.yahooapis.com/fantasy/v2"
 #: Yahoo's stat id for a reception in NFL leagues.
 RECEPTIONS = "11"
-SLOT = {"QB": "QB", "RB": "RB", "WR": "WR", "TE": "TE", "W/R/T": "FLEX", "W/R": "FLEX", "W/T": "FLEX", "R/T": "FLEX",
+#: Yahoo roster positions -> the site's slots. R/T (RB or TE) has no slot of
+#: its own here and counts as FLEX, which also takes a WR.
+SLOT = {"QB": "QB", "RB": "RB", "WR": "WR", "TE": "TE", "W/R/T": "FLEX", "W/R": "RBWR", "W/T": "WRTE", "R/T": "FLEX",
         "Q/W/R/T": "SFLEX", "K": "K", "DEF": "DST"}
 NOT_STARTING = {"BN", "IR", "IR+", "NA"}
 

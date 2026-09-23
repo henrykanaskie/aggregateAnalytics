@@ -1147,3 +1147,6 @@ th.range-col { white-space: nowrap; }
 .mt-presets, .mt-steppers { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
 .mt-presets { gap: 6px; }
 @media (max-width: 760px) { .mt-lineup-sum { display: none; } }
+
+/* An angle's prop line on the matchup page (Matchups.tsx, LineRead) */
+.angle-line { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--border-2); font-size: 12px; display: grid; gap: 2px; }

@@ -14,11 +14,22 @@ number it is about:
 
     team angle    the team's rate in that game (from the team-game table)
                   against its own pre-game number, or the league's where the
-                  angle is about being unusual for the league (pace).
+                  angle is about being unusual for the league (pace). A
+                  "{def} has been generous to RBs" angle is the offense's RB
+                  yards against what that offense usually gets from its RBs:
+                  a strong run game beating the league average says nothing
+                  about the matchup.
     player angle  the player's game against his average over his previous
                   games (yards per carry for box angles, EPA per dropback for
                   quarterbacks, yards otherwise), and against the closing
                   prop line when one was graded that week.
+
+Where closing prop lines exist the angle is also graded against them
+(``line_verdict``): a player angle on his line, a position angle on the sum
+of the lines of that offense's players at the position. That is the question
+a bettor asks -- was the line too high or too low, the way the angle said --
+and it is kept apart from ``verdict`` because the line already prices in part
+of what the angle knows.
 
 A hit is the number moving the way the angle said. That is a low bar on
 purpose: an angle is a research prompt, not a pick, and the useful question
@@ -62,7 +73,7 @@ SCHEMA: dict[str, pl.DataType] = {
     "strength": pl.Int32, "tags": pl.List(pl.String), "player_id": pl.String, "player": pl.String,
     "position": pl.String, "team": pl.String, "measure": pl.String, "direction": pl.String,
     "baseline": pl.Float64, "baseline_label": pl.String, "actual": pl.Float64, "fmt": pl.String,
-    "verdict": pl.String, "line": pl.Float64, "line_result": pl.String, "market": pl.String,
+    "verdict": pl.String, "line": pl.Float64, "line_result": pl.String, "market": pl.String, "line_actual": pl.Float64,
     "premise_snaps": pl.Int32, "premise_of": pl.Int32,
 }
 
@@ -197,6 +208,82 @@ def _player_measure(title: str, pos: str) -> tuple[str, str, str]:
     return "receiving_yards", "receiving yards", "dec1"
 
 
+#: A position angle's measure, "RB rushing yards": what grading and the page
+#: both use to tell one from a team-metric angle.
+POS_MEASURE = re.compile(r"^(QB|RB|WR|TE) (passing|rushing|receiving) yards$")
+
+
+def angle_market(title: str, pos: str) -> str:
+    """The prop market a player angle speaks to: box and EPA angles are
+    about yards per carry or per dropback, which no book prices, so their
+    line is the yards line of the same player."""
+    key, _, _ = _player_measure(title, pos)
+    return _MARKET[_DVP_STAT[pos] if key in ("epa_db", "ypc") else key]
+
+
+@lru_cache(maxsize=512)
+def team_pos_usual(team: str, pos: str, season: int, week: int, n: int = 16) -> float | None:
+    """What ``team`` usually gets from its players at ``pos`` in the stat a
+    position angle is about: the per-game total over its last ``n`` games
+    before (season, week), last season's included. A game where the position
+    did nothing counts as a zero, not a missing game."""
+    stat = _DVP_STAT[pos]
+    df = (scan("player_stats_week")
+          .filter((pl.col("team") == team) & (pl.col("season") >= season - 1)
+                  & ((pl.col("season") < season) | (pl.col("week") < week)))
+          .group_by("season", "week")
+          .agg(pl.when(pl.col("position") == pos).then(pl.col(stat)).otherwise(0).fill_null(0).sum().alias("v"))
+          .sort("season", "week").tail(n).collect())
+    return float(df["v"].mean()) if df.height >= 2 else None
+
+
+@lru_cache(maxsize=4096)
+def player_usual(player_id: str, stat: str, season: int, week: int) -> float | None:
+    """A player's per-game ``stat`` over his previous 16 games."""
+    h = _player_history(player_id, season, week)
+    return float(h[stat].fill_null(0).mean()) if h.height >= 2 and stat in h.columns else None
+
+
+_MARKET_STAT = {m: s for s, m in _MARKET.items()}
+
+
+def line_context(angle: dict, offense: str, props: list[dict], season: int, week: int) -> dict | None:
+    """The prop line an upcoming angle can be read against, and the usual
+    number beside it, so the page can say whether the line already expects
+    what the angle does. ``props`` is the game's board (analysis.build_board).
+
+    A player angle gets his consensus line in the market it speaks to and his
+    per-game average over his previous 16. A position angle ("{def} has been
+    generous to RBs") gets the sum of the lines of the offense's players at
+    the position and what the offense usually gets from it. None when no book
+    has a line."""
+    ou = [p for p in props if p.get("kind") == "ou" and p.get("consensus") is not None]
+    if angle.get("player_id") and angle.get("position") in _DVP_STAT:
+        mk = angle_market(angle["title"], angle["position"])
+        row = next((p for p in ou if p.get("player_id") == angle["player_id"] and p.get("market") == mk), None)
+        if row is None:
+            return None
+        return {"market": mk, "what": _STAT_LABEL[_MARKET_STAT[mk]], "line": float(row["consensus"]), "books": row.get("n_books"),
+                "usual": player_usual(angle["player_id"], _MARKET_STAT[mk], season, week), "usual_label": "his previous 16 games"}
+    m = _DVP.search(angle.get("title") or "")
+    if m:
+        pos = m.group(1) or m.group(2)
+        stat = _DVP_STAT[pos]
+        mk = _MARKET[stat]
+        rows = [p for p in ou if p.get("market") == mk and p.get("team") == offense and p.get("position") == pos]
+        if not rows:
+            return None
+        # Line and usual over the same players: those with a line. The
+        # position's whole usual output would set a 35-yard line for one
+        # tight end against 55 yards from all of them.
+        usuals = [player_usual(r["player_id"], stat, season, week) for r in rows if r.get("player_id")]
+        usual = round(sum(u for u in usuals if u is not None), 1) if usuals and all(u is not None for u in usuals) else None
+        return {"market": mk, "what": _STAT_LABEL[stat], "line": round(sum(float(r["consensus"]) for r in rows), 1),
+                "books": None, "players": [r["player_name"] for r in rows],
+                "usual": usual, "usual_label": "their previous 16 games" if len(rows) > 1 else "his previous 16 games"}
+    return None
+
+
 def _measure(df: pl.DataFrame, key: str) -> float | None:
     """Ratio of sums for rates, mean per game for counts."""
     if df.is_empty():
@@ -267,8 +354,28 @@ def _with_margin(df: pl.DataFrame) -> pl.DataFrame:
     v = pl.struct("actual", "baseline", "direction", "fmt", "baseline_label", "measure").map_elements(
         lambda r: _verdict(r["actual"], r["baseline"], r["direction"], r["fmt"], r["baseline_label"], r["measure"]),
         return_dtype=pl.String)
+    if "line_actual" not in df.columns:
+        df = df.with_columns(pl.lit(None, pl.Float64).alias("line_actual"))
     return df.with_columns(pl.when(v.is_not_null() & (pl.col("premise_snaps") == 0)).then(pl.lit(ABSENT))
-                           .otherwise(v).alias("verdict"))
+                           .otherwise(v).alias("verdict"),
+                           line_verdict_expr().alias("line_verdict"))
+
+
+def line_verdict(line_result: str | None, direction: str | None) -> str | None:
+    """Did the line go the way the angle leaned: over for an angle saying
+    up, under for one saying down."""
+    if not line_result or direction not in ("up", "down"):
+        return None
+    if line_result == "push":
+        return "push"
+    return "hit" if (line_result == "over") == (direction == "up") else "miss"
+
+
+def line_verdict_expr() -> pl.Expr:
+    return (pl.when(pl.col("line_result").is_null() | ~pl.col("direction").is_in(["up", "down"])).then(None)
+            .when(pl.col("line_result") == "push").then(pl.lit("push"))
+            .when((pl.col("line_result") == "over") == (pl.col("direction") == "up")).then(pl.lit("hit"))
+            .otherwise(pl.lit("miss")))
 
 
 def _lines(season: int, week: int) -> pl.DataFrame:
@@ -356,11 +463,25 @@ def grade_game(game_id: str) -> list[dict]:
                         "actual": actual_rows[team].get(key),
                         "baseline": base, "baseline_label": "league average" if c["vs"] == "league" else f"{team}'s usual"}
             elif c and c["kind"] == "pos":
-                league = dvp_blended(season, c["pos"], before_week=week)[c["stat"]].drop_nulls().mean()
+                # Against what this offense usually gets from the position,
+                # not the league: the angle is about this defense, so the
+                # question is whether the offense did better or worse than
+                # its own normal against it.
                 grp = box.filter((pl.col("team") == off_t) & (pl.col("position") == c["pos"]))
                 row |= {"team": off_t, "measure": f"{c['pos']} {_STAT_LABEL[c['stat']]}", "fmt": "dec1",
                         "actual": float(grp[c["stat"]].fill_null(0).sum()) if not grp.is_empty() else None,
-                        "baseline": float(league), "baseline_label": f"league average to {c['pos']}s"}
+                        "baseline": team_pos_usual(off_t, c["pos"], season, week), "baseline_label": f"{off_t}'s usual"}
+                mk = _MARKET[c["stat"]]
+                if not lines.is_empty() and not grp.is_empty():
+                    # The position's line is the sum of its players' lines,
+                    # set against what those same players did: a back with
+                    # no line is not in either number.
+                    lined = lines.filter(pl.col("player_id").is_in(grp["player_id"].to_list()) & (pl.col("market") == mk)
+                                         & pl.col("actual").is_not_null())
+                    if not lined.is_empty():
+                        ln, act = float(lined["line"].sum()), float(lined["actual"].sum())
+                        row |= {"line": ln, "line_actual": act, "market": mk,
+                                "line_result": "over" if act > ln else "under" if act < ln else "push"}
             elif c and c["kind"] == "total" and game.get("total_line") is not None:
                 row |= {"measure": "Total points", "fmt": "dec1", "actual": float(game["home_score"] + game["away_score"]),
                         "baseline": float(game["total_line"]), "baseline_label": "closing total"}
@@ -385,7 +506,8 @@ def grade_game(game_id: str) -> list[dict]:
                 hit = lines.filter((pl.col("player_id") == pid) & (pl.col("market") == mk))
                 if not hit.is_empty() and hit["actual"][0] is not None:
                     ln, act = float(hit["line"][0]), float(hit["actual"][0])
-                    row |= {"line": ln, "market": mk, "line_result": "over" if act > ln else "under" if act < ln else "push"}
+                    row |= {"line": ln, "line_actual": act, "market": mk,
+                            "line_result": "over" if act > ln else "under" if act < ln else "push"}
         row["verdict"] = _verdict(row["actual"], row["baseline"], row["direction"], row["fmt"], row["baseline_label"], row.get("measure"))
         if row["verdict"] is not None:
             row |= _premise_cols(row)
@@ -617,11 +739,11 @@ def _said(r: dict) -> str:
             return f"Said {name} would average {'more' if up else 'fewer'} yards a carry than usual."
         return f"Said {name} would have {'more' if up else 'fewer'} {m} than usual."
     label = r["baseline_label"] or ""
-    if label.startswith("league average to "):
-        pos = label.removeprefix("league average to ")
-        stat = (r["measure"] or " yards").split(" ", 1)[1]
-        return (f"Said {r['defense']} would give up {'more' if up else 'fewer'} {stat} to {pos} than a typical "
-                f"defense does ({_num(r['baseline'], 'int')} a game).")
+    pm = POS_MEASURE.match(r["measure"] or "") if r["kind"] == "team" else None
+    if pm:
+        pos, stat = pm.group(1), f"{pm.group(2)} yards"
+        return (f"Said {r['offense']}'s {pos}s would get {'more' if up else 'fewer'} {stat} against {r['defense']} "
+                f"than they usually do ({_num(r['baseline'], 'int')} a game).")
     if label == "closing total":
         return "Said the game would go under the total."
     if label == "at least one":
@@ -649,9 +771,10 @@ def _happened(r: dict) -> str:
         return f"{r['offense']}'s tight ends scored {n} touchdown{'s' if n != 1 else ''}."
     if label == "closing total":
         return f"The teams scored {a} points against a total of {b}."
-    if label.startswith("league average to "):
-        pos = label.removeprefix("league average to ")
-        return f"{r['offense']}'s {pos} had {_num(r['actual'], 'int')} {(r['measure'] or ' yards').split(' ', 1)[1]} against {r['defense']}."
+    pm = POS_MEASURE.match(r["measure"] or "") if r["kind"] == "team" else None
+    if pm:
+        return (f"{r['offense']}'s {pm.group(1)}s had {_num(r['actual'], 'int')} {pm.group(2)} yards against {r['defense']}, "
+                f"against their usual {_num(r['baseline'], 'dec1')}.")
     signed = "EPA" in (r["measure"] or "")
     a, b = _num(r["actual"], f, signed), _num(r["baseline"], f, signed)
     if r["kind"] == "player":
@@ -671,6 +794,27 @@ def _happened(r: dict) -> str:
     return f"{r['team']}'s {noun} was {a}, against {usual} {b}."
 
 
+_MARKET_WORDS = {"player_pass_yds": "passing yards", "player_rush_yds": "rushing yards", "player_reception_yds": "receiving yards"}
+
+
+def _line_words(r: dict) -> str | None:
+    """Against the closing line, in words: what the book set, what came in,
+    and whether that was the way the angle leaned."""
+    if r.get("line") is None or not r.get("line_result"):
+        return None
+    what = _MARKET_WORDS.get(r.get("market") or "", "yards")
+    if r["kind"] == "player":
+        set_, who = f"{_num(r['line'], 'dec1')} {what}", "he"
+    else:
+        pos = (r["measure"] or "").split(" ", 1)[0]
+        set_, who = f"{_num(r['line'], 'dec1')} {what} for {r['offense']}'s {pos}s together (those with a line)", "they"
+    got = f"; {who} had {_num(r['line_actual'], 'int')}" if r.get("line_actual") is not None else ""
+    lv = line_verdict(r["line_result"], r["direction"])
+    tail = {"hit": f"over, the way the angle leaned" if r["line_result"] == "over" else "under, the way the angle leaned",
+            "miss": f"{r['line_result']}, against the angle", "push": "exactly on the line"}.get(lv or "", r["line_result"])
+    return f"Closing line {set_}{got}: {tail}."
+
+
 def explain(rows: list[dict]) -> list[dict]:
     """Add ``said``, ``happened``, ``evidence`` and ``verdict_words`` to graded
     rows, in plain sentences, with the box score that backs them up."""
@@ -686,7 +830,7 @@ def explain(rows: list[dict]) -> list[dict]:
             kind = _EVIDENCE.get(_metric_key(r["measure"]) or "")
             if kind:
                 ev = _team_evidence(kind, gb.filter(pl.col("team") == r["offense"]), r["offense"])
-            elif (r["baseline_label"] or "").startswith("league average to "):
+            elif POS_MEASURE.match(r["measure"] or ""):
                 pos = (r["measure"] or "").split(" ", 1)[0]
                 stat = _DVP_STAT.get(pos)
                 who = gb.filter((pl.col("team") == r["offense"]) & (pl.col("position") == pos)).sort(stat, descending=True)
@@ -696,7 +840,7 @@ def explain(rows: list[dict]) -> list[dict]:
                 if r["kind"] == "player" and any(k in r["title"] for k in _SPLIT_ANGLE)
                 else "Graded on sack rate: pressure is only published after the season, and sacks are the part of it the play-by-play records."
                 if r["measure"] in STAND_IN_LABEL.values() else None)
-        r |= {"said": _said(r), "happened": _happened(r), "evidence": ev, "note": note,
+        r |= {"said": _said(r), "happened": _happened(r), "evidence": ev, "note": note, "line_words": _line_words(r),
               "verdict_words": _VERDICT_WORDS.get(r["verdict"] or "", "")}
     return rows
 
@@ -749,6 +893,11 @@ def recent_weeks(n: int, season: int | None = None) -> list[tuple[int, int]]:
 def _window(wk: list[tuple[int, int]]) -> pl.DataFrame:
     """The graded calls (verdict set, pushes included) in the given weeks."""
     g = _fresh().filter((pl.col("season").cast(pl.Int64) * 100 + pl.col("week")).is_in([s * 100 + w for s, w in wk]))
+    if "line_verdict" not in g.columns:
+        for c in ("line_result", "direction"):
+            if c not in g.columns:
+                g = g.with_columns(pl.lit(None, pl.String).alias(c))
+        g = g.with_columns(line_verdict_expr().alias("line_verdict"))
     return g.filter(pl.col("verdict").is_not_null())
 
 
@@ -759,7 +908,7 @@ def track_record(weeks: int = 22, min_n: int = 1) -> dict:
     season = record_season()
     wk = recent_weeks(weeks, season) if season is not None else []
     out: dict = {"season": season, "current": season == CURRENT_SEASON, "weeks": wk, "n": 0, "hits": 0,
-                 "pushes": 0, "absent": 0, "families": [], "by_kind": [], "best": []}
+                 "pushes": 0, "absent": 0, "line_n": 0, "line_hits": 0, "families": [], "by_kind": [], "best": []}
     if not wk:
         return out
     g = _window(wk)
@@ -767,13 +916,19 @@ def track_record(weeks: int = 22, min_n: int = 1) -> dict:
     out["n"], out["hits"] = dec.height, int((dec["verdict"] == "hit").sum())
     out["pushes"] = int((g["verdict"] == "push").sum())
     out["absent"] = int((g["verdict"] == ABSENT).sum())
+    # Against the closing line, where there was one: its own count, since
+    # only some calls had a line and a push on the line is not a push on
+    # the average.
+    ld = g.filter(pl.col("line_verdict").is_in(DECIDED))
+    out["line_n"], out["line_hits"] = ld.height, int((ld["line_verdict"] == "hit").sum())
+    line_agg = [pl.col("line_verdict").is_in(DECIDED).sum().alias("line_n"), (pl.col("line_verdict") == "hit").sum().alias("line_hits")]
     # Keyed by lean too: "vs man coverage" leaning over and leaning under are
     # opposite calls that share a title.
-    fam = (dec.group_by("family", "kind", "lean").agg(pl.len().alias("n"), (pl.col("verdict") == "hit").sum().alias("hits"))
+    fam = (dec.group_by("family", "kind", "lean").agg(pl.len().alias("n"), (pl.col("verdict") == "hit").sum().alias("hits"), *line_agg)
            .filter(pl.col("n") >= min_n).with_columns((pl.col("hits") / pl.col("n")).alias("rate"))
            .sort(["n", "rate"], descending=True))
     out["families"] = fam.to_dicts()
-    out["by_kind"] = (dec.group_by("kind").agg(pl.len().alias("n"), (pl.col("verdict") == "hit").sum().alias("hits"))
+    out["by_kind"] = (dec.group_by("kind").agg(pl.len().alias("n"), (pl.col("verdict") == "hit").sum().alias("hits"), *line_agg)
                       .with_columns((pl.col("hits") / pl.col("n")).alias("rate")).sort("kind").to_dicts())
     # The clearest wins: hits where the number moved furthest, relative to
     # where it started, on the strongest angles.
@@ -943,10 +1098,12 @@ _WHY: list[tuple[str, str | None, str]] = [
     # position defense and weather
     (r"has been generous to", None,
      "This defense has given up well above the league average to the position this season, so the offense's players "
-     "there should out-gain what a typical defense allows."),
+     "there should out-gain what they usually get. The record is against their own usual, not the league's, and "
+     "against the sum of their prop lines where there are some."),
     (r"has clamped", None,
      "This defense has held the position well below the league average this season, so the offense's players there "
-     "should come in under what a typical defense allows."),
+     "should come in under what they usually get. The record is against their own usual, not the league's, and "
+     "against the sum of their prop lines where there are some."),
     (r"^Wind$", None, "Wind makes passing and kicking harder, so the game should score under the closing total."),
     (r"^Cold$", None, "Cold weather tends to slow scoring, so the game should come in under the closing total."),
 ]
@@ -1119,11 +1276,11 @@ def family_record(family: str, kind: str, lean: str, weeks: int = 22) -> dict:
     out["pushes"], out["absent"] = int((g["verdict"] == "push").sum()), int((g["verdict"] == ABSENT).sum())
     first = g.row(0, named=True)
     out["graded_on"] = {"measure": first["measure"], "baseline_label": first["baseline_label"], "direction": first["direction"]}
-    # For player angles with a prop graded that week: the angle's lean against
-    # the closing line, the number a bettor would actually have faced.
-    props = g.filter(pl.col("line_result").is_in(["over", "under"]) & (pl.col("verdict") != ABSENT))
+    # Where a closing line was graded that week (a player's own, or the sum
+    # of a position's): the angle against the number a bettor actually faced.
+    props = g.filter(pl.col("line_verdict").is_in(DECIDED) & (pl.col("verdict") != ABSENT))
     if not props.is_empty():
-        out["prop"] = {"n": props.height, "agreed": int((props["line_result"] == lean).sum())}
+        out["prop"] = {"n": props.height, "agreed": int((props["line_verdict"] == "hit").sum())}
     rows = explain(g.sort(["season", "week", "game_id"], descending=True).to_dicts())
     for r in rows:
         try:

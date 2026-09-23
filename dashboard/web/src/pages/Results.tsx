@@ -188,16 +188,17 @@ function AnglesTab({ track: data, weeks, setWeeks, open }: { track: AngleTrackRe
           </div>
         </div>
         <div className="small muted" style={{ marginBottom: 8 }}>
-          {span} · {data.by_kind.map((k) => <span key={k.kind}>{k.kind} {k.hits}/{k.n} ({fmtPct(k.hits / k.n)}) </span>)}{data.pushes ? `· ${data.pushes} pushes` : ""}{data.absent ? ` · ${data.absent} box calls where the box never showed up` : ""}
+          {span} · {data.by_kind.map((k) => <span key={k.kind}>{k.kind} {k.hits}/{k.n} ({fmtPct(k.hits / k.n)}) </span>)}{data.line_n ? `· vs the line ${data.line_hits}/${data.line_n} (${fmtPct((data.line_hits ?? 0) / data.line_n)}) ` : ""}{data.pushes ? `· ${data.pushes} pushes` : ""}{data.absent ? ` · ${data.absent} box calls where the box never showed up` : ""}
         </div>
         <div className="tbl-wrap"><table className="tbl">
-          <thead><tr><th className="left">Angle</th>{kind === "all" && <th className="left res-kind">Kind</th>}<th>Record</th><th>Right</th><th></th></tr></thead>
+          <thead><tr><th className="left">Angle</th>{kind === "all" && <th className="left res-kind">Kind</th>}<th>Record</th><th>Right</th><th title="Against the closing prop line, on the calls that had one: a player's own line, or the sum of a position's">vs line</th><th></th></tr></thead>
           <tbody>{ranked.slice(0, show).map((f) => (
             <tr key={f.family + f.kind + f.lean} {...opens(() => openFam(f))}>
               <td className="left" style={{ whiteSpace: "normal" }}>{prettyFamily(f.family)} {f.lean !== "neutral" && <span className={`tiny ${f.lean}`}>{f.lean}</span>}</td>
               {kind === "all" && <td className="left muted small res-kind">{f.kind}</td>}
               <td className="num"><span className="over">{f.hits}</span><span className="faint">–</span><span className="under">{f.n - f.hits}</span></td>
               <td className="num"><RateCell hits={f.hits} n={f.n} /></td>
+              <td className="num">{f.line_n ? <><RateCell hits={f.line_hits ?? 0} n={f.line_n} /> <span className="faint tiny">{f.line_hits}/{f.line_n}</span></> : <span className="faint">–</span>}</td>
               <td className="go">›</td>
             </tr>
           ))}</tbody>
@@ -205,7 +206,7 @@ function AnglesTab({ track: data, weeks, setWeeks, open }: { track: AngleTrackRe
         {ranked.length > show && <button className="btn" style={{ marginTop: 8 }} onClick={() => setShow(ranked.length)}>Show all {ranked.length}</button>}
         <details style={{ marginTop: 8 }}>
           <summary className="hint" style={{ cursor: "pointer" }}>How an angle is graded</summary>
-          <div className="hint" style={{ marginTop: 6 }}>An angle is right when the number it was about landed on the side it said: the team's rate against its own pre-game number, the player's game against his previous 16. This season only (last season until a game of this one is graded). Rebuilt from what was known before kickoff. Moves under 5% of the usual number (half a point for rates, 0.02 for EPA; a tenth of a defender for box counts, which sit near six and a half for everyone) are pushes and left out. Box angles only count games where that box actually showed up on at least one of the carries they were about (FTN charting); the rest are left out too. Colour needs five or more.</div>
+          <div className="hint" style={{ marginTop: 6 }}>An angle is right when the number it was about landed on the side it said: the team's rate against its own pre-game number, the player's game against his previous 16, and a "generous to RBs" kind of angle on what the offense's RBs usually get, not the league average. Separately, "vs line" asks the betting question: where there was a closing prop line (the player's own, or the sum of a position's lines), did the result land on the side of it the angle leaned? This season only (last season until a game of this one is graded). Rebuilt from what was known before kickoff. Moves under 5% of the usual number (half a point for rates, 0.02 for EPA; a tenth of a defender for box counts, which sit near six and a half for everyone) are pushes and left out. Box angles only count games where that box actually showed up on at least one of the carries they were about (FTN charting); the rest are left out too. Colour needs five or more.</div>
         </details>
       </div>
       <div className="panel" data-tour="results-called">

@@ -220,3 +220,39 @@ def test_box_angles_only_count_games_where_the_box_showed_up(monkeypatch):
 def test_only_box_angles_store_a_premise():
     assert ag._premise_cols({"family": "{player} vs the blitz"}) == {"premise_snaps": None, "premise_of": None}
     assert ag._premise_cols({"family": "Pass-heavy offense into a stingy pass defense"})["premise_snaps"] is None
+
+
+def test_line_verdict_is_the_line_going_the_way_the_angle_leaned():
+    assert ag.line_verdict("over", "up") == "hit" and ag.line_verdict("under", "down") == "hit"
+    assert ag.line_verdict("over", "down") == "miss" and ag.line_verdict("push", "up") == "push"
+    assert ag.line_verdict(None, "up") is None
+
+
+def test_track_record_counts_the_line_apart_from_the_average(monkeypatch):
+    """A call can beat the team's usual and still lose to the line: the
+    record keeps both, and only calls that had a line count toward the line."""
+    import polars as pl
+    base = {k: None for k in ag.SCHEMA} | {"season": 2026, "week": 1, "kind": "team", "family": "{def} has clamped RBs",
+                                           "lean": "under", "strength": 1, "tags": [], "direction": "down",
+                                           "fmt": "dec1", "baseline_label": "CIN's usual", "measure": "RB rushing yards"}
+    df = ag._with_margin(pl.DataFrame([
+        base | {"game_id": "2026_01_A_B", "actual": 60.0, "baseline": 90.0, "line": 72.0, "line_result": "under"},   # hit, hit
+        base | {"game_id": "2026_01_C_D", "actual": 80.0, "baseline": 90.0, "line": 72.0, "line_result": "over"},    # hit, miss
+        base | {"game_id": "2026_01_E_F", "actual": 99.0, "baseline": 90.0},                                        # miss, no line
+    ], schema=ag.SCHEMA))
+    monkeypatch.setattr(ag, "_fresh", lambda: df)
+    monkeypatch.setattr(ag, "CURRENT_SEASON", 2026)
+    t = ag.track_record()
+    assert (t["n"], t["hits"]) == (3, 2) and (t["line_n"], t["line_hits"]) == (2, 1)
+    fam = t["families"][0]
+    assert (fam["line_n"], fam["line_hits"]) == (2, 1)
+
+
+def test_a_position_angle_reads_against_the_offenses_own_usual():
+    r = {k: None for k in ag.SCHEMA} | {"kind": "team", "offense": "ATL", "defense": "CAR", "team": "ATL", "direction": "up",
+                                       "measure": "RB rushing yards", "fmt": "dec1", "actual": 123.0, "baseline": 118.7,
+                                       "baseline_label": "ATL's usual", "line": 106.0, "line_actual": 123.0,
+                                       "market": "player_rush_yds", "line_result": "over"}
+    assert "than they usually do" in ag._said(r) and "league" not in ag._said(r)
+    assert "their usual 118.7" in ag._happened(r)
+    assert ag._line_words(r).startswith("Closing line 106.0 rushing yards for ATL's RBs") and "the way the angle leaned" in ag._line_words(r)
