@@ -25,18 +25,18 @@ export function DrillDrawer({ drill, onClose }: { drill: Drill | null; onClose: 
   );
 }
 
-const Record = ({ hits, n, pushes = 0, absent = 0, unit = "calls" }: { hits: number; n: number; pushes?: number; absent?: number; unit?: string }) => {
+const Record = ({ hits, n, absent = 0, injured = 0, unit = "calls" }: { hits: number; n: number; absent?: number; injured?: number; unit?: string }) => {
   const r = n ? hits / n : null;
   const tone = r === null || n < 5 ? "" : r >= 0.55 ? "over" : r <= 0.45 ? "under" : "";
   return (
     <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
       <span className={`mono ${tone}`} style={{ fontSize: 26, fontWeight: 650 }}>{fmtPct(r)}</span>
-      <span className="small"><b>{hits}</b> of <b>{n}</b> {unit} right{pushes ? <span className="muted"> · {pushes} push{pushes > 1 ? "es" : ""}</span> : null}{absent ? <span className="muted"> · {absent} where it never happened</span> : null}{pushes || absent ? <span className="muted">, not counted</span> : null}</span>
+      <span className="small"><b>{hits}</b> of <b>{n}</b> {unit} right{absent ? <span className="muted"> · {absent} where it never happened</span> : null}{injured ? <span className="muted"> · {injured} where he got hurt</span> : null}{absent || injured ? <span className="muted">, not counted</span> : null}</span>
     </div>
   );
 };
 
-type Verdict = "all" | "hit" | "miss" | "push" | "absent";
+type Verdict = "all" | "hit" | "miss" | "absent" | "injured";
 
 /** A graded number in its own format: 6.2%, +0.14, 4.1. */
 const num = (v: number | null, fmt: string, signed = false) => {
@@ -67,7 +67,7 @@ function FamilyBody({ d }: { d: Extract<Drill, { type: "angle" }> }) {
   return (
     <>
       <div className="drawer-sec">
-        <Record hits={data.hits} n={data.n} pushes={data.pushes} absent={data.absent} />
+        <Record hits={data.hits} n={data.n} absent={data.absent} injured={data.injured} />
         <div className="hint" style={{ marginTop: 4 }}>{span}. Right means {g ? <><b>{g.measure}</b> came in <b>{g.direction === "up" ? "higher" : "lower"}</b> than {g.baseline_label}</> : "the number moved the way the angle said"}.</div>
       </div>
 
@@ -97,8 +97,8 @@ function FamilyBody({ d }: { d: Extract<Drill, { type: "angle" }> }) {
           <h4 style={{ margin: 0 }}>Every {d.kind === "player" ? "player" : "team"} it was called on</h4>
           <Seg<Verdict> value={verdict} onChange={setVerdict} options={[
             { v: "all", l: `All ${data.rows.length}` }, { v: "hit", l: `Right ${count("hit")}` }, { v: "miss", l: `Wrong ${count("miss")}` },
-            ...(count("push") ? [{ v: "push" as Verdict, l: `Push ${count("push")}` }] : []),
-            ...(count("absent") ? [{ v: "absent" as Verdict, l: `Didn't happen ${count("absent")}` }] : [])]} />
+            ...(count("absent") ? [{ v: "absent" as Verdict, l: `Didn't happen ${count("absent")}` }] : []),
+            ...(count("injured") ? [{ v: "injured" as Verdict, l: `Got hurt ${count("injured")}` }] : [])]} />
         </div>
         <div className="tbl-wrap"><table className="tbl compact tight pin-first">
           <thead><tr>

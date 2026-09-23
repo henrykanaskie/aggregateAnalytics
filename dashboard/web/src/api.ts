@@ -219,9 +219,9 @@ export interface GradeSummary { n: number; weeks: [number, number][]; by_book: {
 // A matchup angle rebuilt as of kickoff and checked against the game: the
 // number it was about (measure), where that number usually sits (baseline) and
 // where it landed (actual). dashboard/stats/angle_grades.py.
-export interface GradedAngle { season: number; week: number; game_id: string; offense: string; defense: string; kind: "team" | "player"; family: string; title: string; detail: string; lean: "over" | "under" | "neutral"; strength: number; tags: string[]; player_id: string | null; player: string | null; position: string | null; team: string | null; measure: string; direction: "up" | "down"; baseline: number | null; baseline_label: string; actual: number | null; fmt: string; verdict: "hit" | "miss" | "push" | "absent"; line: number | null; line_result: "over" | "under" | "push" | null; market: string | null;
+export interface GradedAngle { season: number; week: number; game_id: string; offense: string; defense: string; kind: "team" | "player"; family: string; title: string; detail: string; lean: "over" | "under" | "neutral"; strength: number; tags: string[]; player_id: string | null; player: string | null; position: string | null; team: string | null; measure: string; direction: "up" | "down"; baseline: number | null; baseline_label: string; actual: number | null; fmt: string; verdict: "hit" | "miss" | "absent" | "injured"; line: number | null; line_result: "over" | "under" | "push" | null; market: string | null;
   /** What the players with a line actually did, and whether that beat the line the way the angle leaned. */
-  line_actual?: number | null; line_verdict?: "hit" | "miss" | "push" | null; line_words?: string | null;
+  line_actual?: number | null; line_verdict?: "hit" | "miss" | null; line_words?: string | null;
   /** Plain-sentence versions, built by the server when the grades are read. */
   said?: string; happened?: string; evidence?: string | null; note?: string | null; verdict_words?: string;
   /** Box and blitz angles: whether the thing the angle was about happened in
@@ -236,10 +236,10 @@ export interface GradeSignal { id: string; signal: string; n: number; hit_rate: 
 export interface SignalLines { id: string; signal: string; why: string; n: number; hits: number;
   rows: { season: number; week: number; game_id: string; book: string; market: string; player_id: string; player_name: string; team: string | null; line: number; open_line: number | null; moved: number | null; actual: number; result: "over" | "under"; l5_rate: number | null; l10_rate: number | null; form_n: number; hit: boolean }[]; }
 /** One row of the track record opened up: every graded call behind it. */
-export interface AngleFamilyRecord { family: string; kind: "team" | "player"; lean: string; season: number | null; weeks: [number, number][]; why: string | null; n: number; hits: number; pushes: number; absent: number;
+export interface AngleFamilyRecord { family: string; kind: "team" | "player"; lean: string; season: number | null; weeks: [number, number][]; why: string | null; n: number; hits: number; absent: number; injured?: number;
   graded_on: { measure: string; baseline_label: string; direction: "up" | "down" } | null; prop: { n: number; agreed: number } | null;
   premise: { label: string; unit: string; games: number; snaps: number; of: number; on: number | null; off: number | null; never: number } | null; rows: GradedAngle[]; }
-export interface AngleTrackRecord { season: number | null; current: boolean; weeks: [number, number][]; n: number; hits: number; pushes: number; absent?: number; line_n?: number; line_hits?: number; families: AngleFamily[]; by_kind: { kind: string; n: number; hits: number; rate: number; line_n?: number; line_hits?: number }[]; best: GradedAngle[]; }
+export interface AngleTrackRecord { season: number | null; current: boolean; weeks: [number, number][]; n: number; hits: number; absent?: number; injured?: number; line_n?: number; line_hits?: number; families: AngleFamily[]; by_kind: { kind: string; n: number; hits: number; rate: number; line_n?: number; line_hits?: number }[]; best: GradedAngle[]; }
 /** value: ESPN's projection when it has one ("espn"), the site's baseline otherwise.
  *  low / high: a bad week and a good week (20th and 80th percentile) simulated
  *  from the player's own games around that value. base: the site's baseline. */

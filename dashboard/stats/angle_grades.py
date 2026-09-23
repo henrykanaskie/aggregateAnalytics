@@ -56,7 +56,7 @@ from functools import lru_cache
 
 import polars as pl
 
-from nfl.data import scan
+from nfl.data import RAW_DIR, scan
 
 from ..config import CURRENT_SEASON, ODDS_DIR
 from . import matchups as mu
@@ -74,7 +74,7 @@ SCHEMA: dict[str, pl.DataType] = {
     "position": pl.String, "team": pl.String, "measure": pl.String, "direction": pl.String,
     "baseline": pl.Float64, "baseline_label": pl.String, "actual": pl.Float64, "fmt": pl.String,
     "verdict": pl.String, "line": pl.Float64, "line_result": pl.String, "market": pl.String, "line_actual": pl.Float64,
-    "premise_snaps": pl.Int32, "premise_of": pl.Int32,
+    "premise_snaps": pl.Int32, "premise_of": pl.Int32, "snap_pct": pl.Float64, "usual_snap_pct": pl.Float64,
 }
 
 
@@ -284,6 +284,33 @@ def line_context(angle: dict, offense: str, props: list[dict], season: int, week
     return None
 
 
+@lru_cache(maxsize=4)
+def _snaps(season: int) -> pl.DataFrame:
+    """Offensive snap share per player-game, this season and last, keyed by
+    gsis id (snap counts come keyed on PFR ids; the player table maps them)."""
+    ids = (pl.read_parquet(RAW_DIR / "players.parquet", columns=["gsis_id", "pfr_id"])
+           .drop_nulls().rename({"pfr_id": "pfr_player_id", "gsis_id": "player_id"}).unique("pfr_player_id"))
+    try:
+        s = (scan("snap_counts").filter(pl.col("season").is_in([season - 1, season]))
+             .select("game_id", "season", "week", "pfr_player_id", "offense_pct").collect())
+    except FileNotFoundError:
+        return pl.DataFrame(schema={"game_id": pl.String, "season": pl.Int32, "week": pl.Int32, "player_id": pl.String, "offense_pct": pl.Float64})
+    return s.join(ids, on="pfr_player_id", how="inner").drop("pfr_player_id")
+
+
+def snap_info(player_id: str, game_id: str, season: int, week: int) -> tuple[float | None, float | None]:
+    """(his offensive snap share in this game, his usual over his previous
+    eight games with snaps). None where the snap counts do not have him."""
+    mine = _snaps(season).filter(pl.col("player_id") == player_id)
+    if mine.is_empty():
+        return None, None
+    game = mine.filter(pl.col("game_id") == game_id)
+    before = (mine.filter((pl.col("season") < season) | ((pl.col("season") == season) & (pl.col("week") < week)))
+              .filter(pl.col("offense_pct") > 0).sort("season", "week").tail(8))
+    usual = float(before["offense_pct"].mean()) if before.height >= 2 else None
+    return (float(game["offense_pct"][0]) if not game.is_empty() else None), usual
+
+
 def _measure(df: pl.DataFrame, key: str) -> float | None:
     """Ratio of sums for rates, mean per game for counts."""
     if df.is_empty():
@@ -297,40 +324,19 @@ def _measure(df: pl.DataFrame, key: str) -> float | None:
     return float(df[key].fill_null(0).mean())
 
 
-#: A move smaller than this is a push, not a call: a sack rate of 7.1%
-#: against a usual 7.0% says nothing about the angle. The margin is 5% of the
-#: usual number, with a floor per format so numbers that sit near zero (EPA)
-#: still need a real move.
-MARGIN_REL = 0.05
-MARGIN_FLOOR = {"pct": 0.005, "dec2": 0.02, "dec1": 0.5}
-#: Numbers whose level says nothing about how far they move, so 5% of it is
-#: the wrong yardstick. Every defense puts six and a half men in the box
-#: (teams' season averages sit 0.16 apart), so 5% was a third of a defender,
-#: more than a typical game moves: 20 of the first 24 box calls of 2026 were
-#: pushes. A tenth of a defender leaves about one call in five a push, like
-#: the rest.
-MARGIN_ABS = {"Defenders in box (vs rushes)": 0.1}
-#: Baselines that are thresholds rather than a usual level: under the closing
-#: total by half a point is under, and one touchdown is at least one.
-EXACT = ("closing total", "at least one")
-
-
-def margin(base: float, fmt: str | None, baseline_label: str | None, measure: str | None = None) -> float:
-    if baseline_label in EXACT:
-        return 0.0
-    if measure in MARGIN_ABS:
-        return MARGIN_ABS[measure]
-    return max(MARGIN_REL * abs(base), MARGIN_FLOOR.get(fmt or "", 0.0))
+#: Every call is a hit or a miss. There used to be a margin (5% of the usual
+#: number) inside which a move was a push and counted neither way; it kept a
+#: 7.1% sack rate against a usual 7.0% from counting as a call, but it also
+#: let a call that went slightly the wrong way drop out of the record instead
+#: of counting against it, and a bet has no margin. An exact tie is a miss:
+#: the angle said the number would move one way, and it did not.
 
 
 def _verdict(actual: float | None, base: float | None, d: str, fmt: str | None = None,
              baseline_label: str | None = None, measure: str | None = None) -> str | None:
     if actual is None or base is None:
         return None
-    m = margin(base, fmt, baseline_label, measure)
-    if abs(actual - base) < max(m, 1e-9):
-        return "push"
-    return "hit" if (actual > base) == (d == "up") else "miss"
+    return "hit" if (actual > base if d == "up" else actual < base) else "miss"
 
 
 #: A box angle is about the carries that came into that kind of box. In a
@@ -341,12 +347,20 @@ def _verdict(actual: float | None, base: float | None, d: str, fmt: str | None =
 ABSENT = "absent"
 #: The graded outcomes that count toward a record.
 DECIDED = ("hit", "miss")
+#: A player call where he got hurt in the game: under half his usual snap
+#: share, and on the next week's injury report with an injury. It counts
+#: neither way, as a book voids a prop on a player who leaves hurt. Worked out
+#: when the grades are read, because next week's report comes days after the
+#: game is graded; low snaps alone could be a benching or a blowout.
+INJURED = "injured"
+INJURED_SNAP_SHARE = 0.5
 
 
 def _with_margin(df: pl.DataFrame) -> pl.DataFrame:
-    """Re-derive every verdict from the stored numbers, so the margin applies
-    to weeks graded before it existed and changing it needs no regrade. A box
-    angle whose premise never happened in the game is :data:`ABSENT`."""
+    """Re-derive every verdict from the stored numbers, so a change to how a
+    call is judged applies to every graded week without a regrade (the stored
+    verdict column is from whenever the week was graded). A box angle whose
+    premise never happened in the game is :data:`ABSENT`."""
     if df.is_empty():
         return df
     if "premise_snaps" not in df.columns:
@@ -354,11 +368,43 @@ def _with_margin(df: pl.DataFrame) -> pl.DataFrame:
     v = pl.struct("actual", "baseline", "direction", "fmt", "baseline_label", "measure").map_elements(
         lambda r: _verdict(r["actual"], r["baseline"], r["direction"], r["fmt"], r["baseline_label"], r["measure"]),
         return_dtype=pl.String)
-    if "line_actual" not in df.columns:
-        df = df.with_columns(pl.lit(None, pl.Float64).alias("line_actual"))
-    return df.with_columns(pl.when(v.is_not_null() & (pl.col("premise_snaps") == 0)).then(pl.lit(ABSENT))
+    for c in ("line_actual", "snap_pct", "usual_snap_pct"):
+        if c not in df.columns:
+            df = df.with_columns(pl.lit(None, pl.Float64).alias(c))
+    hurt = _left_hurt(df)
+    return df.with_columns(pl.when(v.is_not_null() & hurt).then(pl.lit(INJURED))
+                           .when(v.is_not_null() & (pl.col("premise_snaps") == 0)).then(pl.lit(ABSENT))
                            .otherwise(v).alias("verdict"),
-                           line_verdict_expr().alias("line_verdict"))
+                           pl.when(hurt).then(None).otherwise(line_verdict_expr()).alias("line_verdict"))
+
+
+def _hurt_next_week(seasons: tuple[int, ...]) -> pl.DataFrame:
+    """(season, week, player_id) of every player listed with an injury on a
+    week's report, keyed on the week *before* it: the game he was hurt in."""
+    from .context import _inj
+    lf = _inj()
+    if lf is None or not seasons:
+        return pl.DataFrame(schema={"season": pl.Int32, "week": pl.Int32, "player_id": pl.String})
+    return (lf.filter(pl.col("season").is_in(list(seasons))
+                      & (pl.col("report_primary_injury").is_not_null() | pl.col("practice_primary_injury").is_not_null()
+                         | pl.col("report_status").is_in(["Out", "Doubtful", "IR", "Injured Reserve"])))
+            .select(pl.col("season").cast(pl.Int32), (pl.col("week") - 1).cast(pl.Int32).alias("week"),
+                    pl.col("gsis_id").alias("player_id"))
+            .unique().collect())
+
+
+def _left_hurt(df: pl.DataFrame) -> pl.Expr:
+    """Per row: a player call on someone who got hurt in the game (INJURED)."""
+    low = ((pl.col("kind") == "player") & pl.col("snap_pct").is_not_null() & pl.col("usual_snap_pct").is_not_null()
+           & (pl.col("snap_pct") < INJURED_SNAP_SHARE * pl.col("usual_snap_pct")))
+    cand = df.filter(low)
+    if cand.is_empty():
+        return pl.lit(False)
+    hurt = _hurt_next_week(tuple(sorted(set(cand["season"].to_list()))))
+    keys = set(zip(hurt["season"].to_list(), hurt["week"].to_list(), hurt["player_id"].to_list()))
+    flags = [bool(l) and (s, w, p) in keys for l, s, w, p in
+             zip(df.select(low.fill_null(False)).to_series().to_list(), df["season"].to_list(), df["week"].to_list(), df["player_id"].to_list())]
+    return pl.lit(pl.Series(flags, dtype=pl.Boolean))
 
 
 def line_verdict(line_result: str | None, direction: str | None) -> str | None:
@@ -366,15 +412,15 @@ def line_verdict(line_result: str | None, direction: str | None) -> str | None:
     up, under for one saying down."""
     if not line_result or direction not in ("up", "down"):
         return None
-    if line_result == "push":
-        return "push"
-    return "hit" if (line_result == "over") == (direction == "up") else "miss"
+    # Landing exactly on a whole-number line is a refund at a book, but the
+    # angle said which side, and neither side came in: a miss.
+    return "hit" if line_result == ("over" if direction == "up" else "under") else "miss"
 
 
 def line_verdict_expr() -> pl.Expr:
     return (pl.when(pl.col("line_result").is_null() | ~pl.col("direction").is_in(["up", "down"])).then(None)
-            .when(pl.col("line_result") == "push").then(pl.lit("push"))
-            .when((pl.col("line_result") == "over") == (pl.col("direction") == "up")).then(pl.lit("hit"))
+            .when(pl.col("line_result") == pl.when(pl.col("direction") == "up").then(pl.lit("over")).otherwise(pl.lit("under")))
+            .then(pl.lit("hit"))
             .otherwise(pl.lit("miss")))
 
 
@@ -497,6 +543,7 @@ def grade_game(game_id: str) -> list[dict]:
             if mine.is_empty():
                 out.append(row)
                 continue        # did not play; the angle had nothing to be right about
+            row["snap_pct"], row["usual_snap_pct"] = snap_info(pid, game_id, season, week)
             row |= {"team": off_t, "measure": label, "fmt": fmt, "direction": "up" if a["lean"] == "over" else "down",
                     "actual": _measure(mine, key), "baseline": _measure(_player_history(pid, season, week), key),
                     "baseline_label": "his previous 16 games"}
@@ -643,7 +690,7 @@ _COUNTS = {"plays_pg": ("ran", "plays"), "fga_pg": ("tried", "field goals")}
 _SPLIT_ANGLE = ("vs the blitz", "man coverage", "zone coverage", "two-high", "under pressure", "stacked boxes", "light boxes")
 
 _VERDICT_WORDS = {"hit": "So the call was right.", "miss": "So the call was wrong.",
-                  "push": "Too close to call: the move was inside the margin, so it counts neither way.",
+                  INJURED: "He got hurt in the game (under half his usual snaps, then on the injury report), so it counts neither way.",
                   ABSENT: "The box it was about never showed up in this game, so it counts neither way."}
 
 
@@ -811,7 +858,7 @@ def _line_words(r: dict) -> str | None:
     got = f"; {who} had {_num(r['line_actual'], 'int')}" if r.get("line_actual") is not None else ""
     lv = line_verdict(r["line_result"], r["direction"])
     tail = {"hit": f"over, the way the angle leaned" if r["line_result"] == "over" else "under, the way the angle leaned",
-            "miss": f"{r['line_result']}, against the angle", "push": "exactly on the line"}.get(lv or "", r["line_result"])
+            "miss": "exactly on the line, which counts as a miss" if r["line_result"] == "push" else f"{r['line_result']}, against the angle"}.get(lv or "", r["line_result"])
     return f"Closing line {set_}{got}: {tail}."
 
 
@@ -891,7 +938,7 @@ def recent_weeks(n: int, season: int | None = None) -> list[tuple[int, int]]:
 
 
 def _window(wk: list[tuple[int, int]]) -> pl.DataFrame:
-    """The graded calls (verdict set, pushes included) in the given weeks."""
+    """The graded calls (verdict set, "didn't happen" included) in the given weeks."""
     g = _fresh().filter((pl.col("season").cast(pl.Int64) * 100 + pl.col("week")).is_in([s * 100 + w for s, w in wk]))
     if "line_verdict" not in g.columns:
         for c in ("line_result", "direction"):
@@ -908,14 +955,14 @@ def track_record(weeks: int = 22, min_n: int = 1) -> dict:
     season = record_season()
     wk = recent_weeks(weeks, season) if season is not None else []
     out: dict = {"season": season, "current": season == CURRENT_SEASON, "weeks": wk, "n": 0, "hits": 0,
-                 "pushes": 0, "absent": 0, "line_n": 0, "line_hits": 0, "families": [], "by_kind": [], "best": []}
+                 "absent": 0, "injured": 0, "line_n": 0, "line_hits": 0, "families": [], "by_kind": [], "best": []}
     if not wk:
         return out
     g = _window(wk)
     dec = g.filter(pl.col("verdict").is_in(DECIDED))
     out["n"], out["hits"] = dec.height, int((dec["verdict"] == "hit").sum())
-    out["pushes"] = int((g["verdict"] == "push").sum())
     out["absent"] = int((g["verdict"] == ABSENT).sum())
+    out["injured"] = int((g["verdict"] == INJURED).sum())
     # Against the closing line, where there was one: its own count, since
     # only some calls had a line and a push on the line is not a push on
     # the average.
@@ -1242,7 +1289,7 @@ def _premise_total(rows: list[dict]) -> dict | None:
     """The family's games added up: how often the premise actually held, and
     how the snaps it was about went against the rest. A record built on games
     where the box was never stacked says nothing about stacked boxes."""
-    g = [r["in_game"] for r in rows if r.get("in_game") and r["verdict"] != "push"]
+    g = [r["in_game"] for r in rows if r.get("in_game")]
     if not g:
         return None
     on_n, off_n = sum(x["on_n"] for x in g), sum(x["off_n"] for x in g)
@@ -1265,7 +1312,7 @@ def family_record(family: str, kind: str, lean: str, weeks: int = 22) -> dict:
     season = record_season()
     wk = recent_weeks(weeks, season) if season is not None else []
     out: dict = {"family": family, "kind": kind, "lean": lean, "season": season, "weeks": wk, "why": why(family, lean),
-                 "n": 0, "hits": 0, "pushes": 0, "absent": 0, "graded_on": None, "prop": None, "premise": None, "rows": []}
+                 "n": 0, "hits": 0, "absent": 0, "injured": 0, "graded_on": None, "prop": None, "premise": None, "rows": []}
     if not wk:
         return out
     g = _window(wk).filter((pl.col("family") == family) & (pl.col("kind") == kind) & (pl.col("lean") == lean))
@@ -1273,7 +1320,7 @@ def family_record(family: str, kind: str, lean: str, weeks: int = 22) -> dict:
         return out
     dec = g.filter(pl.col("verdict").is_in(DECIDED))
     out["n"], out["hits"] = dec.height, int((dec["verdict"] == "hit").sum())
-    out["pushes"], out["absent"] = int((g["verdict"] == "push").sum()), int((g["verdict"] == ABSENT).sum())
+    out["absent"], out["injured"] = int((g["verdict"] == ABSENT).sum()), int((g["verdict"] == INJURED).sum())
     first = g.row(0, named=True)
     out["graded_on"] = {"measure": first["measure"], "baseline_label": first["baseline_label"], "direction": first["direction"]}
     # Where a closing line was graded that week (a player's own, or the sum
