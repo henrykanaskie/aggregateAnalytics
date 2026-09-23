@@ -6,7 +6,8 @@ import { fmtPct } from "../lib/format";
 import { FANTASY_KEY, Scoring, SCORING_LABEL, useLens } from "../lib/profile";
 import { rankTint } from "../lib/rank";
 import StartSit from "../components/StartSit";
-import MyRoster, { DEFAULT_SLOTS, RosterEntry, Slots, toEntry } from "../components/MyRoster";
+import { DEFAULT_SLOTS, RosterEntry, Slots, toEntry } from "../components/MyRoster";
+import MyTeam from "../components/MyTeam";
 import { useSticky } from "../lib/sticky";
 import { useQuery } from "../lib/useQuery";
 import { useMeta } from "../state";
@@ -58,6 +59,9 @@ export default function Fantasy() {
   // column and the projection comes straight after it, so the number the page
   // is ranked by is on screen without a sideways swipe.
   const mobile = useMobile();
+  // The week's list, or the roster someone has told us about. Only offered
+  // where a lineup is set each week; best ball and daily fantasy have none.
+  const [view, setView] = useSticky<"week" | "team">("fantasy.view", "week");
   // Players picked for start/sit. Kept across weeks and visits: the same
   // decision tends to come back every week.
   const [compare, setCompare] = useSticky<string[]>("fantasy.compare", []);
@@ -140,21 +144,35 @@ export default function Fantasy() {
   const open = (p: FantasyPlayer) => nav(`/research?player=${p.player_id}&stat=${FANTASY_KEY[scoring]}`);
   const who = (p: FantasyPlayer) => <><Link to={`/research?player=${p.player_id}`} onClick={(e) => e.stopPropagation()}>{p.name}</Link> <span className="muted">{p.position} {p.team}</span></>;
 
+  const weekField = <ApplyField label="Week" value={shown ?? 1} onApply={setWeek} show={(v) => `week ${v}`}>{(d, set) => <select className="input" value={d} onChange={(e) => set(Number(e.target.value))}>{weeks.map((w) => <option key={w} value={w}>Week {w}</option>)}</select>}</ApplyField>;
+  const scoringField = profile?.purposes.includes("fantasy")
+            ? <Field label="Scoring"><span className="hint" style={{ lineHeight: "28px" }}>{SCORING_LABEL[scoring]} (from your answers)</span></Field>
+            : <Field label="Scoring"><Seg value={ownScoring} options={[{ v: "ppr", l: "PPR" }, { v: "half", l: "Half" }, { v: "std", l: "Std" }]} onChange={setOwnScoring} /></Field>;
+  const teamView = setsLineups && view === "team";
+
   return (
     <div>
       <div className="page-head">
         <div><h1>Fantasy{shown ? ` · week ${shown}` : ""}</h1><div className="muted small">Every starter on a team that plays this week, ranked by {lens.ceiling ? "ceiling (the big week your format pays for)" : "projected"} {SCORING_LABEL[scoring]} points, next to the matchup and the role behind the number.</div></div>
       </div>
 
+      {setsLineups && <div className="view-switch" role="tablist">
+        <button role="tab" aria-selected={!teamView} className={!teamView ? "on" : ""} onClick={() => setView("week")}>This week</button>
+        <button role="tab" aria-selected={teamView} className={teamView ? "on" : ""} onClick={() => setView("team")}>My team{roster.length ? <span className="count">{roster.length}</span> : null}</button>
+      </div>}
+
+      {teamView ? <>
+        <div className="panel" style={{ marginBottom: 12 }}><FilterFold id="fantasy-team" summary={`Week ${shown ?? ""} · ${SCORING_LABEL[scoring]}`}><div className="controls">{weekField}{scoringField}</div></FilterFold></div>
+        {error && <Banner kind="err">{error}</Banner>}
+        <MyTeam data={data ?? null} scoring={scoring} loading={loading} roster={roster} setRoster={setRoster} slots={slots} setSlots={setSlots} />
+      </> : <>
       <div className="panel" style={{ marginBottom: 12 }}>
         <FilterFold id="fantasy" active={(pos !== "ALL" ? 1 : 0) + (team ? 1 : 0) + (q.trim() ? 1 : 0)}
           summary={`Week ${shown ?? ""} · ${pos === "ALL" ? "all positions" : pos === "MINE" ? "your positions" : pos} · ${SCORING_LABEL[scoring]}`}>
         <div className="controls">
-          <ApplyField label="Week" value={shown ?? 1} onApply={setWeek} show={(v) => `week ${v}`}>{(d, set) => <select className="input" value={d} onChange={(e) => set(Number(e.target.value))}>{weeks.map((w) => <option key={w} value={w}>Week {w}</option>)}</select>}</ApplyField>
+          {weekField}
           <Field label="Position"><Seg value={pos} options={[{ v: "ALL", l: "All" }, ...(roster.length ? [{ v: "ROSTER" as Pos, l: `My roster (${roster.length})` }] : []), ...(mine.length > 1 ? [{ v: "MINE" as Pos, l: `Yours (${mine.join(", ")})` }] : []), { v: "QB", l: "QB" }, { v: "RB", l: "RB" }, { v: "WR", l: "WR" }, { v: "TE", l: "TE" }]} onChange={setPos} /></Field>
-          {profile?.purposes.includes("fantasy")
-            ? <Field label="Scoring"><span className="hint" style={{ lineHeight: "28px" }}>{SCORING_LABEL[scoring]} (from your answers)</span></Field>
-            : <Field label="Scoring"><Seg value={ownScoring} options={[{ v: "ppr", l: "PPR" }, { v: "half", l: "Half" }, { v: "std", l: "Std" }]} onChange={setOwnScoring} /></Field>}
+          {scoringField}
           <Field label="Team"><select className="input" value={team} onChange={(e) => setTeam(e.target.value)}><option value="">All</option>{fav && <option value={fav}>{fav} (favorite)</option>}{teams.filter((t) => t !== fav).map((t) => <option key={t} value={t}>{t}</option>)}</select></Field>
           <Field label="Player"><input className="input" placeholder="filter…" value={q} onChange={(e) => setQ(e.target.value)} /></Field>
           <Field label="Show"><div className="chips">
@@ -171,12 +189,6 @@ export default function Fantasy() {
         <Banner kind="info">Week {data.week} injury reports are not filed yet (they come out Wednesday to Friday), so nobody below is marked hurt. Check back before kickoff.</Banner>
       )}
 
-      {data && setsLineups && (
-        <div style={{ marginBottom: 14 }}>
-          <MyRoster data={data} scoring={scoring} roster={roster} setRoster={setRoster} slots={slots} setSlots={setSlots}
-            onCompare={(ids) => { setCompare(ids); setTimeout(() => document.querySelector(".start-sit")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50); }} />
-        </div>
-      )}
 
       {data && compare.length > 0 && (
         <div style={{ marginBottom: 14 }}>
@@ -264,6 +276,7 @@ export default function Fantasy() {
           </div>
         </div>
       )}
+      </>}
     </div>
   );
 }
