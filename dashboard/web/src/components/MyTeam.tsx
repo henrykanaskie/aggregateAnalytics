@@ -25,7 +25,7 @@ type Slot = keyof Slots;
 const POSITIONS: Pos[] = ["QB", "RB", "WR", "TE", "K", "DST"];
 // Kicker and defense come last and never flex (fitsSlot only matches them to their own slot).
 const SHORT: Record<Slot, string> = { QB: "QB", RB: "RB", WR: "WR", TE: "TE", FLEX: "FLEX", SFLEX: "SFLX", K: "K", DST: "D/ST" };
-const OUT = ["Out", "Doubtful", "IR"];
+const OUT = ["Out", "Doubtful", "IR", "Suspended", "Not playing"];
 const MAX_ROSTER = 20;
 
 const fits = fitsSlot;
@@ -128,7 +128,7 @@ export default function MyTeam({ data, scoring, loading, roster, setRoster, slot
       const w = why(f.id);
       // The replacement, if there is one, is the first swap suggested below.
       if (w) out.push({ kind: "warn", text: <><b>{nm(f.id)}</b> is {w === "bye" ? "on bye" : w === "not playing" ? "not playing this week" : w === "no projection" ? "without a projection (too few games)" : `listed ${w}`}.</> });
-      else if (byId.get(f.id)?.status) out.push({ kind: "warn", text: <><b>{nm(f.id)}</b> is {byId.get(f.id)!.status} on the injury report{byId.get(f.id)!.injury ? ` (${byId.get(f.id)!.injury!.toLowerCase()})` : ""}. Check before kickoff.</> });
+      else if (byId.get(f.id)?.status) out.push({ kind: "warn", text: <><b>{nm(f.id)}</b> is on the injury report: {byId.get(f.id)!.status!.toLowerCase()}{byId.get(f.id)!.injury ? ` (${byId.get(f.id)!.injury!.toLowerCase()})` : ""}. Check before kickoff.</> });
     }
     // 2. A better projected lineup exists. Found one legal swap at a time
     //    (a bench player for a starter whose slot he fits, FLEX reshuffles

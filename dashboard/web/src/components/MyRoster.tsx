@@ -16,7 +16,7 @@ export const DEFAULT_SLOTS: Slots = { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, SFLEX
 /** Slots saved before a slot existed (kickers and defenses came later) get its default. */
 export const withDefaults = (s: Partial<Slots> | null | undefined): Slots => ({ ...DEFAULT_SLOTS, ...(s ?? {}) });
 
-const OUT = ["Out", "Doubtful", "IR"];
+const OUT = ["Out", "Doubtful", "IR", "Suspended", "Not playing"];
 const FLEX_POS = ["RB", "WR", "TE"];
 const SLOT_LABEL: Record<keyof Slots, string> = { QB: "QB", RB: "RB", WR: "WR", TE: "TE", FLEX: "FLEX", SFLEX: "SUPERFLEX", K: "K", DST: "D/ST" };
 /** The order slots are shown and edited in. */

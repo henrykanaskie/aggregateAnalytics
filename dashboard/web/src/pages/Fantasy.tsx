@@ -21,7 +21,7 @@ import { useMobile } from "../lib/useMobile";
 
 type Pos = "ALL" | "ROSTER" | "MINE" | "QB" | "RB" | "WR" | "TE" | "K" | "DST";
 type SortKey = "proj" | "low" | "high" | "last3" | "implied" | "matchup";
-const OUT = ["Out", "Doubtful", "IR"];
+const OUT = ["Out", "Doubtful", "IR", "Suspended", "Not playing"];
 
 // A bare date parses as UTC midnight, which is the evening before across the
 // US; noon keeps it on its own day.
@@ -278,7 +278,7 @@ export default function Fantasy() {
             </table>
           </div>
           <div className="hint" style={{ marginTop: 8 }}>
-            Projection: ESPN's weekly projection, converted to your scoring{data.method.espn ? "" : " (not pulled for this week yet, so the site's own baseline stands in)"}. Floor and ceiling come from simulating the week out of each player's own last {data.method.n_games} games, shifted onto that projection and weighted toward the latest: the floor is a bad week (20th percentile), the ceiling a good one (80th), so a boom-or-bust player gets a wider, lopsided range. Players ESPN does not project use the site's baseline, a recency-weighted average scaled by the matchup, marked with a dot. It is a reference point, not a forecast.
+            Projection: ESPN's weekly projection, converted to your scoring{data.method.espn ? "" : " (not pulled for this week yet, so the site's own baseline stands in)"}. ESPN's file also sets who plays: a backup it projects as this week's starter is ranked first on his depth chart, and a player it projects for zero is marked not playing. Floor and ceiling come from simulating the week out of each player's own last {data.method.n_games} games, shifted onto that projection and weighted toward the latest: the floor is a bad week (20th percentile), the ceiling a good one (80th), so a boom-or-bust player gets a wider, lopsided range. Players ESPN does not project use the site's baseline, a recency-weighted average scaled by the matchup, marked with a dot. It is a reference point, not a forecast.
           </div>
         </div>
       )}

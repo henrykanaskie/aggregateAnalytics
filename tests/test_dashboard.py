@@ -149,6 +149,42 @@ def test_floor_and_ceiling_come_from_the_players_own_games_around_the_projection
     assert fallback["ppr"]["source"] == "baseline" and fallback["ppr"]["value"] == 12.0 and fallback["half"] is None
 
 
+def test_espn_file_decides_who_plays_this_week(monkeypatch):
+    from dashboard.stats import fantasy
+    monkeypatch.setattr(fantasy, "_players_info", lambda pids: {"bk": {"display_name": "Backup QB", "headshot": None}})
+    game = {"opponent": "DAL", "home": True, "game_id": "g1", "gameday": "2026-09-27", "implied": 24.0}
+    opp_of = {"WAS": game, "DAL": {**game, "opponent": "WAS", "home": False}}
+    row = lambda pid, pos, rank, status=None: {"player_id": pid, "name": pid, "position": pos, "team": "WAS", "depth_rank": rank,
+                                                "headshot": None, "new_to_team": False, "stats_team": "WAS", "target_share": None,
+                                                "carry_share": None, "status": status, "injury": None, **game}
+    roster = [row("qb1", "QB", 1), row("wr1", "WR", 1, "DNP"), row("cut", "WR", 2), row("traded", "WR", 3)]
+    e = lambda ppr, team="WAS", pos="QB", status=None: {"ppr": ppr, "rec": 0.0, "team": team, "position": pos, "name": "", "status": status}
+    espn = {"qb1": e(0.0), "bk": e(15.3), "wr1": e(12.0, pos="WR", status="Questionable"), "cut": e(3.0, team=None, pos="WR"),
+            "traded": e(8.0, team="DAL", pos="WR"), "deep": e(0.5, pos="WR")}
+    out = {r["player_id"]: r for r in fantasy.reconcile(roster, espn, opp_of, 2026)}
+    # The starter ESPN zeroes is marked, and the backup it projects takes his place.
+    assert out["qb1"]["status"] == fantasy.NOT_PLAYING and out["qb1"]["depth_rank"] == 2
+    assert out["bk"]["depth_rank"] == 1 and out["bk"]["name"] == "Backup QB" and out["bk"]["team"] == "WAS"
+    # A game status beats practice participation; a released player leaves; a traded one moves.
+    assert out["wr1"]["status"] == "Questionable"
+    assert "cut" not in out and "deep" not in out
+    assert out["traded"]["team"] == "DAL" and out["traded"]["opponent"] == "WAS" and out["traded"]["new_to_team"]
+    # Without a file, only the practice wording changes.
+    plain = fantasy.reconcile([row("wr1", "WR", 1, "DNP")], {}, opp_of, 2026)
+    assert plain[0]["status"] == "Missed practice" and plain[0]["depth_rank"] == 1
+
+
+def test_espn_projection_parse_keeps_injury_status(monkeypatch):
+    from dashboard.odds import espn_proj
+    monkeypatch.setattr(espn_proj, "_espn_to_gsis", lambda: {"101": {"player_id": "00-1"}})
+    stat = {"statSourceId": 1, "statSplitTypeId": 1, "scoringPeriodId": 3, "seasonId": 2026, "appliedTotal": 0.0, "stats": {}}
+    players = [{"player": {"id": 101, "fullName": "Hurt Starter", "defaultPositionId": 1, "proTeamId": 28, "injuryStatus": "OUT",
+                           "ownership": {"percentOwned": 97.4}, "stats": [stat]}},
+               {"player": {"id": 999, "fullName": "No Id Yet", "defaultPositionId": 3, "proTeamId": 28, "stats": [stat]}}]
+    rows = espn_proj.parse(players, 2026, 3)
+    assert len(rows) == 1 and rows[0]["injury_status"] == "Out" and rows[0]["pct_owned"] == 97.4 and rows[0]["team"] == "WAS"
+
+
 def test_recent_games_ride_along_in_every_format():
     from dashboard.stats.fantasy import RECENT_N, SCORINGS, _recent
     games = [{"season": 2026, "week": w, "opponent_team": "DAL", "fantasy_points": 10.0 + w, "fantasy_points_ppr": 14.0 + w,
