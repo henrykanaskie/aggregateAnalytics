@@ -212,19 +212,32 @@ export interface Teammate { player_id: string; name: string; position: string; g
 export interface TeammatePresence { teammates: Teammate[]; presence: Record<string, string[]>; since?: number; }
 export interface CorrRow { with: string; player_id: string | null; name?: string; position?: string; stat: string; r: number; n: number; }
 export interface DvpFactors { stat: string; dvp_stat: string | null; factors: Record<string, Record<string, number>>; }
-export interface GradeSummary { n: number; weeks: [number, number][]; by_book: { book: string; n: number; over_rate: number; push_rate: number; mae: number; bias: number }[]; by_market: { market: string; n: number; over_rate: number; push_rate: number; mae: number; bias: number }[]; signals: { signal: string; n: number; hit_rate: number }[]; movement: { signal: string; n: number; hit_rate: number }[]; models: { model_version: string; n: number; hit_rate: number | null; n_strong: number; hit_rate_strong: number | null; pred_mae: number; line_mae: number | null }[]; }
+export interface GradeSummary { n: number; weeks: [number, number][]; by_book: { book: string; n: number; over_rate: number; push_rate: number; mae: number; bias: number }[]; by_market: { market: string; n: number; over_rate: number; push_rate: number; mae: number; bias: number }[]; signals: GradeSignal[]; movement: GradeSignal[]; models: { model_version: string; n: number; hit_rate: number | null; n_strong: number; hit_rate_strong: number | null; pred_mae: number; line_mae: number | null }[]; }
 // A matchup angle rebuilt as of kickoff and checked against the game: the
 // number it was about (measure), where that number usually sits (baseline) and
 // where it landed (actual). dashboard/stats/angle_grades.py.
-export interface GradedAngle { season: number; week: number; game_id: string; offense: string; defense: string; kind: "team" | "player"; family: string; title: string; detail: string; lean: "over" | "under" | "neutral"; strength: number; tags: string[]; player_id: string | null; player: string | null; position: string | null; team: string | null; measure: string; direction: "up" | "down"; baseline: number | null; baseline_label: string; actual: number | null; fmt: string; verdict: "hit" | "miss" | "push"; line: number | null; line_result: "over" | "under" | "push" | null; market: string | null;
+export interface GradedAngle { season: number; week: number; game_id: string; offense: string; defense: string; kind: "team" | "player"; family: string; title: string; detail: string; lean: "over" | "under" | "neutral"; strength: number; tags: string[]; player_id: string | null; player: string | null; position: string | null; team: string | null; measure: string; direction: "up" | "down"; baseline: number | null; baseline_label: string; actual: number | null; fmt: string; verdict: "hit" | "miss" | "push" | "absent"; line: number | null; line_result: "over" | "under" | "push" | null; market: string | null;
   /** Plain-sentence versions, built by the server when the grades are read. */
-  said?: string; happened?: string; evidence?: string | null; note?: string | null; verdict_words?: string; }
+  said?: string; happened?: string; evidence?: string | null; note?: string | null; verdict_words?: string;
+  /** Box and blitz angles: whether the thing the angle was about happened in
+   *  that game, from FTN's charting, and how the snaps it was about went. */
+  in_game?: InGame | null; }
+export interface InGame { snaps: number; of: number; label: string; unit: string; premise: string; split: string; on_n: number; on_sum: number; off_n: number; off_sum: number; }
 export interface AngleFamily { family: string; kind: "team" | "player"; n: number; hits: number; rate: number; lean: string; }
-export interface AngleTrackRecord { season: number | null; current: boolean; weeks: [number, number][]; n: number; hits: number; pushes: number; families: AngleFamily[]; by_kind: { kind: string; n: number; hits: number; rate: number }[]; best: GradedAngle[]; }
+export interface GradeSignal { id: string; signal: string; n: number; hit_rate: number }
+/** One signal opened up: every graded line it fired on (dashboard/odds/grading.py). */
+export interface SignalLines { id: string; signal: string; why: string; n: number; hits: number;
+  rows: { season: number; week: number; game_id: string; book: string; market: string; player_id: string; player_name: string; team: string | null; line: number; open_line: number | null; moved: number | null; actual: number; result: "over" | "under"; l5_rate: number | null; l10_rate: number | null; form_n: number; hit: boolean }[]; }
+/** One row of the track record opened up: every graded call behind it. */
+export interface AngleFamilyRecord { family: string; kind: "team" | "player"; lean: string; season: number | null; weeks: [number, number][]; why: string | null; n: number; hits: number; pushes: number; absent: number;
+  graded_on: { measure: string; baseline_label: string; direction: "up" | "down" } | null; prop: { n: number; agreed: number } | null;
+  premise: { label: string; unit: string; games: number; snaps: number; of: number; on: number | null; off: number | null; never: number } | null; rows: GradedAngle[]; }
+export interface AngleTrackRecord { season: number | null; current: boolean; weeks: [number, number][]; n: number; hits: number; pushes: number; absent?: number; families: AngleFamily[]; by_kind: { kind: string; n: number; hits: number; rate: number }[]; best: GradedAngle[]; }
 /** value: ESPN's projection when it has one ("espn"), the site's baseline otherwise.
  *  low / high: a bad week and a good week (20th and 80th percentile) simulated
  *  from the player's own games around that value. base: the site's baseline. */
 export interface FantasyProj { value: number; low: number; high: number; base: number | null; last3: number | null; source?: "espn" | "baseline" }
+export interface FantasyRecent { season: number; week: number; opp: string | null; pts: Record<"ppr" | "half" | "std", number | null> }
 export interface FantasyPlayer {
   player_id: string; name: string; position: "QB" | "RB" | "WR" | "TE" | "K" | "DST"; team: string; depth_rank: number | null; headshot: string | null;
   new_to_team: boolean; stats_team: string | null; target_share: number | null; carry_share: number | null;
@@ -234,6 +247,8 @@ export interface FantasyPlayer {
   matchup_text?: string | null;
   /** D/ST only: the points its opponent is expected to score. */
   opp_implied?: number | null;
+  /** The last few games, oldest first, scored in every format. */
+  recent?: FantasyRecent[];
   proj: Record<"ppr" | "half" | "std", FantasyProj | null>; role: { last3: number; before: number } | null;
 }
 export interface FantasyWeek {
@@ -252,6 +267,8 @@ export const api5 = {
   gradeSummary: ep<GradeSummary>()((season?: number) => `/api/grading/summary${qs({ season })}`),
   angleReview: ep<GradedAngle[]>()((gameId: string) => `/api/grading/angles/${gameId}`),
   angleTrack: ep<AngleTrackRecord>()((weeks = 22) => `/api/grading/angles/track-record${qs({ weeks })}`),
+  angleFamily: ep<AngleFamilyRecord>()((family: string, kind: string, lean: string, weeks = 22) => `/api/grading/angles/family${qs({ family, kind, lean, weeks })}`),
+  signalLines: ep<SignalLines>()((id: string, season?: number) => `/api/grading/signals/${id}${qs({ season })}`),
   gradeRun: async (season: number, week: number, include_sample = false) => {
     const r = await fetch("/api/grading/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ season, week, include_sample }) });
     invalidate(GRADED);

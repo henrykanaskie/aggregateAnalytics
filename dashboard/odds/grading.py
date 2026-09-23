@@ -202,6 +202,68 @@ def graded_preds(season: int | None = None) -> pl.DataFrame:
     return pl.concat([pl.read_parquet(f) for f in files], how="diagonal_relaxed") if files else pl.DataFrame()
 
 
+#: The signals the summary checks: (label, which list it sits in, the case
+#: for it). The case is what a reader sees when they open one: the idea, and
+#: the reason it might not hold, so the record under it has something to test.
+SIGNALS: dict[str, tuple[str, str, str]] = {
+    "l10_over": ("L10 hit rate ≥ 70% → over", "signals",
+                 "He cleared this number in at least 7 of his last 10 games. The idea is form the book has not fully "
+                 "priced in. The catch: books read the same game logs, so a hot streak usually means the line has "
+                 "already gone up to meet it."),
+    "l10_under": ("L10 hit rate ≤ 30% → under", "signals",
+                  "He cleared this number in 3 or fewer of his last 10 games. The idea is a slump the book has not "
+                  "priced in. The catch: the line has usually already come down to meet it."),
+    "l5_over": ("L5 hit rate ≥ 70% → over", "signals",
+                "He cleared this number in at least 4 of his last 5 games. A shorter window reacts faster to a new "
+                "role or a hot stretch, and is noisier for it."),
+    "l5_under": ("L5 hit rate ≤ 30% → under", "signals",
+                 "He cleared this number in 1 or none of his last 5 games. A shorter window reacts faster to a lost "
+                 "role or a cold stretch, and is noisier for it."),
+    "moved_toward": ("actual landed on the side the line moved toward", "movement",
+                     "When a book moves its line off the opener it is reacting to money or news. If that money is "
+                     "informed, the result should land on the side the line moved toward."),
+    "open_closer": ("opening line was closer to the actual than the close", "movement",
+                    "The contrarian read: if the opener was closer to what happened than the close, the move was "
+                    "public money or noise rather than information."),
+}
+_FORM = {"l10_over": ("l10_rate", 0.7, 1.01, "over"), "l10_under": ("l10_rate", 0.0, 0.3, "under"),
+         "l5_over": ("l5_rate", 0.7, 1.01, "over"), "l5_under": ("l5_rate", 0.0, 0.3, "under")}
+
+
+def _signal(ou: pl.DataFrame, sid: str) -> tuple[pl.DataFrame, pl.Series]:
+    """The graded over/under lines a signal fired on (pushes out), and whether
+    it was right on each."""
+    if sid in _FORM:
+        col, lo, hi, lean = _FORM[sid]
+        sub = ou.filter((pl.col(col) >= lo) & (pl.col(col) < hi) & (pl.col("result") != "push") & (pl.col("form_n") >= 5))
+        return sub, sub["result"] == lean
+    sub = ou.filter(pl.col("moved").is_not_null() & (pl.col("moved") != 0) & (pl.col("result") != "push"))
+    if sid == "moved_toward":
+        return sub, ((sub["moved"] > 0) & (sub["result"] == "over")) | ((sub["moved"] < 0) & (sub["result"] == "under"))
+    return sub, (sub["actual"] - sub["open_line"]).abs() < (sub["actual"] - sub["line"]).abs()
+
+
+def signal_lines(sid: str, season: int | None = None) -> dict | None:
+    """Every line one signal fired on, newest first, with whether it was right:
+    what the summary's hit rate is made of."""
+    if sid not in SIGNALS:
+        return None
+    label, _, case = SIGNALS[sid]
+    out: dict = {"id": sid, "signal": label, "why": case, "n": 0, "hits": 0, "rows": []}
+    g = graded_lines(season)
+    if g.is_empty():
+        return out
+    sub, hit = _signal(g.filter(pl.col("kind") == "ou"), sid)
+    if sub.is_empty():
+        return out
+    sub = sub.with_columns(hit.alias("hit"))
+    out["n"], out["hits"] = sub.height, int(sub["hit"].sum())
+    cols = ["season", "week", "game_id", "book", "market", "player_id", "player_name", "team", "line", "open_line",
+            "moved", "actual", "result", "l5_rate", "l10_rate", "form_n", "hit"]
+    out["rows"] = sub.sort(["season", "week", "player_name"], descending=[True, True, False]).select(cols).to_dicts()
+    return out
+
+
 def summary(season: int | None = None) -> dict:
     g = graded_lines(season)
     out: dict = {"n": 0, "weeks": [], "by_book": [], "by_market": [], "signals": [], "movement": [], "models": []}
@@ -219,22 +281,14 @@ def summary(season: int | None = None) -> dict:
         )
     out["by_book"] = agg(ou, "book")
     out["by_market"] = agg(ou, "market")
-    # Signals: recent form vs consensus, was it predictive?
-    for col, label in (("l10_rate", "L10 hit rate"), ("l5_rate", "L5 hit rate")):
-        for lo, hi, lean in ((0.7, 1.01, "over"), (0.0, 0.3, "under")):
-            sub = ou.filter((pl.col(col) >= lo) & (pl.col(col) < hi) & (pl.col("result") != "push") & (pl.col("form_n") >= 5))
-            if sub.is_empty():
-                continue
-            hits = (sub["result"] == lean).mean()
-            out["signals"].append({"signal": f"{label} {'≥ 70%' if lean == 'over' else '≤ 30%'} → {lean}", "n": sub.height, "hit_rate": float(hits)})
-    # Line movement: when a book moved its line from open, did the actual land on the side it moved toward?
-    mv = ou.filter(pl.col("moved").is_not_null() & (pl.col("moved") != 0) & (pl.col("result") != "push"))
-    if not mv.is_empty():
-        toward = ((mv["moved"] > 0) & (mv["result"] == "over")) | ((mv["moved"] < 0) & (mv["result"] == "under"))
-        out["movement"].append({"signal": "actual landed on the side the line moved toward", "n": mv.height, "hit_rate": float(toward.mean())})
-        # And the contrarian read: closing line vs opening line, which was closer?
-        closer_open = (mv["actual"] - mv["open_line"]).abs() < (mv["actual"] - mv["line"]).abs()
-        out["movement"].append({"signal": "opening line was closer to the actual than the close", "n": mv.height, "hit_rate": float(closer_open.mean())})
+    # Signals: recent form vs consensus, was it predictive? And line movement:
+    # when a book moved its line from open, did the actual land on the side it
+    # moved toward, or was the opener closer all along?
+    for sid, (label, kind, _) in SIGNALS.items():
+        sub, hit = _signal(ou, sid)
+        if sub.is_empty():
+            continue
+        out[kind].append({"id": sid, "signal": label, "n": sub.height, "hit_rate": float(hit.mean())})
     p = graded_preds(season)
     if not p.is_empty():
         for mv_, grp in p.group_by("model_version"):

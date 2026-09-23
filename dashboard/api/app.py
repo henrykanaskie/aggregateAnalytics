@@ -474,6 +474,24 @@ def angle_track_record(weeks: int = Query(22, ge=1, le=22)):
     return ag_mod.track_record(weeks)
 
 
+@app.get("/api/grading/angles/family")
+def angle_family(family: str, kind: str, lean: str, weeks: int = Query(22, ge=1, le=22)):
+    """Every graded game behind one row of the track record: who the angle
+    was about, what it said before kickoff, what happened, and why that kind
+    of angle should work at all."""
+    return ag_mod.family_record(family, kind, lean, weeks)
+
+
+@app.get("/api/grading/signals/{signal_id}")
+def grading_signal(signal_id: str, season: int | None = None):
+    """Every line one hit-rate or line-movement signal fired on, and whether
+    it was right: what the summary's rate is made of."""
+    r = grading.signal_lines(signal_id, season)
+    if r is None:
+        raise HTTPException(404, f"unknown signal {signal_id}")
+    return r
+
+
 @app.get("/api/grading/angles/{game_id}")
 def angle_review(game_id: str):
     """One played game's angles, rebuilt as of kickoff, each with what

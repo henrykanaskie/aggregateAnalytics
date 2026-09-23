@@ -149,10 +149,10 @@ const LIB: Record<string, Step> = {
     body: () => <>Its pick for each game beside the number the books were offering. Every call is written down before kickoff, so nothing here can be quietly improved after the fact.</>,
   },
   results: {
-    chapter: "Results", icon: "/results", where: () => "/results", sel: '[data-tour="results-books"]',
+    chapter: "Results", icon: "/results", where: () => "/results", sel: '[data-tour="results-strip"]',
     ifEmpty: "Nothing is graded yet this season: a line can only be checked once its game has been played. The page fills in as the weeks go by.",
     title: "Whether any of it worked",
-    body: () => <>Old lines and old predictions checked against what happened: which books were soft, whether the trends meant anything, and how the model did. The misses are in here too, which is rather the point.</>,
+    body: ({ mobile }) => <>Old lines and old predictions checked against what actually happened. Each tile opens a section: the matchup angles, the hit-rate trends, the sportsbooks, the model. {mobile ? "Tap" : "Click"} any row to see the games behind the number, misses included, which is rather the point.</>,
   },
   settings: {
     chapter: "Settings", icon: "/settings", where: () => "/settings", sel: '[data-tour="settings-pull"]',

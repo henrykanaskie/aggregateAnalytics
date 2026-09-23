@@ -63,6 +63,7 @@ SCHEMA: dict[str, pl.DataType] = {
     "position": pl.String, "team": pl.String, "measure": pl.String, "direction": pl.String,
     "baseline": pl.Float64, "baseline_label": pl.String, "actual": pl.Float64, "fmt": pl.String,
     "verdict": pl.String, "line": pl.Float64, "line_result": pl.String, "market": pl.String,
+    "premise_snaps": pl.Int32, "premise_of": pl.Int32,
 }
 
 
@@ -245,14 +246,29 @@ def _verdict(actual: float | None, base: float | None, d: str, fmt: str | None =
     return "hit" if (actual > base) == (d == "up") else "miss"
 
 
+#: A box angle is about the carries that came into that kind of box. In a
+#: game with none of them, the whole-game number it would be graded on says
+#: nothing about the angle: 0 of 13 carries into a stacked box and a slow
+#: day is a slow day, not a stacked-box call coming true. Those games get
+#: this verdict and count neither way.
+ABSENT = "absent"
+#: The graded outcomes that count toward a record.
+DECIDED = ("hit", "miss")
+
+
 def _with_margin(df: pl.DataFrame) -> pl.DataFrame:
     """Re-derive every verdict from the stored numbers, so the margin applies
-    to weeks graded before it existed and changing it needs no regrade."""
+    to weeks graded before it existed and changing it needs no regrade. A box
+    angle whose premise never happened in the game is :data:`ABSENT`."""
     if df.is_empty():
         return df
-    return df.with_columns(pl.struct("actual", "baseline", "direction", "fmt", "baseline_label", "measure").map_elements(
+    if "premise_snaps" not in df.columns:
+        df = df.with_columns(pl.lit(None, pl.Int32).alias("premise_snaps"), pl.lit(None, pl.Int32).alias("premise_of"))
+    v = pl.struct("actual", "baseline", "direction", "fmt", "baseline_label", "measure").map_elements(
         lambda r: _verdict(r["actual"], r["baseline"], r["direction"], r["fmt"], r["baseline_label"], r["measure"]),
-        return_dtype=pl.String).alias("verdict"))
+        return_dtype=pl.String)
+    return df.with_columns(pl.when(v.is_not_null() & (pl.col("premise_snaps") == 0)).then(pl.lit(ABSENT))
+                           .otherwise(v).alias("verdict"))
 
 
 def _lines(season: int, week: int) -> pl.DataFrame:
@@ -371,6 +387,8 @@ def grade_game(game_id: str) -> list[dict]:
                     ln, act = float(hit["line"][0]), float(hit["actual"][0])
                     row |= {"line": ln, "market": mk, "line_result": "over" if act > ln else "under" if act < ln else "push"}
         row["verdict"] = _verdict(row["actual"], row["baseline"], row["direction"], row["fmt"], row["baseline_label"], row.get("measure"))
+        if row["verdict"] is not None:
+            row |= _premise_cols(row)
         out.append(row)
     return out
 
@@ -503,7 +521,8 @@ _COUNTS = {"plays_pg": ("ran", "plays"), "fga_pg": ("tried", "field goals")}
 _SPLIT_ANGLE = ("vs the blitz", "man coverage", "zone coverage", "two-high", "under pressure", "stacked boxes", "light boxes")
 
 _VERDICT_WORDS = {"hit": "So the call was right.", "miss": "So the call was wrong.",
-                  "push": "Too close to call: the move was inside the margin, so it counts neither way."}
+                  "push": "Too close to call: the move was inside the margin, so it counts neither way.",
+                  ABSENT: "The box it was about never showed up in this game, so it counts neither way."}
 
 
 def _num(v: float | None, fmt: str | None, signed: bool = False) -> str:
@@ -727,6 +746,12 @@ def recent_weeks(n: int, season: int | None = None) -> list[tuple[int, int]]:
     return [(r["season"], r["week"]) for r in wk.to_dicts()]
 
 
+def _window(wk: list[tuple[int, int]]) -> pl.DataFrame:
+    """The graded calls (verdict set, pushes included) in the given weeks."""
+    g = _fresh().filter((pl.col("season").cast(pl.Int64) * 100 + pl.col("week")).is_in([s * 100 + w for s, w in wk]))
+    return g.filter(pl.col("verdict").is_not_null())
+
+
 def track_record(weeks: int = 22, min_n: int = 1) -> dict:
     """Hit rate per family over the last ``weeks`` graded weeks of the record
     season (:func:`record_season`), plus the calls that landed hardest. What
@@ -734,14 +759,14 @@ def track_record(weeks: int = 22, min_n: int = 1) -> dict:
     season = record_season()
     wk = recent_weeks(weeks, season) if season is not None else []
     out: dict = {"season": season, "current": season == CURRENT_SEASON, "weeks": wk, "n": 0, "hits": 0,
-                 "pushes": 0, "families": [], "by_kind": [], "best": []}
+                 "pushes": 0, "absent": 0, "families": [], "by_kind": [], "best": []}
     if not wk:
         return out
-    g = _fresh().filter((pl.col("season").cast(pl.Int64) * 100 + pl.col("week")).is_in([s * 100 + w for s, w in wk]))
-    g = g.filter(pl.col("verdict").is_not_null())
-    dec = g.filter(pl.col("verdict") != "push")
+    g = _window(wk)
+    dec = g.filter(pl.col("verdict").is_in(DECIDED))
     out["n"], out["hits"] = dec.height, int((dec["verdict"] == "hit").sum())
-    out["pushes"] = g.height - dec.height
+    out["pushes"] = int((g["verdict"] == "push").sum())
+    out["absent"] = int((g["verdict"] == ABSENT).sum())
     # Keyed by lean too: "vs man coverage" leaning over and leaning under are
     # opposite calls that share a title.
     fam = (dec.group_by("family", "kind", "lean").agg(pl.len().alias("n"), (pl.col("verdict") == "hit").sum().alias("hits"))
@@ -759,6 +784,359 @@ def track_record(weeks: int = 22, min_n: int = 1) -> dict:
     return _json(out)
 
 
+# --- one family, every game behind its number ----------------------------------
+#
+# "Heavy boxes vs the run: 11 of 16" is a claim about sixteen games. Clicking
+# it should show them: who the angle was about, what the page said before
+# kickoff, what happened. And the reasoning, so a reader can judge whether a
+# record is a mechanism showing through or a coin that came up heads.
+
+#: Why each kind of angle should work, keyed by a pattern on the family and
+#: optionally the lean. First match wins. Written as the case for the angle;
+#: the record under it says whether the case held.
+_WHY: list[tuple[str, str | None, str]] = [
+    # player splits
+    (r"vs stacked boxes$", None,
+     "Eight or more defenders near the line means more defenders than blockers: fewer lanes, and a back who gets hit "
+     "sooner. This back has averaged clearly fewer yards a carry against stacked boxes than light ones, and this "
+     "defense loads the box more than most, so more of his carries should come into eight-man fronts."),
+    (r"vs light boxes$", None,
+     "Six or fewer in the box leaves the offense with a blocker for every defender and room to get to the second "
+     "level. This back has averaged clearly more a carry against light boxes than stacked ones, and this defense "
+     "plays lighter fronts than most."),
+    (r"vs (man|zone) coverage$", "over",
+     "Some players win one-on-one and some live in the soft spots of a zone. This one has been clearly better "
+     "against the coverage this defense plays more than most teams, so the matchup plays to his strength."),
+    (r"vs (man|zone) coverage$", "under",
+     "Some players win one-on-one and some live in the soft spots of a zone. This one has been clearly worse against "
+     "the coverage this defense plays more than most teams, so the matchup plays to his weakness."),
+    (r"vs the blitz$", "over",
+     "A blitz sends extra rushers and leaves fewer men in coverage. This quarterback has been better blitzed than "
+     "not, a sign he finds the open man quickly, and this defense blitzes more than most."),
+    (r"vs the blitz$", "under",
+     "A blitz sends extra rushers and leaves fewer men in coverage. This quarterback has been worse blitzed than "
+     "not, and this defense blitzes more than most, so he should see more of what bothers him."),
+    (r"vs two-high shells$", "over",
+     "Two deep safeties take away the deep ball and invite the short game. This quarterback has been better against "
+     "two-high than single-high looks, and this defense lives in two-high."),
+    (r"vs two-high shells$", "under",
+     "Two deep safeties take away the deep ball and make a quarterback take the checkdown. This one has been worse "
+     "against two-high than single-high looks, and this defense lives in two-high."),
+    (r"under pressure vs a pressure defense$", None,
+     "Every quarterback is worse under pressure, but some fall off a cliff. This one loses close to half a point of "
+     "EPA a dropback when pressured, and this defense gets home more than most."),
+    (r", history$", None,
+     "He has done much better or worse against this defense than against everyone else across recent meetings. It "
+     "can be scheme fit or a particular matchup, but it is also a small sample, so this is the angle most likely to "
+     "be noise. The record is the test."),
+    # team: efficiency vs efficiency
+    (r"^Pass-heavy offense vs a pass defense that leaks", None,
+     "A team that throws a lot, against a defense that gives up more per dropback than most. The offense leans into "
+     "its strength where the defense is weakest, so it should pass better than it usually does."),
+    (r"^Run-heavy offense vs a run defense that leaks", None,
+     "A team that runs a lot, against a defense that gives up more per carry than most, so it should run better than "
+     "it usually does."),
+    (r"^Pass-heavy offense into a stingy pass defense", None,
+     "A team that leans on the pass, into one of the best pass defenses. Strength into strength usually favours the "
+     "defense, so the offense should pass worse than it usually does."),
+    (r"^Run-first offense into a stout run defense", None,
+     "A team that leans on the run, into one of the best run defenses, so it should run worse than it usually does."),
+    (r"passing game beats most defenses", None,
+     "Defenses facing this offense have given up more through the air than they usually do: it makes most defenses "
+     "look worse. So this one should give up more than its usual too."),
+    (r"passing game has been easy to defend", None,
+     "Defenses facing this offense have given up less through the air than they usually do. So this one should allow "
+     "less than its usual too."),
+    (r"run game beats most defenses", None,
+     "Defenses facing this offense have given up more on the ground than they usually do, so this one should too."),
+    (r"run game has been easy to stop", None,
+     "Defenses facing this offense have given up less on the ground than they usually do, so this one should too."),
+    # boxes and coverage shells
+    (r"^Heavy boxes vs the run", None,
+     "The defense puts extra men near the line against the run. More defenders than blockers means fewer lanes, so "
+     "the offense should run less efficiently than it usually does."),
+    (r"^Light boxes", None,
+     "The defense keeps its box light, trading run defense for coverage. With a blocker for every defender, the "
+     "offense should run more efficiently than it usually does."),
+    (r"load the box more than usual", None,
+     "The matchup view projects how this defense plays this offense from how the defense usually plays and how "
+     "defenses have played this offense. The projection has it loading the box well beyond its usual, which clogs "
+     "the run: the offense should run worse than usual."),
+    (r"lighten the box", None,
+     "The matchup view projects this defense playing lighter fronts than usual against this offense, which opens "
+     "running lanes: the offense should run better than usual."),
+    (r"likely to (play more|sit in|blitz)", None,
+     "The matchup view projects how this defense plays this offense from how it usually plays and how defenses have "
+     "played this offense. When that projection lands well away from its usual rank, the defense should play that "
+     "way more in this game."),
+    # pressure and sacks
+    (r"line gives up pressure", None,
+     "This offense's line lets defenses get home more than they usually do, so this pass rush should reach the "
+     "quarterback more than usual."),
+    (r"keeps the pocket clean", None,
+     "This offense keeps defenses from getting home as often as they usually do, so this pass rush should get there "
+     "less than usual."),
+    (r"should sack .* more than", None,
+     "This offense takes sacks and this defense makes them: both halves of a sack point the same way."),
+    (r"rarely goes down", None,
+     "This offense rarely takes sacks against anyone, so this defense's sack rate should dip below its usual."),
+    (r"^Sacks: a line that gives them up", None,
+     "A line that allows sacks against a rush that gets them. Both halves point the same way, so the offense should "
+     "take more sacks than usual."),
+    (r"^Clean pockets", None,
+     "A line that rarely allows sacks against a rush that rarely gets them, so the offense should take fewer sacks "
+     "than usual."),
+    # script, pace and volume
+    (r"^Big favourite", None,
+     "Teams expected to win comfortably spend the second half ahead and run to kill the clock, so their pass rate "
+     "should fall below usual."),
+    (r"^Big underdog", None,
+     "Teams expected to trail spend the second half throwing to catch up, so their pass rate should rise above usual."),
+    (r"^Slow offense", None,
+     "A slow offense runs fewer plays, and so does its opponent: fewer chances for everyone's counting stats."),
+    (r"^Fast offense", None,
+     "A fast offense runs more plays than most, and gives its opponent more too: more chances for counting stats."),
+    (r"is thrown on", None,
+     "Offenses throw more than usual against this defense, and this one is projected to follow: its pass rate should "
+     "rise."),
+    (r"is run on", None,
+     "Offenses run more than usual against this defense, and this one is projected to follow: its pass rate should "
+     "drop."),
+    (r"^Kicker volume", None,
+     "An offense that kicks a lot of field goals, against a defense that forces a lot of them: more tries than "
+     "usual."),
+    # red zone, drives, turnovers
+    (r"^Red zone favours touchdowns", None,
+     "A good red-zone offense against a defense that gives up touchdowns there, so more of its trips should end in "
+     "seven."),
+    (r"^Red zone favours field goals", None,
+     "A red-zone offense that stalls, against a defense that holds there, so more trips should end in three."),
+    (r"^Drives should sustain", None,
+     "Good on third down against a defense that is bad on it, so the offense should convert more third downs than "
+     "usual."),
+    (r"^Three-and-outs likely", None,
+     "Bad on third down against a defense that is good on it, so the offense should convert fewer than usual."),
+    (r"^Interception risk", None,
+     "A quarterback who throws picks against a defense that makes them, so the interception rate should rise."),
+    (r"^Interceptions unlikely", None,
+     "A careful passer against a defense that rarely intercepts, so the interception rate should fall."),
+    # who gets the ball
+    (r"^Screens", None,
+     "Screens punish a blitz: the extra rushers run past the back, who catches it with blockers in front. This "
+     "offense screens a lot and this defense blitzes a lot, so the backs should see more of the targets."),
+    (r"^Running backs in the passing game|^Running back in the red zone|funnels targets to backs", None,
+     "The offense throws to its backs and this defense lets backs catch more of the targets than most, so the "
+     "running backs' share of targets should rise."),
+    (r"takes backs away", None,
+     "This defense takes running backs out of the passing game, so the offense's backs should see a smaller share of "
+     "targets than usual."),
+    (r"^Tight end targets|funnels targets to tight ends|^Tight end in the red zone", None,
+     "The offense uses its tight ends and this defense gives up targets to them, so tight ends should see more of "
+     "the ball."),
+    (r"takes tight ends away", None,
+     "This defense takes tight ends away, so the offense's tight ends should see a smaller share of targets than "
+     "usual."),
+    (r"^Shots downfield", None,
+     "An offense that takes deep shots, against a defense that gives up big plays, so the big-play rate should rise."),
+    (r"^Mobile QB", None,
+     "A quarterback who runs, against a run defense that leaks, so he should keep it more than usual."),
+    # position defense and weather
+    (r"has been generous to", None,
+     "This defense has given up well above the league average to the position this season, so the offense's players "
+     "there should out-gain what a typical defense allows."),
+    (r"has clamped", None,
+     "This defense has held the position well below the league average this season, so the offense's players there "
+     "should come in under what a typical defense allows."),
+    (r"^Wind$", None, "Wind makes passing and kicking harder, so the game should score under the closing total."),
+    (r"^Cold$", None, "Cold weather tends to slow scoring, so the game should come in under the closing total."),
+]
+
+
+@lru_cache(maxsize=64)
+def _game_plays(game_id: str) -> pl.DataFrame:
+    """One game's runs and dropbacks with FTN's charting (box count, blitzers)
+    joined on. FTN charts in season, so the premise of a box or blitz angle
+    can be checked on the very snaps it was about."""
+    from .pbp import _PBP_COLS, _scan_cast
+    try:
+        df = (scan("pbp").select(_PBP_COLS).filter(pl.col("game_id") == game_id)
+              .filter(((pl.col("rush") == 1) | (pl.col("qb_dropback") == 1)) & (pl.col("qb_kneel") != 1)
+                      & (pl.col("qb_spike") != 1) & (pl.col("aborted_play") != 1))
+              .collect().with_columns(pl.col("play_id").cast(pl.Int64)))
+        ftn = (_scan_cast("ftn_charting", "nflverse_play_id").filter(pl.col("nflverse_game_id") == game_id)
+               .select(pl.col("nflverse_game_id").alias("game_id"), pl.col("nflverse_play_id").alias("play_id"),
+                       "n_defense_box", "n_blitzers").unique(subset=["game_id", "play_id"]).collect())
+    except FileNotFoundError:
+        return pl.DataFrame()
+    return df.join(ftn, on=["game_id", "play_id"], how="left")
+
+
+def _ypc(df: pl.DataFrame) -> str:
+    return f"{float(df['yards_gained'].fill_null(0).sum()) / df.height:.1f}" if df.height else "–"
+
+
+def _epa(df: pl.DataFrame) -> str:
+    return f"{float(df['epa'].fill_null(0).mean()):+.2f}" if df.height else "–"
+
+
+#: Angles whose premise is a kind of snap FTN charts: (family pattern, whose
+#: plays, which snaps count). The rest are about season-long rates and have no
+#: single-game premise to check.
+_PREMISE = [
+    (r"vs stacked boxes$", "rusher", "stacked"), (r"vs light boxes$", "rusher", "light"),
+    (r"vs the blitz$", "passer", "blitz"),
+    (r"^Heavy boxes vs the run|load the box more than usual", "offense_runs", "stacked"),
+    (r"^Light boxes|lighten the box", "offense_runs", "light"),
+    (r"likely to blitz (more|less) than usual", "offense_dropbacks", "blitz"),
+]
+
+
+def in_game(r: dict) -> dict | None:
+    """Did the thing the angle was about happen in the game, and how did the
+    player or offense do on those snaps? ``None`` when the angle has no
+    snap-level premise or the game has no charting yet."""
+    fam = r.get("family") or ""
+    hit = next(((who, what) for pat, who, what in _PREMISE if re.search(pat, fam)), None)
+    if not hit:
+        return None
+    plays = _game_plays(r["game_id"])
+    if plays.is_empty() or "n_defense_box" not in plays.columns:
+        return None
+    who, what = hit
+    if who == "rusher":
+        mine = plays.filter((pl.col("rusher_player_id") == r["player_id"]) & (pl.col("rush") == 1))
+    elif who == "passer":
+        mine = plays.filter((pl.col("passer_player_id") == r["player_id"]) & (pl.col("qb_dropback") == 1))
+    elif who == "offense_runs":
+        mine = plays.filter((pl.col("posteam") == r["offense"]) & (pl.col("rush") == 1))
+    else:
+        mine = plays.filter((pl.col("posteam") == r["offense"]) & (pl.col("qb_dropback") == 1))
+    col = "n_blitzers" if what == "blitz" else "n_defense_box"
+    mine = mine.filter(pl.col(col).is_not_null())
+    if mine.is_empty():
+        return None
+    cond = {"stacked": pl.col(col) >= 8, "light": pl.col(col) <= 6, "blitz": pl.col(col) > 0}[what]
+    on, off = mine.filter(cond), mine.filter(~cond)
+    name = r.get("player") or r["offense"]
+    val = "epa" if what == "blitz" else "yards_gained"
+    # Raw sums too, so a family can add its games up (:func:`_premise_total`).
+    raw = {"on_n": on.height, "on_sum": float(on[val].fill_null(0).sum()),
+           "off_n": off.height, "off_sum": float(off[val].fill_null(0).sum())}
+    if what == "blitz":
+        return raw | {"snaps": on.height, "of": mine.height, "label": "blitzed", "unit": "EPA per dropback",
+                "premise": f"{r['defense']} blitzed on {on.height} of {mine.height} {name} dropbacks",
+                "split": f"EPA per dropback {_epa(on)} blitzed, {_epa(off)} not"}
+    word = "8+ in the box" if what == "stacked" else "6 or fewer in the box"
+    avg = float(mine["n_defense_box"].mean())
+    return raw | {"snaps": on.height, "of": mine.height, "label": "8+ box" if what == "stacked" else "light box", "unit": "yards a carry",
+            "premise": f"{on.height} of {mine.height} {name} carries came against {word} (average box {avg:.1f})"
+            if who == "rusher" else f"{r['defense']} had {word} on {on.height} of {mine.height} {name} runs (average box {avg:.1f})",
+            "split": f"{_ypc(on)} yards a carry on those, {_ypc(off)} on the rest"}
+
+
+#: The families graded only where their box showed up (:data:`ABSENT`).
+BOX_FAMILIES = r"vs stacked boxes$|vs light boxes$|^Heavy boxes vs the run|load the box more than usual|^Light boxes|lighten the box"
+
+
+def _premise_cols(r: dict) -> dict:
+    """``premise_snaps`` / ``premise_of`` for a box angle: of the carries the
+    angle was about, how many came into that box. Stored when the week is
+    graded, so reading a grade never needs play-by-play. Null for other
+    angles, and for a game FTN has not charted."""
+    if not re.search(BOX_FAMILIES, r.get("family") or ""):
+        return {"premise_snaps": None, "premise_of": None}
+    try:
+        ig = in_game(r)
+    except Exception:
+        ig = None
+    return {"premise_snaps": ig["snaps"] if ig else None, "premise_of": ig["of"] if ig else None}
+
+
+def backfill_premise(files=None, log=print) -> int:
+    """Fill in the premise columns wherever a box angle is missing them:
+    weeks graded before the columns existed, and weeks graded before FTN had
+    charted them (the charting can land a day or two after the games). No
+    regrade: only the box angles' rows need play-by-play. Returns the number
+    of files rewritten."""
+    files = files if files is not None else sorted(GRADED_DIR.glob("angles_*.parquet"))
+    done = 0
+    for f in files:
+        df = pl.read_parquet(f)
+        rows = df.to_dicts()
+        todo = [r for r in rows if r.get("verdict") is not None and r.get("premise_snaps") is None
+                and re.search(BOX_FAMILIES, r.get("family") or "")]
+        if not todo:
+            continue
+        for r in rows:
+            r.setdefault("premise_snaps", None)
+            r.setdefault("premise_of", None)
+        for r in todo:
+            r |= _premise_cols(r)
+        out = pl.DataFrame(rows, schema={**SCHEMA, **{k: v for k, v in df.schema.items() if k not in SCHEMA}})
+        out.select([c for c in SCHEMA]).write_parquet(f, compression="zstd")
+        n = sum(1 for r in todo if r["premise_snaps"] is not None)
+        log(f"[angles] {f.name}: premise on {n} of {len(todo)} box angles, {sum(1 for r in todo if r['premise_snaps'] == 0)} never happened")
+        done += 1
+    graded.cache_clear()
+    return done
+
+
+def _premise_total(rows: list[dict]) -> dict | None:
+    """The family's games added up: how often the premise actually held, and
+    how the snaps it was about went against the rest. A record built on games
+    where the box was never stacked says nothing about stacked boxes."""
+    g = [r["in_game"] for r in rows if r.get("in_game") and r["verdict"] != "push"]
+    if not g:
+        return None
+    on_n, off_n = sum(x["on_n"] for x in g), sum(x["off_n"] for x in g)
+    return {"label": g[0]["label"], "unit": g[0]["unit"], "games": len(g), "snaps": on_n, "of": on_n + off_n,
+            "on": sum(x["on_sum"] for x in g) / on_n if on_n else None,
+            "off": sum(x["off_sum"] for x in g) / off_n if off_n else None,
+            "never": sum(1 for x in g if x["snaps"] == 0)}
+
+
+def why(family: str, lean: str | None = None) -> str | None:
+    for pat, ln, text in _WHY:
+        if (ln is None or ln == lean) and re.search(pat, family):
+            return text
+    return None
+
+
+def family_record(family: str, kind: str, lean: str, weeks: int = 22) -> dict:
+    """Every graded call of one family over the track record's window, newest
+    first, each with what it said before kickoff and what happened."""
+    season = record_season()
+    wk = recent_weeks(weeks, season) if season is not None else []
+    out: dict = {"family": family, "kind": kind, "lean": lean, "season": season, "weeks": wk, "why": why(family, lean),
+                 "n": 0, "hits": 0, "pushes": 0, "absent": 0, "graded_on": None, "prop": None, "premise": None, "rows": []}
+    if not wk:
+        return out
+    g = _window(wk).filter((pl.col("family") == family) & (pl.col("kind") == kind) & (pl.col("lean") == lean))
+    if g.is_empty():
+        return out
+    dec = g.filter(pl.col("verdict").is_in(DECIDED))
+    out["n"], out["hits"] = dec.height, int((dec["verdict"] == "hit").sum())
+    out["pushes"], out["absent"] = int((g["verdict"] == "push").sum()), int((g["verdict"] == ABSENT).sum())
+    first = g.row(0, named=True)
+    out["graded_on"] = {"measure": first["measure"], "baseline_label": first["baseline_label"], "direction": first["direction"]}
+    # For player angles with a prop graded that week: the angle's lean against
+    # the closing line, the number a bettor would actually have faced.
+    props = g.filter(pl.col("line_result").is_in(["over", "under"]) & (pl.col("verdict") != ABSENT))
+    if not props.is_empty():
+        out["prop"] = {"n": props.height, "agreed": int((props["line_result"] == lean).sum())}
+    rows = explain(g.sort(["season", "week", "game_id"], descending=True).to_dicts())
+    for r in rows:
+        try:
+            r["in_game"] = in_game(r)
+            if r["in_game"]:
+                r["note"] = None    # "the box score does not split those snaps": the charting just did
+        except Exception:       # charting missing or odd for one game: that row just goes without
+            r["in_game"] = None
+    out["rows"] = rows
+    out["premise"] = _premise_total(rows)
+    return _json(out)
+
+
 # --- CLI ---------------------------------------------------------------------
 
 def finished_weeks(season: int) -> list[int]:
@@ -772,7 +1150,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--season", type=int, default=CURRENT_SEASON)
     ap.add_argument("--week", type=int, default=None)
     ap.add_argument("--all", action="store_true", help="regrade every finished week of the season")
+    ap.add_argument("--backfill-premise", action="store_true",
+                    help="add the box-angle premise columns to every graded week, without regrading")
     a = ap.parse_args(argv)
+    if a.backfill_premise:
+        backfill_premise()
+        return 0
     # A week touches ~250 players and a season the same few hundred again and
     # again. The server keeps sixteen players' plays (pbp.PLAYS_CACHE); a
     # batch that did the same would rescan play-by-play for nearly every one.
@@ -788,9 +1171,11 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     for w in weeks:
         df = grade_week(a.season, w)
-        dec = df.filter(pl.col("verdict").is_not_null() & (pl.col("verdict") != "push"))
+        dec = _with_margin(df).filter(pl.col("verdict").is_in(DECIDED))
         rate = f"{(dec['verdict'] == 'hit').mean():.0%}" if dec.height else "–"
         print(f"[angles] {a.season} wk{w:02d}: {df.height} angles, {dec.height} graded, {rate} hit", flush=True)
+    # Box angles graded before FTN charted their game pick it up now.
+    backfill_premise(sorted(GRADED_DIR.glob(f"angles_{a.season}_*.parquet")))
     return 0
 
 
