@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { api, apiFantasy, Board, FantasyPlayer, FantasyWeek, Player, ScheduleGame } from "../api";
 import { TeamTag } from "../components/common";
 import Spark from "../components/Spark";
-import { bestLineup, DEFAULT_SLOTS, RosterEntry, rosterRows, SLOT_LABEL, Slots } from "../components/MyRoster";
+import { bestLineup, DEFAULT_SLOTS, lineupTotal, myLineup, RosterEntry, rosterRows, SLOT_LABEL, Slots } from "../components/MyRoster";
 import OmniSearch from "../components/OmniSearch";
 import { ICONS } from "../components/Icons";
 import Tailor from "../components/Tailor";
@@ -143,14 +143,19 @@ function Briefing({ fw, games, board, onTailor }: { fw: FantasyWeek | null; game
     const scoring = p.scoring;
     if (fw && roster.length) {
       const rows = rosterRows(roster, fw, scoring);
-      const { lineup } = bestLineup(rows, readSticky<Slots>("fantasy.slots", DEFAULT_SLOTS));
+      // The lineup set by hand on the Fantasy page, when there is one.
+      const slots = readSticky<Slots>("fantasy.slots", DEFAULT_SLOTS);
+      const { lineup } = myLineup(rows, slots, readSticky<string[] | null>("fantasy.lineup", null));
       const starters = lineup.filter((l) => l.row).map((l) => l.row!);
-      const total = starters.reduce((a, r) => a + (r.proj ?? 0), 0);
+      const total = lineupTotal(lineup);
       const empty = lineup.length - starters.length;
       lines.push({ key: "total", node: <>Your lineup projects <b>{total.toFixed(1)}</b> {SCORING_LABEL[scoring]} points{empty ? <>, with <b>{empty}</b> slot{empty === 1 ? "" : "s"} still open</> : null}.</> });
+      const idle = starters.filter((r) => r.why).slice(0, 2);
+      idle.forEach((r) => lines.push({ key: `idle-${r.entry.player_id}`, tone: "down", node: <><b>{r.entry.name}</b> is in your lineup but {r.why === "bye" ? "on bye" : r.why === "not on a depth chart this week" ? "not playing" : r.why === "too few games to project" ? "has no projection" : `listed ${r.why}`}.</> }));
+      // Points left on the bench are said on the lineup card, next to the lineup.
       const best = starters.filter((r) => r.p?.matchup_rank && ["QB", "RB", "WR", "TE"].includes(r.p.position)).sort((a, b) => a.p!.matchup_rank! - b.p!.matchup_rank!)[0];
       if (best?.p) lines.push({ key: "matchup", tone: "up", node: <><b>{best.entry.name}</b> has your best matchup: {nick(best.p.opponent)} give up the {ordinal(best.p.matchup_rank!)} most to {best.p.position}s.</> });
-      const hurt = rows.filter((r) => r.p?.status).slice(0, 2);
+      const hurt = rows.filter((r) => r.p?.status && !idle.includes(r)).slice(0, 2);
       hurt.forEach((r) => lines.push({ key: `inj-${r.entry.player_id}`, tone: "warn", node: <><b>{r.entry.name}</b> is listed {r.p!.status}{OUT.includes(r.p!.status!) ? ", so he's out of your lineup" : ""}.</> }));
       const moved = rows.filter((r) => r.p?.role && r.p.role.before >= 3).map((r) => ({ r, d: (r.p!.role!.last3 - r.p!.role!.before) / r.p!.role!.before }))
         .sort((a, b) => Math.abs(b.d) - Math.abs(a.d))[0];
@@ -228,7 +233,13 @@ function MyTeam({ fw }: { fw: FantasyWeek | null }) {
   const scoring = lens.profile?.scoring ?? "ppr";
   const roster = readSticky<RosterEntry[]>("fantasy.roster", []);
   const slots = readSticky<Slots>("fantasy.slots", DEFAULT_SLOTS);
-  const res = useMemo(() => (fw && roster.length ? bestLineup(rosterRows(roster, fw, scoring), slots) : null), [fw, roster.length, scoring]);
+  // The lineup set by hand on the Fantasy page, or the best one until there is.
+  const chosen = readSticky<string[] | null>("fantasy.lineup", null);
+  const res = useMemo(() => {
+    if (!fw || !roster.length) return null;
+    const rows = rosterRows(roster, fw, scoring);
+    return { ...myLineup(rows, slots, chosen), best: lineupTotal(bestLineup(rows, slots).lineup) };
+  }, [fw, roster, slots, chosen, scoring]);
   if (!roster.length) {
     return (
       <Card title="Your fantasy team">
@@ -240,22 +251,25 @@ function MyTeam({ fw }: { fw: FantasyWeek | null }) {
     );
   }
   if (!res) return <Card title="Your fantasy team"><div className="hint">Projecting your week…</div></Card>;
-  const total = res.lineup.reduce((a, l) => a + (l.row?.proj ?? 0), 0);
+  const total = lineupTotal(res.lineup);
+  const spare = res.auto ? 0 : res.best - total;
+  const idle = res.lineup.filter((l) => l.row?.why);
   const empty = res.lineup.filter((l) => !l.row).map((l) => SLOT_LABEL[l.slot]);
   const trouble = [...roster.filter((r) => res.bench.some((b) => b.entry.player_id === r.player_id && b.why && b.why !== "too few games to project")).map((r) => `${r.name}: ${res.bench.find((b) => b.entry.player_id === r.player_id)!.why}`)];
   const questionable = res.lineup.filter((l) => l.row?.p?.status && !OUT.includes(l.row.p.status));
   return (
     <Card title="Your fantasy team" to="/fantasy" link="full lineup">
       <div className="home-myteam">
-        <div className="home-big"><span className="num">{total.toFixed(1)}</span><span className="muted small">projected {SCORING_LABEL[scoring]} points{lens.ceiling ? ", but your format pays for ceilings" : ""}</span></div>
+        <div className="home-big"><span className="num">{total.toFixed(1)}</span><span className="muted small">projected {SCORING_LABEL[scoring]} points{res.auto ? " from your best lineup" : " from your lineup"}{lens.ceiling ? ", but your format pays for ceilings" : ""}</span></div>
         <div className="home-lineup">
           {res.lineup.filter((l) => l.row).map((l, i) => (
             <div key={i} className="home-lineup-row">
               <span className="slot">{SLOT_LABEL[l.slot]}</span>
               <span className="who"><Link to={fantasyHref(l.row!.entry)}>{l.row!.entry.name}</Link>
-                {l.row!.p?.status && <span className={`pill ${OUT.includes(l.row!.p.status) ? "under" : "warn"}`}>{l.row!.p.status}</span>}</span>
+                {l.row!.p?.status ? <span className={`pill ${OUT.includes(l.row!.p.status) ? "under" : "warn"}`}>{l.row!.p.status}</span>
+                  : l.row!.why ? <span className="pill under">{l.row!.why === "bye" ? "bye" : "not playing"}</span> : null}</span>
               <span className="opp">{l.row!.p ? `${l.row!.p.home ? "vs" : "@"} ${l.row!.p.opponent}` : ""}</span>
-              <b className="num">{l.row!.proj?.toFixed(1)}</b>
+              <b className="num">{l.row!.why ? "–" : l.row!.proj?.toFixed(1)}</b>
             </div>
           ))}
           {empty.length > 0 && (
@@ -266,8 +280,10 @@ function MyTeam({ fw }: { fw: FantasyWeek | null }) {
             </div>
           )}
         </div>
-        {(trouble.length > 0 || questionable.length > 0) && (
+        {(spare > 0.4 || idle.length > 0 || trouble.length > 0 || questionable.length > 0) && (
           <ul className="home-alerts">
+            {idle.map((l) => <li key={`idle-${l.row!.entry.player_id}`} className="down">{l.row!.entry.name} is starting but {l.row!.why === "bye" ? "on bye" : l.row!.p?.status ? `listed ${l.row!.p.status}` : "not playing this week"}.</li>)}
+            {spare > 0.4 && <li className="warn">Your bench has {spare.toFixed(1)} more points in it. <Link to="/fantasy">See the swaps</Link>.</li>}
             {trouble.map((t) => <li key={t} className="down">{t}</li>)}
             {questionable.map((l) => <li key={l.row!.entry.player_id} className="warn">{l.row!.entry.name} is {l.row!.p!.status}: have a backup ready.</li>)}
           </ul>
