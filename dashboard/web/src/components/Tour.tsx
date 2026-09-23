@@ -124,10 +124,10 @@ const ALL_STEPS: Step[] = [
   },
   {
     where: () => "/results",
-    sel: '[data-tour="results-books"]',
+    sel: '[data-tour="results-strip"]',
     ifEmpty: "Nothing is graded yet this season: a line can only be checked once its game has been played. The page fills in as the weeks go by.",
     title: "Whether any of it worked",
-    body: say("Old lines and old predictions checked against what actually happened. Which sportsbooks were soft, whether the trends meant anything, and how the model did. The misses are in here too, which is rather the point."),
+    body: say("Old lines and old predictions checked against what actually happened. Each tile opens a section: the matchup angles, the hit-rate trends, the sportsbooks, the model. Click any row to see the games behind the number, misses included, which is rather the point."),
   },
   {
     where: () => "/settings",

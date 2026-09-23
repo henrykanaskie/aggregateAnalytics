@@ -141,3 +141,82 @@ def test_a_played_games_angles_are_served_from_the_file(monkeypatch):
     assert ag.pregame("2026_01_NOPE") is None
     # The review panel only wants the ones with a verdict.
     assert [r["title"] for r in ag.for_game("2026_01_NE_SEA")] == ["A vs stacked boxes", "Heavy boxes vs the run"]
+
+
+def test_every_family_says_why_it_should_work():
+    """Opening a row of the track record shows the case for that kind of
+    angle; a family without one opens to a record and no reason."""
+    try:
+        g = ag.graded()
+    except FileNotFoundError:
+        pytest.skip("no graded angles")
+    fams = g.filter(g["verdict"].is_not_null()).select("family", "lean").unique().to_dicts()
+    missing = sorted({(f["family"], f["lean"]) for f in fams if ag.why(f["family"], f["lean"]) is None})
+    assert not missing, missing
+
+
+def test_a_family_opens_to_the_games_behind_its_record(monkeypatch):
+    import polars as pl
+    base = {k: None for k in ag.SCHEMA} | {"season": 2026, "kind": "player", "family": "{player} vs stacked boxes",
+                                           "lean": "under", "strength": 1, "tags": [], "direction": "down",
+                                           "fmt": "dec1", "measure": "yards / carry", "baseline_label": "his previous 16 games",
+                                           "offense": "NE", "defense": "SEA", "position": "RB", "detail": "d"}
+    df = pl.DataFrame([
+        base | {"week": 1, "game_id": "2026_01_NE_SEA", "player": "A", "player_id": "a", "title": "A vs stacked boxes", "verdict": "hit", "line_result": "under"},
+        base | {"week": 2, "game_id": "2026_02_NE_SEA", "player": "A", "player_id": "a", "title": "A vs stacked boxes", "verdict": "miss", "line_result": "over"},
+        base | {"week": 2, "game_id": "2026_02_NE_SEA", "player": "B", "player_id": "b", "title": "B vs stacked boxes", "verdict": "push"},
+        # Same title leaning the other way is a different call.
+        base | {"week": 2, "game_id": "2026_02_NE_SEA", "player": "C", "player_id": "c", "title": "C vs stacked boxes", "verdict": "hit", "lean": "over"},
+    ], schema=ag.SCHEMA)
+    monkeypatch.setattr(ag, "_fresh", lambda: df)
+    monkeypatch.setattr(ag, "CURRENT_SEASON", 2026)
+    r = ag.family_record("{player} vs stacked boxes", "player", "under")
+    assert (r["n"], r["hits"], r["pushes"]) == (2, 1, 1)
+    assert r["prop"] == {"n": 2, "agreed": 1}
+    assert [x["week"] for x in r["rows"]] == [2, 2, 1]          # newest first
+    assert all(x["said"] for x in r["rows"]) and r["why"]
+    assert r["graded_on"]["measure"] == "yards / carry"
+
+
+def test_the_premise_adds_up_across_games():
+    """A stacked-box record says how often the box was actually stacked, and
+    counts a game toward "where it happened" only when it did."""
+    ig = lambda on, on_sum, off, off_sum: {"snaps": on, "of": on + off, "label": "8+ box", "unit": "yards a carry",
+                                           "on_n": on, "on_sum": on_sum, "off_n": off, "off_sum": off_sum}
+    rows = [{"verdict": "hit", "in_game": ig(0, 0.0, 13, 33.0)},
+            {"verdict": "hit", "in_game": ig(4, 6.0, 16, 80.0)},
+            {"verdict": "miss", "in_game": ig(2, 10.0, 10, 50.0)},
+            {"verdict": "push", "in_game": ig(5, 5.0, 5, 5.0)},       # pushes are out, as in the record
+            {"verdict": "hit", "in_game": None}]
+    p = ag._premise_total(rows)
+    assert (p["snaps"], p["of"], p["games"], p["never"]) == (6, 45, 3, 1)
+    assert p["on"] == pytest.approx(16 / 6) and p["off"] == pytest.approx(163 / 39)
+
+
+def test_only_box_and_blitz_angles_have_a_premise():
+    assert ag.in_game({"family": "Pass-heavy offense into a stingy pass defense"}) is None
+
+
+def test_box_angles_only_count_games_where_the_box_showed_up(monkeypatch):
+    """0 of 13 carries into a stacked box: the back's slow day is not the
+    stacked-box call coming true, so it counts neither way."""
+    import polars as pl
+    base = {k: None for k in ag.SCHEMA} | {"season": 2026, "week": 1, "kind": "player", "family": "{player} vs stacked boxes",
+                                           "lean": "under", "strength": 1, "tags": [], "direction": "down", "fmt": "dec1", "title": "A vs stacked boxes", "offense": "NE", "defense": "SEA",
+                                           "baseline_label": "his previous 16 games", "baseline": 5.0, "actual": 3.0}
+    df = ag._with_margin(pl.DataFrame([
+        base | {"game_id": "a", "premise_snaps": 0, "premise_of": 13},     # right on the number, box never stacked
+        base | {"game_id": "b", "premise_snaps": 3, "premise_of": 20},     # box stacked: a real hit
+        base | {"game_id": "c", "premise_snaps": None},                    # not charted: graded on the game as before
+        base | {"game_id": "d", "premise_snaps": 0, "actual": None},       # did not play: still no verdict
+    ], schema=ag.SCHEMA))
+    assert df["verdict"].to_list() == [ag.ABSENT, "hit", "hit", None]
+    monkeypatch.setattr(ag, "_fresh", lambda: df)
+    monkeypatch.setattr(ag, "CURRENT_SEASON", 2026)
+    t = ag.track_record()
+    assert (t["n"], t["hits"], t["absent"], t["pushes"]) == (2, 2, 1, 0)
+
+
+def test_only_box_angles_store_a_premise():
+    assert ag._premise_cols({"family": "{player} vs the blitz"}) == {"premise_snaps": None, "premise_of": None}
+    assert ag._premise_cols({"family": "Pass-heavy offense into a stingy pass defense"})["premise_snaps"] is None

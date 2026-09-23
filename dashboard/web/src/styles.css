@@ -926,3 +926,58 @@ a.home-row:hover { text-decoration: none; color: var(--accent); }
   .mt-insight .btn { align-self: center; }
   .mt-total .v { font-size: 30px; }
 }
+
+/* drawer: one table row opened up, over the page it came from */
+.drawer-root { position: fixed; inset: 0; z-index: 90; }
+.drawer-veil { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.45); animation: fade-in 0.2s ease both; }
+.drawer { position: absolute; top: 0; right: 0; bottom: 0; width: min(780px, 100vw); display: flex; flex-direction: column; background: var(--panel); border-left: 1px solid var(--border-2); box-shadow: -18px 0 50px rgba(0,0,0,0.35); animation: drawer-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+@keyframes drawer-in { from { transform: translateX(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+.drawer-head { flex: none; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 16px 18px 12px; border-bottom: 1px solid var(--border); }
+.drawer-title { min-width: 0; }
+.drawer-title h2 { font-size: 17px; margin: 0; line-height: 1.3; }
+.drawer-body { flex: 1; overflow: auto; overscroll-behavior: contain; padding: 14px 18px 28px; }
+.drawer-sec { margin-top: 18px; }
+.drawer-sec:first-child { margin-top: 0; }
+.drawer-sec h4 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--faint); font-weight: 600; margin: 0 0 7px; }
+.drawer-why { font-size: 13.5px; line-height: 1.55; margin: 0; }
+
+/* results: a summary strip that doubles as the page's tabs */
+.res-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
+.res-tab { text-align: left; cursor: pointer; font: inherit; color: inherit; transition: border-color 0.15s ease, background-color 0.15s ease; }
+.res-tab:hover { border-color: var(--border-2); }
+.res-tab.on { border-color: var(--accent); background: var(--panel); box-shadow: inset 0 -2px 0 var(--accent); }
+.res-tab .v { font-size: 18px; }
+.res-tab .s { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 760px) {
+  .res-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .res-tab { padding: 9px 11px; }
+  .res-tab .k { font-size: 10.5px; }
+  .res-tab .s { white-space: normal; }
+  /* The angle table keeps its words: the kind column and the bars go first. */
+  .res-kind, .rate-bar { display: none; }
+}
+
+/* rows that open a drawer */
+.tbl tr.row-link { cursor: pointer; }
+.tbl tr.row-link:focus-visible td { background: rgba(90,156,245,0.14); outline: none; }
+.tbl tr.row-link td.go { color: var(--faint); width: 18px; padding-left: 0; }
+.tbl tr.row-link:hover td.go { color: var(--accent); }
+.rate-cell { display: inline-flex; align-items: center; gap: 7px; justify-content: flex-end; }
+.rate-bar { position: relative; width: 54px; height: 5px; border-radius: 3px; background: var(--border); overflow: hidden; }
+.rate-bar > div { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; background: var(--muted); }
+.rate-bar > div.over { background: var(--over); }
+.rate-bar > div.under { background: var(--under); }
+.rate-bar::after { content: ""; position: absolute; left: 50%; top: -1px; bottom: -1px; width: 1px; background: var(--faint); }
+
+/* the run of calls, oldest to newest */
+.streak { display: flex; flex-wrap: wrap; gap: 3px; }
+.streak > span { width: 11px; height: 11px; border-radius: 3px; background: var(--border-2); }
+.streak > span.hit { background: var(--over); }
+.streak > span.miss { background: var(--under); }
+.case { border-left: 3px solid var(--border-2); padding: 8px 10px; }
+.case.hit { border-left-color: var(--over); }
+.case.miss { border-left-color: var(--under); }
+.case-pre { font-size: 12px; color: var(--muted); margin: 4px 0 5px; padding: 5px 8px; border-radius: 6px; background: var(--panel-2); }
+.chip-btn { cursor: pointer; font: inherit; font-size: 12px; }
+/* A wide table in a narrow sheet scrolls sideways; the name stays put. */
+.tbl.pin-first th:first-child, .tbl.pin-first tbody tr.row-link td:first-child { position: sticky; left: 0; z-index: 1; background: var(--panel); }
