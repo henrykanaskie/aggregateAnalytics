@@ -199,3 +199,17 @@ def test_recent_games_ride_along_in_every_format():
     # A kicker or defense scores every format alike.
     k = _recent([{"season": 2026, "week": 2, "opponent_team": "IND", "kick_pts": 16}], 2026, same="kick_pts")
     assert k[0]["pts"] == {"ppr": 16.0, "half": 16.0, "std": 16.0}
+
+
+def test_espn_injury_status_only_counts_for_the_current_week(tmp_path, monkeypatch):
+    from dashboard.odds import espn_proj
+    monkeypatch.setattr(espn_proj, "PROJ_DIR", tmp_path)
+    monkeypatch.setattr(espn_proj, "current_week", lambda season: 3)
+    row = {"season": 2026, "player_id": "00-1", "espn_id": "1", "name": "Hurt Later", "position": "QB", "team": "WAS",
+           "proj_ppr": 16.8, "proj_rec": 0.0, "injury_status": "Doubtful", "pct_owned": 99.0, "pulled_at": "x"}
+    for w in (1, 3):
+        pl.DataFrame([{**row, "week": w}]).write_parquet(espn_proj.path_for(2026, w))
+    # A backfilled week keeps ESPN's projection as it stood, but not today's
+    # injury: he played that week.
+    assert espn_proj.load(2026, 1)["00-1"] == {"ppr": 16.8, "rec": 0.0, "team": "WAS", "position": "QB", "name": "Hurt Later", "status": None}
+    assert espn_proj.load(2026, 3)["00-1"]["status"] == "Doubtful"
