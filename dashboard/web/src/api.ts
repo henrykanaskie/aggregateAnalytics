@@ -260,6 +260,28 @@ export const apiFantasy = {
   fantasyWeek: ep<FantasyWeek>()((season: number, week: number) => `/api/fantasy/week${qs({ season, week })}`),
 };
 
+// League imports (dashboard/leagues/). Each is someone's own roster, read on
+// their behalf, so these skip the shared cache: a second import should see
+// the trade made since the first.
+export interface ImportedTeam { team_id: string; name: string; owner: string | null; players: { player_id: string; name: string; position: string; team: string | null }[]; starters: string[]; unmatched: string[] }
+export interface ImportedLeague { league_id: string; name: string; season: number; scoring: { format: "ppr" | "half" | "std"; rec: number } | null; slots: Record<"QB" | "RB" | "WR" | "TE" | "FLEX" | "SFLEX" | "K" | "DST", number> | null; teams: ImportedTeam[] }
+export interface LeagueImport { platform: "sleeper" | "espn" | "yahoo"; leagues: ImportedLeague[] }
+async function leagueGet<T>(url: string): Promise<T> {
+  const r = await fetch(url);
+  if (r.status === 401) toPasswordBox();
+  if (!r.ok) throw new Error(await r.json().then((j) => j.detail).catch(() => r.statusText));
+  return r.json();
+}
+export const apiLeagues = {
+  status: () => leagueGet<{ sleeper: boolean; espn: boolean; yahoo: boolean }>("/api/leagues/status"),
+  sleeper: (username: string) => leagueGet<LeagueImport>(`/api/leagues/sleeper${qs({ username })}`),
+  espn: (league: string) => leagueGet<LeagueImport>(`/api/leagues/espn${qs({ league })}`),
+  /** A full-page trip to Yahoo's sign-in; the result comes back through sessionStorage. */
+  yahooStart: () => { window.location.href = "/api/leagues/yahoo/start"; },
+};
+/** Where the Yahoo callback leaves its result (dashboard/leagues/router.py, HANDOFF_KEY). */
+export const LEAGUE_HANDOFF = "league.import";
+
 export const api5 = {
   teammates: ep<TeammatePresence>()((id: string) => `/api/players/${id}/teammates`),
   correlations: ep<{ stat: string; rows: CorrRow[] }>()((id: string, stat: string) => `/api/players/${id}/correlations${qs({ stat })}`),

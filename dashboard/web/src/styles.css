@@ -1083,3 +1083,11 @@ a.home-row:hover { text-decoration: none; color: var(--accent); }
 .range-col { min-width: 150px; width: 170px; }
 th.range-col { white-space: nowrap; }
 .tiny-chip { padding: 1px 7px; font-size: 11px; margin-left: 4px; text-transform: none; letter-spacing: 0; }
+
+/* League import (components/LeagueImport.tsx) */
+.league-import { display: flex; flex-direction: column; gap: 8px; width: min(100%, 520px); text-align: left; padding: 12px; margin: 8px 0 12px;
+  border: 1px solid var(--border-2); border-radius: 10px; background: var(--panel-2); }
+.league-import .li-head { display: flex; justify-content: space-between; align-items: center; }
+.league-import .li-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.league-import .li-row .input { flex: 1 1 200px; min-width: 0; }
+.league-import .li-result { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--border-2); padding-top: 8px; }

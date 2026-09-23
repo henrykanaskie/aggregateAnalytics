@@ -1,13 +1,14 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { IconBolt, IconDown, IconPlus, IconShield, IconSwap, IconTrash, IconWarn } from "./Icons";
-import type { FantasyPlayer, FantasyWeek, PlayerLite } from "../api";
+import type { FantasyPlayer, FantasyWeek, ImportedLeague, ImportedTeam, LeagueImport as LeagueResult, PlayerLite } from "../api";
 import { FANTASY_KEY, fantasyHref, fantasyStatFor, Scoring, SCORING_LABEL } from "../lib/profile";
 import { DEFAULT_SLOTS, fitsSlot, placeLineup, RosterEntry, SLOT_ORDER, Slots, toEntry } from "./MyRoster";
 import { useSticky } from "../lib/sticky";
 import { marksFor } from "./FantasySnapshot";
 import { Headshot, Spinner } from "./common";
 import PlayerSearch from "./PlayerSearch";
+import LeagueImport from "./LeagueImport";
 import RangeBar, { rangeMax } from "./RangeBar";
 
 // My team: the roster someone actually has, starters and bench, kept in this
@@ -26,7 +27,8 @@ const POSITIONS: Pos[] = ["QB", "RB", "WR", "TE", "K", "DST"];
 // Kicker and defense come last and never flex (fitsSlot only matches them to their own slot).
 const SHORT: Record<Slot, string> = { QB: "QB", RB: "RB", WR: "WR", TE: "TE", FLEX: "FLEX", SFLEX: "SFLX", K: "K", DST: "D/ST" };
 const OUT = ["Out", "Doubtful", "IR", "Suspended", "Not playing"];
-const MAX_ROSTER = 20;
+// Deep enough for an imported bench, IR and taxi squad.
+const MAX_ROSTER = 30;
 
 const fits = fitsSlot;
 
@@ -53,9 +55,13 @@ const place = placeLineup;
 
 interface Insight { kind: "swap" | "warn" | "floor" | "ceiling" | "bust"; text: React.ReactNode; action?: { label: string; run: () => void } }
 
-export default function MyTeam({ data, scoring, loading, roster, setRoster, slots: savedSlots, setSlots }: {
+export default function MyTeam({ data, scoring, loading, roster, setRoster, slots: savedSlots, setSlots, onScoring, handoff }: {
   data: FantasyWeek | null; scoring: Scoring; loading: boolean;
   roster: RosterEntry[]; setRoster: (r: RosterEntry[]) => void; slots: Slots; setSlots: (s: Slots) => void;
+  /** Take a league's scoring; false when the tailoring answers decide it instead. */
+  onScoring?: (s: Scoring) => boolean;
+  /** A Yahoo import that just came back from signing in. */
+  handoff?: LeagueResult | { error: string } | null;
 }) {
   // null: the best projected lineup, re-picked as the numbers move.
   const [starters, setLineup] = useSticky<string[] | null>("fantasy.lineup", null);
@@ -63,6 +69,9 @@ export default function MyTeam({ data, scoring, loading, roster, setRoster, slot
   const [editing, setEditing] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [allTips, setAllTips] = useState(false);
+  const [importing, setImporting] = useState(!!handoff);
+  // The Yahoo result is read after this view has already mounted.
+  useEffect(() => { if (handoff) setImporting(true); }, [handoff]);
   // Past games as dots on each player's range bar.
   const [pastDots, setPastDots] = useSticky<boolean>("fantasy.pastDots", true);
   const slots = { ...DEFAULT_SLOTS, ...savedSlots };
@@ -101,6 +110,17 @@ export default function MyTeam({ data, scoring, loading, roster, setRoster, slot
     // bench; in auto mode the lineup simply re-picks itself.
     setRoster([...roster, toEntry(p)]);
   };
+  // A league's team replaces this browser's: roster, slots, and the lineup
+  // as it is set in the league, so the page starts from what is really there.
+  const applyImport = (team: ImportedTeam, league: ImportedLeague) => {
+    setRoster(team.players.map((p) => ({ player_id: p.player_id, name: p.name, position: p.position, team: p.team })));
+    if (league.slots) setSlots({ ...DEFAULT_SLOTS, ...league.slots });
+    setLineup(team.starters.length ? team.starters : null);
+    const took = league.scoring ? onScoring?.(league.scoring.format) ?? false : true;
+    setNote(`Imported ${team.players.length} players from ${league.name}.${took ? "" : ` Scoring follows your tailoring answers, not the league's (${league.scoring!.format.toUpperCase()}); change them in Settings if they differ.`}`);
+    setImporting(false);
+  };
+  const importer = <LeagueImport key={handoff ? "handoff" : "blank"} initial={handoff} onApply={applyImport} onClose={roster.length ? () => setImporting(false) : undefined} />;
   const remove = (id: string) => { setRoster(roster.filter((r) => r.player_id !== id)); if (starters) setLineup(starters.filter((x) => x !== id)); };
   const swap = (a: string, b: string) => {
     const now = current.filled.map((f) => f.id).filter((x): x is string => !!x);
@@ -185,7 +205,9 @@ export default function MyTeam({ data, scoring, loading, roster, setRoster, slot
       <div className="panel myteam-empty">
         <div className="myteam-empty-icon"><IconShield size={34} weight="regular" /></div>
         <h2>Build your team</h2>
-        <p className="muted">Add everyone on your fantasy roster, bench included. It stays in this browser. You get your best lineup for the week, who on the bench beats a starter on floor or ceiling, and each player's chance of a boom or a bust week.</p>
+        <p className="muted">Import your team from Sleeper, ESPN or Yahoo, or add everyone on your roster by hand, bench included. It stays in this browser. You get your best lineup for the week, who on the bench beats a starter on floor or ceiling, and each player's chance of a boom or a bust week.</p>
+        {importer}
+        <div className="hint">or add players one at a time</div>
         <PlayerSearch onSelect={add} placeholder="Add a player…" />
         <div style={{ marginTop: 8 }}><select className="input mt-dst" value="" aria-label="Add a team defense" onChange={(e) => { const d = byId.get(e.target.value); if (d) add(d); }}>
             <option value="">Add a D/ST…</option>
@@ -285,8 +307,9 @@ export default function MyTeam({ data, scoring, loading, roster, setRoster, slot
       <div className="panel">
         <div className="panel-head">
           <h3>Bench · {bench.length}</h3>
-          <div className="actions"><button className={`btn sm ${editing ? "primary" : "ghost"}`} onClick={() => { setEditing(!editing); setPick(null); }}>{editing ? "Done" : "Edit roster"}</button></div>
+          <div className="actions"><button className="btn sm ghost" onClick={() => setImporting(!importing)}>Import from league</button><button className={`btn sm ${editing ? "primary" : "ghost"}`} onClick={() => { setEditing(!editing); setPick(null); }}>{editing ? "Done" : "Edit roster"}</button></div>
         </div>
+        {importing && importer}
         <div className="mt-list">{bench.map((id) => row(id, "BN"))}</div>
         {bench.length === 0 && <div className="hint">Nobody on the bench yet.</div>}
         <div className="mt-add">
