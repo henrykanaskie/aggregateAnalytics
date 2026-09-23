@@ -162,6 +162,13 @@ export default function Fantasy() {
     <td className="num muted">{pr ? pr.low.toFixed(1) : "–"}</td>
     <td className="num muted">{pr ? pr.high.toFixed(1) : "–"}</td>
   </>;
+  // A player's tags (injury, new team, too few games), kept on the name's
+  // line so a tagged row is the same height as every other.
+  const tags = (p: FantasyPlayer, pr: FantasyPlayer["proj"][Scoring]) => <>
+    {statusPill(p)}
+    {p.new_to_team && p.stats_team && <span className="pill warn" title={`New to ${p.team}. The numbers are from ${p.stats_team}.`}>was {p.stats_team}</span>}
+    {!pr && <span className="pill" title={`Fewer than ${data?.method.min_games ?? 2} games on record`}>{p.games === 0 ? "no games yet" : "small sample"}</span>}
+  </>;
   const open = (p: FantasyPlayer) => nav(fantasyHref(p, fantasyStatFor(p.position, FANTASY_KEY[scoring])));
   const who = (p: FantasyPlayer) => <><Link to={fantasyHref(p)} onClick={(e) => e.stopPropagation()}>{p.name}</Link> <span className="muted">{p.position} {p.team}</span></>;
 
@@ -272,12 +279,9 @@ export default function Fantasy() {
                     <tr key={p.player_id} className={`clickable ${fav && p.team === fav ? "fav-row" : ""} ${compare.includes(p.player_id) ? "picked-row" : ""} ${onRoster.has(p.player_id) ? "roster-row" : ""}`} onClick={() => open(p)}>
                       {!mobile && <td>{cmp(p)}</td>}
                       {!mobile && <td className="num muted">{posRank.has(p.player_id) ? `${p.position}${posRank.get(p.player_id)}` : "–"}</td>}
-                      <td className="left">
-                        {mobile ? <div className="fx-player">{cmp(p)}{starBtn(p)}<div className="fx-name"><b>{p.name}</b><span className="muted tiny">{posRank.has(p.player_id) ? `${p.position}${posRank.get(p.player_id)}` : p.position} · {p.team}</span></div></div>
-                          : <>{starBtn(p)}<b>{p.name}</b> <span className="muted">{p.position === "DST" ? "D/ST" : p.position}{["K", "DST"].includes(p.position) ? "" : p.depth_rank ?? ""}</span> </>}
-                        {statusPill(p)}
-                        {p.new_to_team && p.stats_team && <span className="pill warn" title={`New to ${p.team}. The numbers are from ${p.stats_team}.`}>was {p.stats_team}</span>}
-                        {!pr && <span className="pill" title={`Fewer than ${data.method.min_games} games on record`}>{p.games === 0 ? "no games yet" : "small sample"}</span>}
+                      <td className="left fx-cell">
+                        {mobile ? <div className="fx-player">{cmp(p)}{starBtn(p)}<div className="fx-name"><b title={p.name}>{p.name}</b><span className="muted tiny fx-sub">{posRank.has(p.player_id) ? `${p.position}${posRank.get(p.player_id)}` : p.position} · {p.team}{tags(p, pr)}</span></div></div>
+                          : <div className="fx-line">{starBtn(p)}<b className="fx-full" title={p.name}>{p.name}</b> <span className="muted">{p.position === "DST" ? "D/ST" : p.position}{["K", "DST"].includes(p.position) ? "" : p.depth_rank ?? ""}</span>{tags(p, pr)}</div>}
                       </td>
                       {mobile && proj(pr)}
                       <td className="left small"><TeamTag abbr={p.team} /> <span className="muted">{p.home ? "vs" : "@"}</span> {p.opponent} <span className="faint tiny">{dayOf(p.gameday)}</span></td>

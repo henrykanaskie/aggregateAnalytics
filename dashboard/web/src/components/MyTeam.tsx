@@ -224,7 +224,9 @@ export default function MyTeam({ data, scoring, loading, roster, setRoster, slot
     const p = byId.get(id);
     const b = band(id);
     const w = why(id);
-    const bb = p ? boomBust(p, scoring) : null;
+    // Boom and bust only for someone who can play: a player marked out keeps
+    // his projection in the data, but his range (b) is deliberately empty.
+    const bb = p && b ? boomBust(p, scoring) : null;
     // A swap is always one starter for one bench player.
     const target = !!pick && pick !== id && (slot === "BN" ? starting.has(pick) && canTrade(id, pick) : !starting.has(pick) && canTrade(pick, id));
     const picked = pick === id;
@@ -234,7 +236,7 @@ export default function MyTeam({ data, scoring, loading, roster, setRoster, slot
         <span className={`mt-slot ${slot === "BN" ? "bn" : ""}`}>{slot === "BN" ? "BN" : SHORT[slot]}</span>
         <Headshot src={p?.headshot ?? null} size={38} />
         <div className="mt-who">
-          <Link to={fantasyHref(r, fantasyStatFor(r.position, key))} onClick={(e) => pick && e.preventDefault()} className="mt-name">{r.name}</Link>
+          <Link to={fantasyHref(r, fantasyStatFor(r.position, key))} onClick={(e) => pick && e.preventDefault()} className="mt-name" title={r.name}>{r.name}</Link>
           <div className="mt-sub">
             {r.position === "DST" ? "D/ST" : r.position} · {p?.team ?? r.team ?? "FA"}{p ? <> {p.home ? "vs" : "@"} {p.opponent}</> : null}
             {w ? <span className="pill under">{w}</span> : p?.status ? <span className="pill warn">{p.status}</span> : null}
