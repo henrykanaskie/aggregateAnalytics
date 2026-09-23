@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { apiFantasy, FantasyPlayer, FantasyWeek } from "../api";
-import { ApplyField, Banner, Field, Seg, Spinner, TeamTag } from "../components/common";
+import { ApplyField, Banner, Field, FilterFold, Seg, Spinner, TeamTag } from "../components/common";
 import { fmtPct } from "../lib/format";
 import { FANTASY_KEY, Scoring, SCORING_LABEL } from "../lib/profile";
 import { rankTint } from "../lib/rank";
@@ -9,6 +9,7 @@ import StartSit from "../components/StartSit";
 import { useSticky } from "../lib/sticky";
 import { useQuery } from "../lib/useQuery";
 import { useMeta } from "../state";
+import { useMobile } from "../lib/useMobile";
 
 // The week in fantasy terms: every skill player on a team that plays, ranked
 // by what the baseline projects, next to the matchup and the role behind it.
@@ -49,6 +50,10 @@ export default function Fantasy() {
   const [hideOut, setHideOut] = useSticky("fantasy.hideOut", true);
   const [starters, setStarters] = useSticky("fantasy.starters", true);
   const [sort, setSort] = useState<{ k: SortKey; d: 1 | -1 }>({ k: "proj", d: -1 });
+  // On a phone the player (with the start / sit button) is the pinned first
+  // column and the projection comes straight after it, so the number the page
+  // is ranked by is on screen without a sideways swipe.
+  const mobile = useMobile();
   // Players picked for start/sit. Kept across weeks and visits: the same
   // decision tends to come back every week.
   const [compare, setCompare] = useSticky<string[]>("fantasy.compare", []);
@@ -109,6 +114,16 @@ export default function Fantasy() {
   const th = (k: SortKey, label: string, title?: string) => (
     <th className={`clickable ${sort.k === k ? "over" : ""}`} title={title} onClick={() => setSort((s) => (s.k === k ? { k, d: (s.d * -1) as 1 | -1 } : { k, d: -1 }))}>{label}{sort.k === k ? (sort.d === -1 ? " ▾" : " ▴") : ""}</th>
   );
+  const cmp = (p: FantasyPlayer) => (
+    <button className={`cmp-btn ${compare.includes(p.player_id) ? "on" : ""}`} disabled={!compare.includes(p.player_id) && compare.length >= 4}
+      title={compare.includes(p.player_id) ? "Take out of start / sit" : compare.length >= 4 ? "Four is the limit" : "Add to start / sit"}
+      onClick={(e) => { e.stopPropagation(); toggle(p.player_id); }}>{compare.includes(p.player_id) ? "✓" : "+"}</button>
+  );
+  const proj = (pr: FantasyPlayer["proj"][Scoring]) => <>
+    <td className="num"><b>{pr ? pr.value.toFixed(1) : "–"}</b></td>
+    <td className="num muted">{pr ? pr.low.toFixed(1) : "–"}</td>
+    <td className="num muted">{pr ? pr.high.toFixed(1) : "–"}</td>
+  </>;
   const open = (p: FantasyPlayer) => nav(`/research?player=${p.player_id}&stat=${FANTASY_KEY[scoring]}`);
   const who = (p: FantasyPlayer) => <><Link to={`/research?player=${p.player_id}`} onClick={(e) => e.stopPropagation()}>{p.name}</Link> <span className="muted">{p.position} {p.team}</span></>;
 
@@ -119,6 +134,8 @@ export default function Fantasy() {
       </div>
 
       <div className="panel" style={{ marginBottom: 12 }}>
+        <FilterFold id="fantasy" active={(pos !== "ALL" ? 1 : 0) + (team ? 1 : 0) + (q.trim() ? 1 : 0)}
+          summary={`Week ${shown ?? ""} · ${pos === "ALL" ? "all positions" : pos === "MINE" ? "your positions" : pos} · ${SCORING_LABEL[scoring]}`}>
         <div className="controls">
           <ApplyField label="Week" value={shown ?? 1} onApply={setWeek} show={(v) => `week ${v}`}>{(d, set) => <select className="input" value={d} onChange={(e) => set(Number(e.target.value))}>{weeks.map((w) => <option key={w} value={w}>Week {w}</option>)}</select>}</ApplyField>
           <Field label="Position"><Seg value={pos} options={[{ v: "ALL", l: "All" }, ...(mine.length > 1 ? [{ v: "MINE" as Pos, l: `Yours (${mine.join(", ")})` }] : []), { v: "QB", l: "QB" }, { v: "RB", l: "RB" }, { v: "WR", l: "WR" }, { v: "TE", l: "TE" }]} onChange={setPos} /></Field>
@@ -132,6 +149,7 @@ export default function Fantasy() {
             <button className={`chip ${hideOut ? "on" : ""}`} title="Leave out players listed Out or Doubtful" onClick={() => setHideOut(!hideOut)}>hide out / doubtful</button>
           </div></Field>
         </div>
+        </FilterFold>
       </div>
 
       {error && <Banner kind="err">{error}</Banner>}
@@ -147,7 +165,7 @@ export default function Fantasy() {
       )}
 
       {data && (
-        <div className="grid grid-3" style={{ marginBottom: 14 }}>
+        <div className="grid grid-3 deck" style={{ marginBottom: 14 }}>
           <div className="panel">
             <div className="panel-head"><h3>Roles growing</h3><span className="hint">targets + carries, last 3 vs before</span></div>
             {risers.length === 0 ? <div className="hint">No big jumps in role this week.</div> : risers.map((p) => (
@@ -179,11 +197,15 @@ export default function Fantasy() {
           <div className="tbl-wrap" style={{ maxHeight: "72vh" }}>
             <table className="tbl compact tight">
               <thead><tr>
-                <th title="Compare in start / sit" />
-                <th title="Rank at the position by projection">Rk</th><th className="left">Player</th><th className="left">Game</th>
+                {mobile ? <th className="left">Player</th> : <>
+                  <th title="Compare in start / sit" />
+                  <th title="Rank at the position by projection">Rk</th><th className="left">Player</th>
+                </>}
+                {mobile && <>{th("proj", "Proj")}{th("low", "Floor", "A quiet week: the bottom of the middle half of outcomes")}{th("high", "Ceiling", "A good week: the top of the middle half of outcomes")}</>}
+                <th className="left">Game</th>
                 {th("matchup", "Matchup", "How much this defense gives up to the position, this season blended with last. Green is generous.")}
                 {th("implied", "Team pts", "Points the team is expected to score, from the betting spread and total")}
-                {th("proj", "Proj")}{th("low", "Floor", "A quiet week: the bottom of the middle half of outcomes")}{th("high", "Ceiling", "A good week: the top of the middle half of outcomes")}
+                {!mobile && <>{th("proj", "Proj")}{th("low", "Floor", "A quiet week: the bottom of the middle half of outcomes")}{th("high", "Ceiling", "A good week: the top of the middle half of outcomes")}</>}
                 {th("last3", "Last 3", "Average over the last three games")}
                 <th title="Targets plus carries (QB: attempts plus carries) a game, the last three against the dozen before">Role</th>
                 <th title="Share of the team's targets / carries">Tgt / car</th>
@@ -194,21 +216,20 @@ export default function Fantasy() {
                   const rc = roleChange(p);
                   return (
                     <tr key={p.player_id} className={`clickable ${fav && p.team === fav ? "fav-row" : ""} ${compare.includes(p.player_id) ? "picked-row" : ""}`} onClick={() => open(p)}>
-                      <td><button className={`cmp-btn ${compare.includes(p.player_id) ? "on" : ""}`} disabled={!compare.includes(p.player_id) && compare.length >= 4}
-                        title={compare.includes(p.player_id) ? "Take out of start / sit" : compare.length >= 4 ? "Four is the limit" : "Add to start / sit"}
-                        onClick={(e) => { e.stopPropagation(); toggle(p.player_id); }}>{compare.includes(p.player_id) ? "✓" : "+"}</button></td>
-                      <td className="num muted">{posRank.has(p.player_id) ? `${p.position}${posRank.get(p.player_id)}` : "–"}</td>
+                      {!mobile && <td>{cmp(p)}</td>}
+                      {!mobile && <td className="num muted">{posRank.has(p.player_id) ? `${p.position}${posRank.get(p.player_id)}` : "–"}</td>}
                       <td className="left">
-                        <b>{p.name}</b> <span className="muted">{p.position}{p.depth_rank ?? ""}</span> {statusPill(p)}
+                        {mobile ? <div className="fx-player">{cmp(p)}<div className="fx-name"><b>{p.name}</b><span className="muted tiny">{posRank.has(p.player_id) ? `${p.position}${posRank.get(p.player_id)}` : p.position} · {p.team}</span></div></div>
+                          : <><b>{p.name}</b> <span className="muted">{p.position}{p.depth_rank ?? ""}</span> </>}
+                        {statusPill(p)}
                         {p.new_to_team && p.stats_team && <span className="pill warn" title={`New to ${p.team}. The numbers are from ${p.stats_team}.`}>was {p.stats_team}</span>}
                         {!pr && <span className="pill" title={`Fewer than ${data.method.min_games} games on record`}>{p.games === 0 ? "no games yet" : "small sample"}</span>}
                       </td>
+                      {mobile && proj(pr)}
                       <td className="left small"><TeamTag abbr={p.team} /> <span className="muted">{p.home ? "vs" : "@"}</span> {p.opponent} <span className="faint tiny">{dayOf(p.gameday)}</span></td>
                       <td className="num" style={{ background: rankTint(p.matchup_rank, p.matchup_n) }} title={p.matchup_rank ? `${p.opponent} gives up the ${ordinal(p.matchup_rank)} most to ${p.position}s (projection ×${p.factor})` : undefined}>{p.matchup_rank ? (p.matchup_rank <= 8 ? "easy" : p.matchup_rank > (p.matchup_n ?? 32) - 8 ? "tough" : "neutral") : "–"}</td>
                       <td className="num muted">{p.implied ?? "–"}</td>
-                      <td className="num"><b>{pr ? pr.value.toFixed(1) : "–"}</b></td>
-                      <td className="num muted">{pr ? pr.low.toFixed(1) : "–"}</td>
-                      <td className="num muted">{pr ? pr.high.toFixed(1) : "–"}</td>
+                      {!mobile && proj(pr)}
                       <td className="num">{pr ? pr.last3.toFixed(1) : "–"}</td>
                       <td className={`num ${rc === null ? "muted" : rc >= 0.2 ? "over" : rc <= -0.2 ? "under" : ""}`} title={p.role ? `${p.role.last3} a game lately, ${p.role.before} before` : undefined}>{rc === null ? "–" : rc >= 0.2 ? "▲ growing" : rc <= -0.2 ? "▼ shrinking" : "steady"}</td>
                       <td className="num muted">{p.position === "QB" ? "–" : `${fmtPct(p.target_share)} / ${fmtPct(p.carry_share)}`}</td>

@@ -1,5 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { useMeta } from "../state";
+import { useMobile } from "../lib/useMobile";
+import { useSticky } from "../lib/sticky";
+import { IconChevron, IconSliders } from "./Icons";
 
 export function Seg<T extends string | number>({ value, options, onChange }: { value: T; options: { v: T; l: string }[]; onChange: (v: T) => void }) {
   return (
@@ -90,3 +93,28 @@ export const SourceNote = ({ sources, pulled }: { sources: string[]; pulled?: st
     {pulled ? ` · pulled ${new Date(pulled).toLocaleString()}` : ""}
   </span>
 );
+
+/** A filter panel on a phone folds to one line that says how many filters are
+ *  on, so the page's actual content is what fills the first screen. It opens
+ *  with a slide rather than a jump, remembers whether it was left open, and on
+ *  a wider screen is not there at all: the children render as they always did. */
+export function FilterFold({ id, label = "Filters", active = 0, summary, children }: { id: string; label?: string; active?: number; summary?: React.ReactNode; children: React.ReactNode }) {
+  const mobile = useMobile();
+  const [open, setOpen] = useSticky(`fold.${id}`, false);
+  // Folded fields are kept out of the tab order and away from screen readers.
+  const body = React.useRef<HTMLDivElement>(null);
+  useEffect(() => { body.current?.toggleAttribute("inert", !open); }, [open, mobile]);
+  if (!mobile) return <>{children}</>;
+  return (
+    <>
+      <button type="button" className={`fold-head ${open ? "open" : ""}`} aria-expanded={open} onClick={() => setOpen(!open)}>
+        <span className="fold-icon"><IconSliders size={18} /></span>
+        <b>{label}</b>
+        {active > 0 && <span className="fold-count">{active}</span>}
+        <span className="fold-sum">{summary}</span>
+        <span className="fold-chev"><IconChevron size={20} /></span>
+      </button>
+      <div className={`fold-body ${open ? "open" : ""}`} ref={body}><div><div className="fold-inner">{children}</div></div></div>
+    </>
+  );
+}

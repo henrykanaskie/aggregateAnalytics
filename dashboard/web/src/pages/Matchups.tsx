@@ -29,6 +29,8 @@ export default function Matchups() {
   const [week, setWeek] = useSticky<number | null>("matchups.week", null);
   const { data: schedule } = useQuery<ScheduleGame[]>(meta ? api.schedule.url(meta.season, week ?? meta.week) : null);
   const games = schedule ?? [];
+  // On a phone the games are a strip that swipes sideways; keep the open one in view.
+  useEffect(() => { document.querySelector(".chips.swipe .chip.on")?.scrollIntoView({ inline: "center", block: "nearest" }); }, [gameId, games.length]);
   const shown = week ?? meta?.week ?? null;
   // With nothing picked, a favorite team's game opens on its own.
   const fav = settings.profile?.team;
@@ -61,7 +63,7 @@ export default function Matchups() {
         <div className="controls">
           <ApplyField label="Week" value={week ?? meta?.week ?? 1} onApply={(v) => { setWeek(v); if (gameId) setSp({}); }} show={(v) => `week ${v}`}>{(d, set) => <select className="input" value={d} onChange={(e) => set(Number(e.target.value))}>{weeks.map((w) => <option key={w} value={w}>Week {w}</option>)}</select>}</ApplyField>
           <Field label="Game">
-            <div className="chips">
+            <div className="chips swipe two-row">
               {games.map((g) => <button key={g.game_id} className={`chip ${g.game_id === gameId ? "on" : ""}`} onClick={() => setSp({ game: g.game_id })}>{g.away_team} @ {g.home_team}<span className="faint tiny"> {g.gameday.slice(5)}</span></button>)}
             </div>
           </Field>

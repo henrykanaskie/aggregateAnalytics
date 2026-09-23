@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, BoardRow, BookLine, GameLog, Player, PlayerLines } from "../api";
-import { ApplyField, Field, FeedBanner, SampleBanner, Seg, SourceNote, Spinner } from "../components/common";
+import { ApplyField, Field, FeedBanner, FilterFold, SampleBanner, Seg, SourceNote, Spinner } from "../components/common";
 import BookLines from "../components/BookLines";
 import GameLogTable from "../components/GameLogTable";
 import Histogram from "../components/Histogram";
@@ -286,7 +286,7 @@ export default function Research() {
               <h3>{lens.betting ? "Props with lines this week" : "What to chart"}</h3>
               {lens.betting && <SourceNote sources={lines?.sources ?? []} />}
             </div>
-            {lens.betting && <div className="chips" style={{ marginBottom: 12 }}>
+            {lens.betting && <div className="chips swipe" style={{ marginBottom: 12 }}>
               {(lines?.markets ?? []).length === 0 && <span className="muted small">No lines posted for this player yet. Choose any stat below and set your own line.</span>}
               {(lines?.markets ?? []).map((m) => (
                 <button key={m.market} className={`chip ${market === m.market ? "on" : ""} ${important && market !== m.market ? "dim" : ""}`} onClick={() => chooseMarket(m.market)} title={`${m.n_books} book(s)`}>
@@ -305,6 +305,9 @@ export default function Research() {
                 </select>
               </Field>}
               <Field label={lens.betting ? "Line" : "Benchmark"}><input className="input num" type="number" step="0.5" value={line ?? ""} onChange={(e) => { suggested.current = false; setCustomLine(e.target.value === "" ? null : Number(e.target.value)); setLineSource("custom"); }} /></Field>
+              <FilterFold id="research" label="Game filters"
+                active={[filters.n !== settings.nGames, filters.seasonType !== "ALL", filters.venue !== "ALL", filters.role !== "ALL", !!filters.opponent, filters.weather !== "ALL", !!filters.qb, adjust, filters.minSnapPct !== null, !!filters.seasons].filter(Boolean).length}
+                summary={`${filters.n ? `last ${filters.n}` : "every game"}${filters.venue !== "ALL" ? ` · ${filters.venue.toLowerCase()}` : ""}${filters.opponent ? ` · vs ${filters.opponent}` : ""}`}>
               <Field label="Last N games"><input className="input num" type="number" min={1} value={filters.n ?? ""} placeholder="all" onChange={(e) => setFilters({ ...filters, n: e.target.value === "" ? null : Number(e.target.value) })} /></Field>
               <Field label="Games"><Seg value={filters.seasonType} options={[{ v: "ALL", l: "All" }, { v: "REG", l: "Regular" }, { v: "POST", l: "Playoffs" }]} onChange={(v) => setFilters({ ...filters, seasonType: v })} /></Field>
               <Field label="Venue"><Seg value={filters.venue} options={[{ v: "ALL", l: "All" }, { v: "HOME", l: "Home" }, { v: "AWAY", l: "Away" }]} onChange={(v) => setFilters({ ...filters, venue: v })} /></Field>
@@ -319,6 +322,7 @@ export default function Research() {
                   {seasons.map((s) => { const on = !d || d.includes(s); return <button type="button" key={s} className={`chip ${on ? "on" : ""}`} onClick={() => { const cur = d ?? seasons; const next = on ? cur.filter((x) => x !== s) : [...cur, s]; set(next.length === seasons.length ? null : next); }}>{s}</button>; })}
                 </div>}
               </ApplyField>
+              </FilterFold>
             </div>
           </div>
 
