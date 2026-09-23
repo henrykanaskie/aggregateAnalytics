@@ -132,12 +132,18 @@ def _pull_one(season: int, week: int, log=print) -> int:
 def load(season: int, week: int) -> dict[str, dict]:
     """player_id -> {ppr, rec, team, position, name, status} for a week, or {}
     when nothing was pulled. Files pulled before ESPN's injury status was kept
-    read with status None."""
+    read with status None.
+
+    The status is only trusted for the current week or a later one. ESPN
+    serves a finished week's projection as it stood, but the injury status it
+    sends is always today's, so a backfilled week 1 would mark a player hurt
+    in week 2 as out for a game he played. The projection itself stays: a
+    past week's zero is the zero ESPN had then."""
     path = path_for(season, week)
     if not path.exists():
         return {}
     df = pl.read_parquet(path)
-    if "injury_status" not in df.columns:
+    if "injury_status" not in df.columns or week < current_week(season):
         df = df.with_columns(injury_status=pl.lit(None, dtype=pl.Utf8))
     return {r["player_id"]: {"ppr": r["proj_ppr"], "rec": r["proj_rec"], "team": r["team"], "position": r["position"],
                              "name": r["name"], "status": r["injury_status"]}
