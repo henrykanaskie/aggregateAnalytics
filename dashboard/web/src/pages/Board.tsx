@@ -1,13 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, Board as BoardT, BoardRow } from "../api";
-import { ApplyField, Field, FeedBanner, SampleBanner, Seg, SourceNote, Spinner } from "../components/common";
+import { ApplyField, Field, FeedBanner, FilterFold, SampleBanner, Seg, SourceNote, Spinner } from "../components/common";
 import { readSticky, useSticky } from "../lib/sticky";
 import { applyScale } from "../lib/outliers";
 import { useQuery } from "../lib/useQuery";
 import { fmtDate, fmtDelta, fmtLine, fmtOdds, fmtPct } from "../lib/format";
 import { useMeta } from "../state";
 import { useLens } from "../lib/profile";
+import { useMobile } from "../lib/useMobile";
 
 type SortKey = "spread" | "consensus" | "l5" | "l10" | "season" | "avg" | "player" | "moved" | "edge" | "pover";
 
@@ -26,7 +27,7 @@ function AlertsPanel({ alerts, onPick }: { alerts: import("../api").Alert[]; onP
     <div className="panel" style={{ marginBottom: 12 }}>
       <div className="panel-head">
         <h3 className="clickable" onClick={() => setOpen(!open)}>{open ? "▾" : "▸"} Alerts · {alerts.length}</h3>
-        <div className="chips">
+        <div className="chips swipe">
           <button className={`chip ${kind === "all" ? "on" : ""}`} onClick={() => setKind("all")}>all</button>
           <button className={`chip ${kind === "move" ? "on" : ""}`} onClick={() => setKind("move")}>line moves {counts.move}</button>
           <button className={`chip ${kind === "outlier" ? "on" : ""}`} onClick={() => setKind("outlier")}>book outliers {counts.outlier}</button>
@@ -34,7 +35,7 @@ function AlertsPanel({ alerts, onPick }: { alerts: import("../api").Alert[]; onP
         </div>
       </div>
       {open && (
-        <div className="grid grid-3" style={{ maxHeight: 260, overflow: "auto" }}>
+        <div className="grid grid-3 deck" style={{ maxHeight: 260, overflow: "auto" }}>
           {shown.slice(0, 60).map((a, i) => (
             <div key={i} className="tile clickable" onClick={() => onPick(a)} style={{ borderLeft: `3px solid var(--${a.kind === "injury" ? "under" : a.kind === "move" ? "push" : "accent"})` }}>
               <div className="k">{a.kind}{a.severity >= 2 ? " · big" : ""}{a.team ? ` · ${a.team}` : ""}{a.at ? <span className="faint"> · {fmtDate(a.at)}</span> : null}</div>
@@ -163,6 +164,11 @@ export default function Board() {
   // How many rows the filters are hiding, so an empty table can say why.
   const active = markets.length + teams.length + games.length + (pos ? 1 : 0) + (book ? 1 : 0) + (q.trim() ? 1 : 0) + (onlyFlag ? 1 : 0) + (minL10 > 0 ? 1 : 0);
   const clearAll = () => { setMarkets([]); setTeams([]); setGames([]); setPos(""); setBook(""); setQ(""); setOnlyFlag(false); setMinL10(0); };
+  // Twenty columns do not fit a phone however they scroll, so there each prop
+  // is a card by default, with the table one tap away.
+  const mobile = useMobile();
+  const [view, setView] = useSticky<"cards" | "table">("board.view", "cards");
+  const cards = mobile && view === "cards";
 
   return (
     <div>
@@ -174,6 +180,7 @@ export default function Board() {
       <FeedBanner />
       {alerts.length > 0 && <AlertsPanel alerts={alerts} onPick={(a) => a.player_id && nav(`/research?player=${a.player_id}${a.market ? `&market=${a.market}` : ""}`)} />}
       <div className="panel" style={{ marginBottom: 12 }} data-tour="board-filters">
+        <FilterFold id="board" active={active} summary={`Week ${week ?? meta?.week ?? ""}${pos ? ` · ${pos}` : ""}${markets.length ? ` · ${markets.length} market${markets.length > 1 ? "s" : ""}` : ""}`}>
         <div className="controls">
           <ApplyField label="Week" value={week ?? meta?.week ?? 1} onApply={setWeek} show={(v) => `week ${v}`}>{(d, set) => <select className="input" value={d} onChange={(e) => set(Number(e.target.value))}>{weeks.map((w) => <option key={w} value={w}>Week {w}</option>)}</select>}</ApplyField>
           <Field label="Player"><input className="input" placeholder="filter…" value={q} onChange={(e) => setQ(e.target.value)} /></Field>
@@ -191,14 +198,16 @@ export default function Board() {
             {picked(games, setGames, (g) => g.replace("@", " @ "))}
           </div>
         )}
-        <div className="chips" style={{ marginTop: 10 }}>
+        <div className="chips swipe" style={{ marginTop: 10 }}>
           {marketOptions.map((m) => <button key={m.key} className={`chip ${markets.includes(m.key) ? "on" : ""}`} onClick={() => setMarkets(markets.includes(m.key) ? markets.filter((x) => x !== m.key) : [...markets, m.key])}>{m.label}</button>)}
           {markets.length > 0 && <button className="chip" onClick={() => setMarkets([])}>clear markets</button>}
           {active > 0 && <button className="chip" onClick={clearAll}>clear all filters · {active}</button>}
         </div>
+        </FilterFold>
       </div>
       <div className="panel" data-tour="board-table">
-        <div className="panel-head"><h3>{rows.length} props{(loading || stale) && <> <Spinner /></>}</h3><span className="hint">{(hiddenDef > 0 || showDef) && <>{showDef ? "defender props shown" : `${hiddenDef} defender props left out by your profile`} · <button className="btn sm ghost" onClick={() => setShowDef(!showDef)}>{showDef ? "hide" : "show"}</button> · </>}click a row to research the player</span></div>
+        <div className="panel-head"><h3>{rows.length} props{(loading || stale) && <> <Spinner /></>}</h3>
+          {mobile && <Seg value={view} options={[{ v: "cards", l: "Cards" }, { v: "table", l: "Table" }]} onChange={setView} />}<span className="hint">{(hiddenDef > 0 || showDef) && <>{showDef ? "defender props shown" : `${hiddenDef} defender props left out by your profile`} · <button className="btn sm ghost" onClick={() => setShowDef(!showDef)}>{showDef ? "hide" : "show"}</button> · </>}{cards ? "tap a card" : "click a row"} to research the player</span></div>
         {!loading && rows.length === 0 && (
           // Filters are sticky and outlive the week they were set in, so an
           // empty table is far more often one of those than a missing pull.
@@ -206,7 +215,8 @@ export default function Board() {
             ? <>None of the {scaledRows.length} props this week match the filters. <button className="btn sm" onClick={clearAll}>Clear filters</button></>
             : "No lines for this week. Pull one from Settings, ESPN is free and needs no key."}</div>
         )}
-        <div className="tbl-wrap" style={{ maxHeight: "72vh" }}>
+        {cards && <PropCards rows={rows} books={books} sort={sort} setSort={(v) => { setSortPicked(true); setSort(v); }} onOpen={(r) => r.player_id && nav(`/research?player=${r.player_id}&market=${r.market}`)} />}
+        {!cards && <div className="tbl-wrap" style={{ maxHeight: "72vh" }}>
           <table className="tbl compact tight">
             <thead>
               <tr>
@@ -245,8 +255,107 @@ export default function Board() {
               })}
             </tbody>
           </table>
-        </div>
+        </div>}
       </div>
     </div>
+  );
+}
+
+const CARD_SORTS: { k: SortKey; l: string }[] = [
+  { k: "spread", l: "Books disagree most" }, { k: "moved", l: "Line moved most" }, { k: "edge", l: "Biggest projection gap" },
+  { k: "pover", l: "Most likely over" }, { k: "l10", l: "Hottest last 10" }, { k: "avg", l: "Average above line" }, { k: "player", l: "Player name" },
+];
+
+/** How often a side has cleared, as a bar with the coin-flip line marked. */
+function Meter({ label, w }: { label: string; w?: { rate: number | null; over: number; n: number } | null }) {
+  const r = w?.rate ?? null;
+  const tone = r === null ? "" : r >= 0.6 ? "over" : r <= 0.4 ? "under" : "mid";
+  return (
+    <div className={`pc-meter ${tone}`} title={w ? `${w.over} of ${w.n} over` : undefined}>
+      <span className="k">{label}</span>
+      <span className="track"><i style={{ width: `${Math.round((r ?? 0) * 100)}%` }} /><b /></span>
+      <span className="v">{r === null ? "–" : fmtPct(r)}</span>
+    </div>
+  );
+}
+
+/** The board on a phone: one card per prop, the consensus number big, recent
+ *  hit rates as bars, and every book's number in a strip underneath. Cards come
+ *  in batches as the list is scrolled, so a week of hundreds of props opens as
+ *  fast as a short one. */
+function PropCards({ rows, books, sort, setSort, onOpen }: {
+  rows: BoardRow[]; books: string[]; sort: { k: SortKey; d: 1 | -1 }; setSort: (s: { k: SortKey; d: 1 | -1 }) => void; onOpen: (r: BoardRow) => void;
+}) {
+  const { meta } = useMeta();
+  const [n, setN] = useState(24);
+  const end = useRef<HTMLDivElement>(null);
+  useEffect(() => setN(24), [rows]);
+  useEffect(() => {
+    const el = end.current;
+    if (!el) return;
+    const io = new IntersectionObserver((es) => { if (es[0].isIntersecting) setN((x) => x + 24); }, { rootMargin: "600px 0px" });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [rows, n >= rows.length]);
+  return (
+    <>
+      <label className="pc-sort">
+        <span>Sort by</span>
+        <select className="input" value={sort.k} onChange={(e) => setSort({ k: e.target.value as SortKey, d: e.target.value === "player" ? 1 : -1 })}>
+          {CARD_SORTS.map((o) => <option key={o.k} value={o.k}>{o.l}</option>)}
+          {!CARD_SORTS.some((o) => o.k === sort.k) && <option value={sort.k}>{sort.k}</option>}
+        </select>
+      </label>
+      <div className="pc-list">
+        {rows.slice(0, n).map((r, k) => {
+          const maxMove = r.books.reduce((m, b) => (Math.abs(b.moved ?? 0) > Math.abs(m) ? (b.moved ?? 0) : m), 0);
+          const byBook = new Map(r.books.map((b) => [b.book, b]));
+          const pOver = r.proj?.p_over ?? null;
+          return (
+            <div key={`${r.event_id}-${r.market}-${r.player_id ?? r.player_name}`} className="prop-card" style={{ animationDelay: `${(k % 24) * 18}ms` }}
+              role="button" tabIndex={0} onClick={() => onOpen(r)} onKeyDown={(e) => { if (e.key === "Enter") onOpen(r); }}>
+              <div className="pc-top">
+                <div className="pc-who">
+                  <div className="pc-name">{r.player_name} <span className="muted">{r.position ?? ""}</span></div>
+                  <div className="pc-sub"><b>{r.team ?? ""}</b> {r.away_team} @ {r.home_team}</div>
+                  <div className="pc-market">{r.market_label}</div>
+                </div>
+                <div className="pc-line">
+                  <div className="v">{r.kind === "ou" ? fmtLine(r.consensus) : fmtPct(r.consensus)}</div>
+                  <div className="k">{r.kind === "ou" ? "consensus" : "implied yes"}</div>
+                </div>
+              </div>
+              <div className="pc-meters">
+                <Meter label="L5" w={r.form?.l5} /><Meter label="L10" w={r.form?.l10} /><Meter label="Szn" w={r.form?.season} />
+              </div>
+              <div className="pc-stats">
+                {r.proj && <span className={`pc-stat ${r.proj.edge ? (r.proj.edge > 0 ? "over" : "under") : ""}`}><span className="k">Proj</span> {r.kind === "ou" ? r.proj.value.toFixed(1) : r.proj.value.toFixed(2)}{r.proj.edge !== null ? ` (${fmtDelta(r.proj.edge)})` : ""}</span>}
+                {pOver !== null && <span className={`pc-stat ${pOver >= 0.6 ? "over" : pOver <= 0.4 ? "under" : ""}`}><span className="k">P(over)</span> {fmtPct(pOver)}</span>}
+                {maxMove !== 0 && <span className={`pc-stat ${maxMove > 0 ? "over" : "under"}`}><span className="k">Moved</span> {fmtDelta(maxMove)}</span>}
+                {r.line_spread > 0 && <span className="pc-stat push"><span className="k">Spread</span> {r.kind === "ou" ? r.line_spread : fmtPct(r.line_spread)}</span>}
+              </div>
+              {r.books.length > 1 && <div className="pc-books">
+                {books.filter((b) => byBook.has(b)).map((b) => {
+                  const x = byBook.get(b)!;
+                  return (
+                    <span key={b} className={`pc-book ${x.flag ? `cell-${x.flag}` : ""}`}>
+                      <span className="k">{meta?.books[b] ?? b}</span>
+                      <span className="v">{r.kind === "ou" ? fmtLine(x.line) : fmtOdds(x.yes)}</span>
+                      {r.kind === "ou" && (x.over !== null || x.under !== null) && <span className="o">O {fmtOdds(x.over)} · U {fmtOdds(x.under)}</span>}
+                    </span>
+                  );
+                })}
+              </div>}
+              {r.books.length === 1 && (r.best_over || r.best_under) && <div className="pc-one">
+                {meta?.books[r.books[0].book] ?? r.books[0].book}
+                {r.best_over && <span> · over <b className="num">{fmtOdds(r.best_over.price)}</b></span>}
+                {r.best_under && <span> · under <b className="num">{fmtOdds(r.best_under.price)}</b></span>}
+              </div>}
+            </div>
+          );
+        })}
+      </div>
+      {n < rows.length && <div ref={end} className="pc-more"><Spinner /> {rows.length - n} more</div>}
+    </>
   );
 }

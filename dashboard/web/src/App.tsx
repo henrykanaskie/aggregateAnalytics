@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import PlayerSearch from "./components/PlayerSearch";
 import Board from "./pages/Board";
@@ -14,6 +14,9 @@ import Fantasy from "./pages/Fantasy";
 import Tour from "./components/Tour";
 import Welcome from "./components/Welcome";
 import Tailor from "./components/Tailor";
+import Sheet from "./components/Sheet";
+import { ICONS, IconClose, IconHelp, IconMenu, IconMoon, IconMore, IconSearch, IconSliders, IconSun } from "./components/Icons";
+import { useMobile } from "./lib/useMobile";
 import { arrange, TABS, useLens } from "./lib/profile";
 import { gameWeek, warmAll } from "./lib/prefetch";
 import { clearSticky, readSticky, useSticky, writeSticky } from "./lib/sticky";
@@ -79,6 +82,130 @@ function Tabs() {
   );
 }
 
+// Phones get the app's own shape: a slim header that slides away while
+// reading, and the sections as a tab bar under the thumb. Four sections sit in
+// the bar (the first four the profile puts forward); everything else, Settings
+// included, is one tap away in the More sheet.
+function BottomNav({ onMore, moreOpen }: { onMore: () => void; moreOpen: boolean }) {
+  const loc = useLocation();
+  const { meta } = useMeta();
+  const [last] = useSticky<Record<string, string>>("nav.last", {});
+  const { shown } = arrange(useLens(), TABS.map((t) => ({ ...t, id: `tab:${t.path}` })));
+  const bar = shown.filter((t) => t.path !== "/settings").slice(0, 4);
+  const at = bar.findIndex((t) => t.path === loc.pathname);
+  const idx = moreOpen || at < 0 ? bar.length : at;
+  const hereInMore = at < 0 && TABS.find((t) => t.path === loc.pathname);
+  return (
+    <nav className="tabbar" data-tour="nav" style={{ ["--n" as string]: bar.length + 1, ["--i" as string]: idx }}>
+      <span className="tabbar-pill" aria-hidden="true" />
+      {bar.map((t) => {
+        const Icon = ICONS[t.path];
+        return (
+          <NavLink key={t.path} to={tabLink(t.path, last[t.path], meta)} data-tour={`nav:${t.path}`} className={({ isActive }) => (isActive && !moreOpen ? "on" : "")}
+            onClick={(e) => { if (loc.pathname === t.path) { e.preventDefault(); window.scrollTo({ top: 0, behavior: "smooth" }); } }}>
+            <Icon /><span>{t.label.replace("Lines board", "Board")}</span>
+          </NavLink>
+        );
+      })}
+      <button className={moreOpen || hereInMore ? "on" : ""} onClick={onMore} aria-haspopup="dialog">
+        {hereInMore && !moreOpen ? ICONS[hereInMore.path]({}) : <IconMore />}<span>{hereInMore && !moreOpen ? hereInMore.label : "More"}</span>
+      </button>
+    </nav>
+  );
+}
+
+function MoreSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const loc = useLocation();
+  const { meta } = useMeta();
+  const [last] = useSticky<Record<string, string>>("nav.last", {});
+  const { shown, tucked } = arrange(useLens(), TABS.map((t) => ({ ...t, id: `tab:${t.path}` })));
+  const bar = new Set(shown.filter((t) => t.path !== "/settings").slice(0, 4).map((t) => t.path));
+  const rest = shown.filter((t) => !bar.has(t.path));
+  const tile = (t: (typeof TABS)[number], k: number) => {
+    const Icon = ICONS[t.path];
+    return (
+      <NavLink key={t.path} to={tabLink(t.path, last[t.path], meta)} onClick={onClose} className={`more-tile ${loc.pathname === t.path ? "on" : ""}`} style={{ animationDelay: `${40 + k * 30}ms` }}>
+        <span className="more-tile-icon"><Icon size={24} /></span>{t.label}
+      </NavLink>
+    );
+  };
+  return (
+    <Sheet open={open} onClose={onClose} title={<b>All sections</b>}>
+      <div className="more-grid">{rest.map(tile)}</div>
+      {tucked.length > 0 && <>
+        <div className="sheet-label">Outside your interests</div>
+        <div className="more-grid">{tucked.map((t, k) => tile(t, rest.length + k))}</div>
+      </>}
+    </Sheet>
+  );
+}
+
+function MobileHeader({ onSearch, onMenu, pinned }: { onSearch: () => void; onMenu: () => void; pinned: boolean }) {
+  const { meta } = useMeta();
+  // Down hides the header, any move back up brings it back, and it never
+  // leaves while the page is near the top.
+  const [away, setAway] = useState(false);
+  const y0 = useRef(0);
+  useEffect(() => {
+    const onScroll = () => {
+      const y = window.scrollY, d = y - y0.current;
+      if (Math.abs(d) < 6) return;
+      setAway(d > 0 && y > 80);
+      y0.current = y;
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+  return (
+    <header className={`topbar mtop ${away && !pinned ? "away" : ""}`}>
+      <div className="brand" data-tour="brand">
+        <span className="dot" />Aggregate Analytics
+        {meta && <span className="week-chip">Wk {meta.week}</span>}
+      </div>
+      <div className="spacer" />
+      <button className="icon-btn" aria-label="Search players" data-tour="search" onClick={onSearch}><IconSearch /></button>
+      <button className="icon-btn" aria-label="Menu" onClick={onMenu}><IconMenu /></button>
+    </header>
+  );
+}
+
+function MenuSheet({ open, onClose, onTailor, onWelcome }: { open: boolean; onClose: () => void; onTailor: () => void; onWelcome: () => void }) {
+  const { settings, setSettings } = useMeta();
+  const dark = settings.theme === "dark";
+  return (
+    <Sheet open={open} onClose={onClose} title={<b>Aggregate Analytics</b>}>
+      <div className="menu-list">
+        <button className="menu-row" onClick={onTailor}>
+          <span className="menu-icon"><IconSliders /></span>
+          <span><b>{settings.profile ? "Tailored to you" : "Tailor it to me"}</b><span className="sub">{settings.profile ? "Change your answers and the pages rearrange" : "Six quick questions, and the pages rearrange around them"}</span></span>
+        </button>
+        <button className="menu-row" onClick={onWelcome}>
+          <span className="menu-icon"><IconHelp /></span>
+          <span><b>Welcome and tour</b><span className="sub">What the numbers are, and a one-minute walk through</span></span>
+        </button>
+        <div className="menu-row static">
+          <span className="menu-icon">{dark ? <IconMoon /> : <IconSun />}</span>
+          <span><b>Appearance</b></span>
+          <div className="theme-switch" role="radiogroup" aria-label="Theme">
+            <button role="radio" aria-checked={!dark} className={!dark ? "on" : ""} onClick={() => setSettings({ theme: "light" })}><IconSun size={18} /> Light</button>
+            <button role="radio" aria-checked={dark} className={dark ? "on" : ""} onClick={() => setSettings({ theme: "dark" })}><IconMoon size={18} /> Dark</button>
+          </div>
+        </div>
+      </div>
+    </Sheet>
+  );
+}
+
+function SearchSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const nav = useNavigate();
+  return (
+    <Sheet open={open} onClose={onClose} tall className="search-sheet"
+      title={<><b>Find a player</b><button className="icon-btn" aria-label="Close" onClick={onClose}><IconClose /></button></>}>
+      {open && <PlayerSearch inline autoFocus placeholder="Name, e.g. Bijan Robinson" onSelect={(p) => { onClose(); nav(`/research?player=${p.player_id}`); }} />}
+    </Sheet>
+  );
+}
+
 // "/" opens the lines board for anyone here for betting (and anyone who has
 // not said), the fantasy week for fantasy players, and research for the rest.
 function Home() {
@@ -110,33 +237,58 @@ function Shell() {
   // Load every tab in the background as soon as meta lands, so opening one is
   // a render rather than a round trip.
   useEffect(() => { if (meta) warmAll(meta, settings); }, [meta, settings.includeSample, settings.since]);
+  const mobile = useMobile();
+  const loc = useLocation();
+  const [sheet, setSheet] = useState<"more" | "search" | "menu" | null>(null);
+  useEffect(() => setSheet(null), [loc.pathname, loc.search]);
+  // On a phone a new section starts at its top: arriving halfway down a page
+  // you have never scrolled is disorienting on a small screen.
+  useEffect(() => { if (mobile) window.scrollTo(0, 0); }, [loc.pathname]);
+  // The browser chrome on a phone takes the page's own header colour.
+  useEffect(() => {
+    const bg = getComputedStyle(document.documentElement).getPropertyValue("--bg-2").trim();
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", bg || "#1a1a1a");
+  }, [settings.theme]);
   return (
-    <div className="app">
-      <header className="topbar">
-        <div className="brand" data-tour="brand"><span className="dot" />Aggregate Analytics{meta && <span className="muted" style={{ fontWeight: 400 }}> · {meta.season} wk {meta.week}</span>}</div>
-        <Tabs />
-        <div className="spacer" />
-        <div data-tour="search"><PlayerSearch onSelect={(p) => nav(`/research?player=${p.player_id}`)} placeholder="Jump to player…" /></div>
-        <button className="theme-btn" title="Answer a few questions and the pages rearrange around what you care about" onClick={() => setStage("tailor")}>{settings.profile ? "Tailored" : "Tailor"}</button>
-        <button className="theme-btn" title="Welcome notes and guided tour" onClick={() => setStage("welcome")}>?</button>
-        <button className="theme-btn" title="toggle light / dark" onClick={() => setSettings({ theme: settings.theme === "dark" ? "light" : "dark" })}>{settings.theme === "dark" ? "Light" : "Dark"}</button>
-      </header>
+    <div className={`app ${mobile ? "is-phone" : ""}`}>
+      {mobile ? (
+        <MobileHeader onSearch={() => setSheet("search")} onMenu={() => setSheet("menu")} pinned={stage === "tour"} />
+      ) : (
+        <header className="topbar">
+          <div className="brand" data-tour="brand"><span className="dot" />Aggregate Analytics{meta && <span className="muted" style={{ fontWeight: 400 }}> · {meta.season} wk {meta.week}</span>}</div>
+          <Tabs />
+          <div className="spacer" />
+          <div data-tour="search"><PlayerSearch onSelect={(p) => nav(`/research?player=${p.player_id}`)} placeholder="Jump to player…" /></div>
+          <button className="theme-btn" title="Answer a few questions and the pages rearrange around what you care about" onClick={() => setStage("tailor")}>{settings.profile ? "Tailored" : "Tailor"}</button>
+          <button className="theme-btn" title="Welcome notes and guided tour" onClick={() => setStage("welcome")}>?</button>
+          <button className="theme-btn" title="toggle light / dark" onClick={() => setSettings({ theme: settings.theme === "dark" ? "light" : "dark" })}>{settings.theme === "dark" ? "Light" : "Dark"}</button>
+        </header>
+      )}
       <main className="main">
         {error && <div className="banner err">API unreachable: {error}. Start it with <code>uvicorn dashboard.api.app:app --port 8017</code>.</div>}
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/research" element={<Research />} />
-          <Route path="/fantasy" element={<Fantasy />} />
-          <Route path="/board" element={<Board />} />
-          <Route path="/games" element={<Games />} />
-          <Route path="/matchups" element={<Matchups />} />
-          <Route path="/teams" element={<Teams />} />
-          <Route path="/coaches" element={<Coaches />} />
-          <Route path="/predictions" element={<Predictions />} />
-          <Route path="/results" element={<Results />} />
-          <Route path="/settings" element={<Settings />} />
-        </Routes>
+        <div className="page" key={loc.pathname}>
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/research" element={<Research />} />
+            <Route path="/fantasy" element={<Fantasy />} />
+            <Route path="/board" element={<Board />} />
+            <Route path="/games" element={<Games />} />
+            <Route path="/matchups" element={<Matchups />} />
+            <Route path="/teams" element={<Teams />} />
+            <Route path="/coaches" element={<Coaches />} />
+            <Route path="/predictions" element={<Predictions />} />
+            <Route path="/results" element={<Results />} />
+            <Route path="/settings" element={<Settings />} />
+          </Routes>
+        </div>
       </main>
+      {mobile && <>
+        <BottomNav onMore={() => setSheet(sheet === "more" ? null : "more")} moreOpen={sheet === "more"} />
+        <MoreSheet open={sheet === "more"} onClose={() => setSheet(null)} />
+        <SearchSheet open={sheet === "search"} onClose={() => setSheet(null)} />
+        <MenuSheet open={sheet === "menu"} onClose={() => setSheet(null)}
+          onTailor={() => { setSheet(null); setStage("tailor"); }} onWelcome={() => { setSheet(null); setStage("welcome"); }} />
+      </>}
       {stage === "welcome" && <Welcome onTour={() => { writeSticky("onboard.seen.v1", true); setStage("tour"); }} onTailor={() => { writeSticky("onboard.seen.v1", true); setStage("tailor"); }} onSkip={close} />}
       {stage === "tailor" && <Tailor onDone={close} onCancel={close} />}
       {stage === "tour" && <Tour onDone={close} />}

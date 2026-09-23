@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Link as RLink } from "react-router-dom";
 import { api2, api3, CoachProfile, CoachRoleKey, CoachSummary, CoachUsageRow } from "../api";
@@ -8,6 +8,7 @@ import { fmtStat } from "../lib/format";
 import { useSticky } from "../lib/sticky";
 import { useQuery } from "../lib/useQuery";
 import { useMeta } from "../state";
+import { useMobile } from "../lib/useMobile";
 import { PCT_LEGEND, barFill, oriented, rankTint, shownRank } from "../lib/rank";
 import ScatterPlot from "../components/ScatterPlot";
 import { fmtStat as fmtS } from "../lib/format";
@@ -32,7 +33,12 @@ export default function Coaches() {
   const [sy, setSy] = useSticky("coaches.sy", "sec_per_play");
   const haveCoords = meta?.have_coordinators ?? true;
   const roleReady = role === "HC" || haveCoords;
+  // On a phone the profile sits under the whole list, so a tap on a name
+  // carries the page down to it once it has loaded.
+  const mobile = useMobile();
+  const jump = useRef(false);
   const select = (next: { coach?: string; role?: CoachRoleKey }) => {
+    jump.current = mobile && !!next.coach;
     const r = next.role ?? role;
     const c = next.coach ?? "";
     setSp(c ? { role: r, coach: c } : { role: r });
@@ -44,6 +50,11 @@ export default function Coaches() {
   const picked = list.find((c) => c.coach === name);
   const noHistory = !!picked && !picked.has_history;
   const { data: prof, error: profErr } = useQuery<CoachProfile>(name && roleReady && !noHistory ? api2.coach.url(name, role) : null);
+  useEffect(() => {
+    if (!prof || !jump.current) return;
+    jump.current = false;
+    document.querySelector('[data-tour="coach-profile"]')?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [prof]);
   // Who got the ball is an offensive question; a DC's page has no use for it.
   const wantUsage = name && roleReady && !noHistory && role !== "DC";
   const { data: usageResp } = useQuery<{ coach: string; rows: CoachUsageRow[] }>(wantUsage ? api3.coachUsage.url(name, role) : null);
