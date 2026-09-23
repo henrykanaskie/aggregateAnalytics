@@ -19,7 +19,7 @@ import { marksFor } from "./FantasySnapshot";
 // what is pushing it, and the table shows the numbers behind those.
 
 const COLORS = ["var(--cat-1)", "var(--cat-3)", "var(--cat-2)", "var(--cat-5)"];
-const OUT = ["Out", "Doubtful", "IR"];
+const OUT = ["Out", "Doubtful", "IR", "Suspended", "Not playing"];
 const SIMS = 8000;
 
 /** A seeded generator, so the same comparison gives the same percentages
@@ -64,7 +64,8 @@ function reasons(p: FantasyPlayer, others: FantasyPlayer[], scoring: Scoring, bo
     const mine = f(p); if (mine === null || mine === undefined) return false;
     return others.every((o) => { const v = f(o); return v === null || v === undefined || mine > v; });
   };
-  if (p.status && OUT.includes(p.status)) down.push(`Listed ${p.status}${p.injury ? ` (${p.injury.toLowerCase()})` : ""}.`);
+  if (p.status === "Not playing") down.push("ESPN projects him for zero points: not expected to play.");
+  else if (p.status && OUT.includes(p.status)) down.push(`Listed ${p.status}${p.injury ? ` (${p.injury.toLowerCase()})` : ""}.`);
   else if (p.status) down.push(`${p.status} on the injury report${p.injury ? ` (${p.injury.toLowerCase()})` : ""}.`);
   if (!pr) down.push(p.games === 0 ? "No games on record yet, so there is nothing to project from." : "Too few games to project with any confidence.");
   const m = matchupWord(p);

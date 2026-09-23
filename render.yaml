@@ -65,3 +65,9 @@ services:
         sync: false
       - key: GH_TOKEN
         sync: false
+      # Yahoo league import (dashboard/leagues/README.md). Unset leaves the
+      # Yahoo button disabled; Sleeper and ESPN imports need nothing.
+      - key: YAHOO_CLIENT_ID
+        sync: false
+      - key: YAHOO_CLIENT_SECRET
+        sync: false

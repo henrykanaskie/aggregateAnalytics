@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { apiFantasy, FantasyPlayer, FantasyWeek } from "../api";
+import { apiFantasy, FantasyPlayer, FantasyWeek, LEAGUE_HANDOFF, LeagueImport } from "../api";
 import { ApplyField, Banner, Field, FilterFold, Seg, Spinner, TeamTag } from "../components/common";
 import { fmtPct } from "../lib/format";
 import { activeProfile, FANTASY_KEY, fantasyHref, fantasyStatFor, Scoring, SCORING_LABEL, useLens } from "../lib/profile";
@@ -21,7 +21,7 @@ import { useMobile } from "../lib/useMobile";
 
 type Pos = "ALL" | "ROSTER" | "MINE" | "QB" | "RB" | "WR" | "TE" | "K" | "DST";
 type SortKey = "proj" | "low" | "high" | "last3" | "implied" | "matchup";
-const OUT = ["Out", "Doubtful", "IR"];
+const OUT = ["Out", "Doubtful", "IR", "Suspended", "Not playing"];
 
 // A bare date parses as UTC midnight, which is the evening before across the
 // US; noon keeps it on its own day.
@@ -70,6 +70,23 @@ export default function Fantasy() {
   // The roster lives in this browser, like the tailoring answers.
   const [roster, setRoster] = useSticky<RosterEntry[]>("fantasy.roster", []);
   const [slots, setSlots] = useSticky<Slots>("fantasy.slots", DEFAULT_SLOTS);
+  // Back from signing in with Yahoo: the callback left the result in this
+  // tab's sessionStorage (dashboard/leagues/router.py). Read it once, open
+  // My team on it, and take ?import off the address.
+  const [handoff, setHandoff] = useState<LeagueImport | { error: string } | null>(null);
+  useEffect(() => {
+    if (!new URLSearchParams(window.location.search).has("import")) return;
+    try {
+      const raw = window.sessionStorage.getItem(LEAGUE_HANDOFF);
+      window.sessionStorage.removeItem(LEAGUE_HANDOFF);
+      if (raw) { setHandoff(JSON.parse(raw)); setView("team"); }
+    } catch { /* storage blocked: nothing to pick up */ }
+    // Only the address bar: a router navigation would remount this page and
+    // drop the result just read.
+    window.history.replaceState(window.history.state, "", window.location.pathname);
+  }, []);
+  // A league's scoring applies unless the tailoring answers already set it.
+  const takeScoring = (s: Scoring) => { if (profile?.purposes.includes("fantasy")) return false; setOwnScoring(s); return true; };
   const onRoster = useMemo(() => new Set(roster.map((r) => r.player_id)), [roster]);
   const star = (p: FantasyPlayer) => setRoster((r) => (onRoster.has(p.player_id) ? r.filter((x) => x.player_id !== p.player_id) : [...r, toEntry(p)]));
   const starBtn = (p: FantasyPlayer) => (
@@ -168,7 +185,7 @@ export default function Fantasy() {
       {teamView ? <>
         <div className="panel" style={{ marginBottom: 12 }}><FilterFold id="fantasy-team" summary={`Week ${shown ?? ""} · ${SCORING_LABEL[scoring]}`}><div className="controls">{weekField}{scoringField}</div></FilterFold></div>
         {error && <Banner kind="err">{error}</Banner>}
-        <MyTeam data={data ?? null} scoring={scoring} loading={loading} roster={roster} setRoster={setRoster} slots={slots} setSlots={setSlots} />
+        <MyTeam data={data ?? null} scoring={scoring} loading={loading} roster={roster} setRoster={setRoster} slots={slots} setSlots={setSlots} onScoring={takeScoring} handoff={handoff} />
       </> : <>
       <div className="panel" style={{ marginBottom: 12 }}>
         <FilterFold id="fantasy" active={(pos !== "ALL" ? 1 : 0) + (team ? 1 : 0) + (q.trim() ? 1 : 0)}
@@ -278,7 +295,7 @@ export default function Fantasy() {
             </table>
           </div>
           <div className="hint" style={{ marginTop: 8 }}>
-            Projection: ESPN's weekly projection, converted to your scoring{data.method.espn ? "" : " (not pulled for this week yet, so the site's own baseline stands in)"}. Floor and ceiling come from simulating the week out of each player's own last {data.method.n_games} games, shifted onto that projection and weighted toward the latest: the floor is a bad week (20th percentile), the ceiling a good one (80th), so a boom-or-bust player gets a wider, lopsided range. Players ESPN does not project use the site's baseline, a recency-weighted average scaled by the matchup, marked with a dot. It is a reference point, not a forecast.
+            Projection: ESPN's weekly projection, converted to your scoring{data.method.espn ? "" : " (not pulled for this week yet, so the site's own baseline stands in)"}. ESPN's file also sets who plays: a backup it projects as this week's starter is ranked first on his depth chart, and a player it projects for zero is marked not playing. Floor and ceiling come from simulating the week out of each player's own last {data.method.n_games} games, shifted onto that projection and weighted toward the latest: the floor is a bad week (20th percentile), the ceiling a good one (80th), so a boom-or-bust player gets a wider, lopsided range. Players ESPN does not project use the site's baseline, a recency-weighted average scaled by the matchup, marked with a dot. It is a reference point, not a forecast.
           </div>
         </div>
       )}

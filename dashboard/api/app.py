@@ -54,6 +54,7 @@ from ..odds import grading
 from ..stats import pbp as pbp_mod
 from ..stats import team as team_mod
 from ..stats.gamelog import availability, game_log
+from ..leagues.router import router as leagues_router
 
 # One password in front of everything (webauth/README.md). The dependency
 # gates every route below, including the SPA catch-all; the auth router must
@@ -67,6 +68,8 @@ from ..stats.gamelog import availability, game_log
 app = FastAPI(title="Aggregate Analytics", version="0.1.0",
               dependencies=[Depends(require_session)])
 app.include_router(auth_router)
+# League imports (dashboard/leagues/). Gated like every other route.
+app.include_router(leagues_router)
 # These responses are lists of dicts with the same keys repeated a few thousand
 # times, which is the case gzip is best at: measured 5x on a team's tendencies
 # (1016 KB -> 188 KB), 8x on a position's scatter, 9x on a game log. The host
