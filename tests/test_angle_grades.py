@@ -255,21 +255,30 @@ def test_a_position_angle_reads_against_the_offenses_own_usual():
     assert ag._line_words(r).startswith("Closing line 106.0 rushing yards for ATL's RBs") and "the way the angle leaned" in ag._line_words(r)
 
 
-def test_a_player_who_got_hurt_counts_neither_way(monkeypatch):
-    """Under half his usual snaps and on the next week's report: the call is
-    void, like a prop on a player who leaves hurt. Low snaps alone (a benched
-    backup) or a listing alone (a knock he played through) still count."""
+def test_a_player_who_got_hurt_still_counts_with_a_note(monkeypatch):
+    """Under half his usual snaps and on the next week's report: the call
+    counts as usual and carries a note. Low snaps alone (a benched backup) or
+    a listing alone (a knock he played through) carry none."""
     import polars as pl
     base = {k: None for k in ag.SCHEMA} | {"season": 2026, "week": 1, "kind": "player", "family": "{player} vs man coverage",
                                            "lean": "under", "strength": 1, "tags": [], "direction": "down", "fmt": "dec1",
                                            "baseline_label": "his previous 16 games", "baseline": 60.0, "actual": 20.0,
-                                           "line_result": "under", "usual_snap_pct": 0.8}
-    rows = [base | {"game_id": "g", "player_id": "hurt", "snap_pct": 0.2},       # low snaps, then listed: void
-            base | {"game_id": "g", "player_id": "benched", "snap_pct": 0.2},    # low snaps, not listed: counts
-            base | {"game_id": "g", "player_id": "knock", "snap_pct": 0.75}]     # listed, played his snaps: counts
+                                           "line_result": "under", "usual_snap_pct": 0.8, "title": "A vs man coverage",
+                                           "offense": "NE", "defense": "SEA", "measure": "receiving yards", "player": "A"}
+    rows = [base | {"game_id": "g", "player_id": "hurt", "snap_pct": 0.2},       # low snaps, then listed: noted
+            base | {"game_id": "g", "player_id": "benched", "snap_pct": 0.2},    # low snaps, not listed
+            base | {"game_id": "g", "player_id": "knock", "snap_pct": 0.75}]     # listed, played his snaps
     listed = pl.DataFrame({"season": [2026, 2026], "week": [1, 1], "player_id": ["hurt", "knock"]},
                           schema={"season": pl.Int32, "week": pl.Int32, "player_id": pl.String})
     monkeypatch.setattr(ag, "_hurt_next_week", lambda seasons: listed)
     df = ag._with_margin(pl.DataFrame(rows, schema=ag.SCHEMA))
-    assert df["verdict"].to_list() == [ag.INJURED, "hit", "hit"]
-    assert df["line_verdict"].to_list() == [None, "hit", "hit"]
+    assert df["verdict"].to_list() == ["hit", "hit", "hit"] and df["line_verdict"].to_list() == ["hit", "hit", "hit"]
+    assert df["hurt"].to_list() == [True, False, False]
+    monkeypatch.setattr(ag, "_box", lambda ids: pl.DataFrame(schema={"game_id": pl.String, "player_id": pl.String, "team": pl.String}))
+    notes = [r["note"] for r in ag.explain(df.to_dicts())]
+    assert notes[0].startswith("He got hurt in the game: 20% of the snaps against his usual 80%")
+    assert "got hurt" not in notes[1] and "got hurt" not in notes[2]
+    monkeypatch.setattr(ag, "_fresh", lambda: df)
+    monkeypatch.setattr(ag, "CURRENT_SEASON", 2026)
+    t = ag.track_record()
+    assert (t["n"], t["hits"], t["hurt"]) == (3, 3, 1)
