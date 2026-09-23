@@ -68,6 +68,10 @@ a { color: var(--accent); text-decoration: none; }
 :root[data-mode] .topbar .nav a.active { box-shadow: inset 0 -2px 0 var(--mode-1); }
 
 a:hover { text-decoration: underline; }
+/* A name (a player, a team, a coach, a game) reads as text, and shows it is a
+   link on hover. Links that do something, like "full lineup", stay blue. */
+a[href^="/research?player="], a[href^="/teams?team="], a[href^="/coaches?"], a[href^="/matchups?game="] { color: inherit; }
+a[href^="/research?player="]:hover, a[href^="/teams?team="]:hover, a[href^="/coaches?"]:hover, a[href^="/matchups?game="]:hover { color: var(--accent); }
 button, input, select { font: inherit; color: inherit; }
 button { cursor: pointer; }
 h1, h2, h3, h4 { margin: 0; font-weight: 600; }
