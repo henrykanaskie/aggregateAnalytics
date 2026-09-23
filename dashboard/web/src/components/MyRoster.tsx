@@ -58,6 +58,43 @@ export function bestLineup(rows: Row[], saved: Slots): { lineup: LineupSlot[]; b
 }
 export { SLOT_LABEL };
 
+/** Kicker and defense match only their own slot; FLEX and superflex never take them. */
+export const fitsSlot = (slot: keyof Slots, pos: string) =>
+  slot === pos || (slot === "FLEX" && FLEX_POS.includes(pos)) || (slot === "SFLEX" && (pos === "QB" || FLEX_POS.includes(pos)));
+
+/** Put a chosen set of starters into slots: each slot in order takes the best
+ *  scorer it accepts, so own positions fill before FLEX and superflex. Anyone
+ *  who fits nowhere comes back in `extra` rather than being dropped. */
+export function placeLineup(ids: string[], saved: Slots, posOf: (id: string) => string, score: (id: string) => number): { filled: { slot: keyof Slots; id: string | null }[]; extra: string[] } {
+  const slots = withDefaults(saved);
+  const left = [...ids].sort((a, b) => score(b) - score(a));
+  const filled: { slot: keyof Slots; id: string | null }[] = [];
+  for (const slot of SLOT_ORDER) {
+    for (let i = 0; i < slots[slot]; i++) {
+      const k = left.findIndex((id) => fitsSlot(slot, posOf(id)));
+      filled.push({ slot, id: k === -1 ? null : left.splice(k, 1)[0] });
+    }
+  }
+  return { filled, extra: left };
+}
+
+/** The lineup someone set by hand on the Fantasy page (fantasy.lineup), or the
+ *  best one when they have not. A starter who cannot play this week stays in
+ *  his slot, as he would in a league's app, with `why` saying so. */
+export function myLineup(rows: Row[], slots: Slots, chosen: string[] | null): { lineup: LineupSlot[]; bench: Row[]; auto: boolean } {
+  if (!chosen) return { ...bestLineup(rows, slots), auto: true };
+  const byId = new Map(rows.map((r) => [r.entry.player_id, r]));
+  const { filled } = placeLineup(chosen.filter((id) => byId.has(id)), slots, (id) => byId.get(id)!.entry.position,
+    (id) => { const r = byId.get(id)!; return r.why ? 0 : r.proj ?? 0; });
+  const used = new Set(filled.map((f) => f.id));
+  const lineup = filled.map((f) => ({ slot: f.slot, row: f.id ? byId.get(f.id)! : null }));
+  const bench = rows.filter((r) => !used.has(r.entry.player_id)).sort((a, b) => (b.proj ?? -1) - (a.proj ?? -1));
+  return { lineup, bench, auto: false };
+}
+
+/** What a lineup projects: nothing from anyone who cannot play. */
+export const lineupTotal = (lineup: LineupSlot[]) => lineup.reduce((a, l) => a + (l.row && !l.row.why ? l.row.proj ?? 0 : 0), 0);
+
 export function toEntry(p: PlayerLite | FantasyPlayer): RosterEntry {
   return { player_id: p.player_id, name: p.name, position: p.position, team: p.team ?? null };
 }
