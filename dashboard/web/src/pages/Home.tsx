@@ -5,6 +5,7 @@ import { TeamTag } from "../components/common";
 import Spark from "../components/Spark";
 import { bestLineup, DEFAULT_SLOTS, RosterEntry, rosterRows, SLOT_LABEL, Slots } from "../components/MyRoster";
 import OmniSearch from "../components/OmniSearch";
+import { ICONS } from "../components/Icons";
 import Tailor from "../components/Tailor";
 import { Mode, SCORING_LABEL, useLens } from "../lib/profile";
 import { readSticky } from "../lib/sticky";
@@ -18,12 +19,13 @@ import { useMeta } from "../state";
 
 type ModuleKey = "myteam" | "topplays" | "favgame" | "slate" | "alerts" | "gamelines" | "continue" | "movers";
 
-/** Which modules each mode leads with, in order. The first one gets the wide slot. */
-const LAYOUT: Record<Mode, ModuleKey[]> = {
-  fantasy: ["myteam", "topplays", "favgame", "movers", "continue"],
-  betting: ["alerts", "gamelines", "favgame", "continue", "slate"],
-  learn: ["favgame", "slate", "continue", "topplays"],
-  default: ["slate", "favgame", "continue"],
+/** Where each mode puts its modules: a wide main column and a narrow side
+ *  one, each stacked on its own so neither waits on the other's height. */
+const LAYOUT: Record<Mode, { main: ModuleKey[]; side: ModuleKey[] }> = {
+  fantasy: { main: ["myteam", "topplays"], side: ["favgame", "movers", "continue"] },
+  betting: { main: ["alerts", "gamelines"], side: ["favgame", "slate", "continue"] },
+  learn: { main: ["favgame", "slate"], side: ["continue", "topplays"] },
+  default: { main: ["slate"], side: ["favgame", "continue"] },
 };
 
 const OUT = ["Out", "Doubtful", "IR"];
@@ -41,8 +43,15 @@ export default function Home() {
   const { data: board } = useQuery<Board>(meta && lens.betting && lens.profile ? api.board.url({ week: week ?? undefined, include_sample: settings.includeSample }) : null);
 
   const tiles = startTiles(lens.mode, !!p?.team, lens.betting && p?.betStyle !== "props", p?.start === "games");
-  const modules = LAYOUT[lens.mode].filter((m) => (m === "myteam" ? lens.fantasy : m === "movers" ? lens.fantasy : m === "alerts" ? lens.betting && p?.betStyle !== "games" : m === "gamelines" ? lens.betting && p?.betStyle !== "props" : true));
-  const greeting = { fantasy: "How's your team looking?", betting: "What's moving this week?", learn: "What do you want to dig into?", default: "Where would you like to start?" }[lens.mode];
+  const fits = (m: ModuleKey) => (m === "myteam" || m === "movers" ? lens.fantasy : m === "alerts" ? lens.betting && p?.betStyle !== "games" : m === "gamelines" ? lens.betting && p?.betStyle !== "props" : true);
+  const { main, side } = LAYOUT[lens.mode];
+  const greeting = {
+    fantasy: <>How's your <em className="mode-word">team</em> looking?</>,
+    betting: <>What's <em className="mode-word">moving</em> this week?</>,
+    learn: <>What do you want to <em className="mode-word">dig into</em>?</>,
+    default: <>Where would you like to start?</>,
+  }[lens.mode];
+  const sub = { fantasy: "Your lineup, the week's best plays, and whose role is growing.", betting: "What moved on the board, the week's lines, and the games worth a look.", learn: "Search anyone, or start from this week's games.", default: "Search a player, a team or a coach, or pick a place to start." }[lens.mode];
 
   const render = (m: ModuleKey) => {
     switch (m) {
@@ -60,25 +69,31 @@ export default function Home() {
   return (
     <div className={`home home-${lens.mode}`}>
       <section className="home-hero">
-        <div className="home-kicker">{meta ? `${meta.season} · week ${meta.week}` : ""}</div>
-        <h1>{greeting}</h1>
-        <OmniSearch autoFocus={lens.mode === "learn" || lens.mode === "default"} />
-        <div className="home-tiles">
-          {tiles.map((t) => (
-            <Link key={t.to + t.title} to={t.to} className="home-tile">
-              <b>{t.title}</b><span>{t.sub}</span>
-            </Link>
-          ))}
+        <div className="home-hero-main">
+          <div className="home-kicker">{meta ? `${meta.season} season · week ${meta.week}` : "\u00a0"}</div>
+          <h1>{greeting}</h1>
+          <p className="home-lede">{sub}</p>
+          <OmniSearch autoFocus={lens.mode === "learn" || lens.mode === "default"} />
         </div>
-        {!p && (
-          <button className="home-tailor" onClick={() => setTailoring(true)}>
-            <Spark size={16} /><span><b>Tailor the site to you.</b> A few quick questions and every page rearranges around what you actually check: fantasy, betting, or following the game.</span>
-          </button>
-        )}
+        {p ? <Briefing fw={fw ?? null} games={sched ?? []} board={board ?? null} onTailor={() => setTailoring(true)} />
+           : <Setup onTailor={() => setTailoring(true)} />}
       </section>
 
-      <section className="home-grid">
-        {modules.map((m, i) => <div key={m} className={`home-mod ${i === 0 ? "lead" : ""}`}>{render(m)}</div>)}
+      <nav className="home-tiles" data-n={tiles.length} style={{ ["--n" as string]: tiles.length }} aria-label="Places to start">
+        {tiles.map((t) => {
+          const Icon = ICONS[t.to];
+          return (
+            <Link key={t.to + t.title} to={t.to} className="home-tile">
+              <span className="home-tile-icon">{Icon && <Icon size={20} />}</span>
+              <span className="home-tile-text"><b>{t.title}</b><span>{t.sub}</span></span>
+            </Link>
+          );
+        })}
+      </nav>
+
+      <section className="home-cols">
+        <div className="home-col home-main">{main.filter(fits).map((m) => <div key={m}>{render(m)}</div>)}</div>
+        <div className="home-col home-side">{side.filter(fits).map((m) => <div key={m}>{render(m)}</div>)}</div>
       </section>
       {tailoring && <Tailor onDone={() => setTailoring(false)} onCancel={() => setTailoring(false)} />}
     </div>
@@ -87,13 +102,13 @@ export default function Home() {
 
 function startTiles(mode: Mode, hasTeam: boolean, games: boolean, gamesFirst: boolean): { title: string; sub: string; to: string }[] {
   const all = {
-    player: { title: "Look up a player", sub: "every game, every stat, since 1999", to: "/research" },
-    fantasy: { title: "Fantasy week", sub: "rankings, matchups, roles, start / sit", to: "/fantasy" },
-    board: { title: "Lines board", sub: "this week's props across books", to: "/board" },
-    games: { title: "Game lines", sub: "spreads, totals, moneylines", to: "/games" },
-    matchups: { title: "This week's games", sub: "scheme against scheme, who gets the ball", to: "/matchups" },
-    teams: { title: hasTeam ? "Your team" : "Teams", sub: "tendencies and league ranks", to: "/teams" },
-    coaches: { title: "Coaches", sub: "how each staff calls a game", to: "/coaches" },
+    player: { title: "Look up a player", sub: "every game since 1999", to: "/research" },
+    fantasy: { title: "Fantasy week", sub: "rankings and start / sit", to: "/fantasy" },
+    board: { title: "Lines board", sub: "props across books", to: "/board" },
+    games: { title: "Game lines", sub: "spreads and totals", to: "/games" },
+    matchups: { title: "This week's games", sub: "scheme against scheme", to: "/matchups" },
+    teams: { title: hasTeam ? "Your team" : "Teams", sub: "tendencies and ranks", to: "/teams" },
+    coaches: { title: "Coaches", sub: "how each staff calls it", to: "/coaches" },
   };
   const order: Record<Mode, (keyof typeof all)[]> = {
     fantasy: ["fantasy", "player", "matchups", "teams"],
@@ -102,6 +117,99 @@ function startTiles(mode: Mode, hasTeam: boolean, games: boolean, gamesFirst: bo
     default: ["player", "matchups", "teams", "fantasy", "board", "coaches"],
   };
   return order[mode].map((k) => all[k]);
+}
+
+const ordinal = (n: number) => { const s = ["th", "st", "nd", "rd"], v = n % 100; return n + (s[(v - 20) % 10] || s[v] || s[0]); };
+const spreadFor = (g: ScheduleGame, team: string) => {
+  if (g.spread_line === null) return null;
+  const v = g.home_team === team ? -g.spread_line : g.spread_line;   // spread_line is the home side's margin
+  return v === 0 ? "PK" : v > 0 ? `+${v}` : `${v}`;
+};
+
+/** A few sentences about this visitor's week, read off their own data: their
+ *  lineup and its matchups, what moved on the lines they bet, their team's
+ *  game. Plain rules over live numbers, nothing more. */
+function Briefing({ fw, games, board, onTailor }: { fw: FantasyWeek | null; games: ScheduleGame[]; board: Board | null; onTailor: () => void }) {
+  const lens = useLens();
+  const { teamByAbbr } = useMeta();
+  const p = lens.profile!;
+  const nick = (t: string) => teamByAbbr.get(t)?.team_nick ?? t;
+  const lines: { key: string; node: React.ReactNode; tone?: "up" | "down" | "warn" }[] = [];
+  const fav = p.team ? games.find((g) => g.home_team === p.team || g.away_team === p.team) : null;
+  const open = games.filter((g) => g.home_score === null && g.total_line !== null);
+
+  if (lens.mode === "fantasy") {
+    const roster = readSticky<RosterEntry[]>("fantasy.roster", []);
+    const scoring = p.scoring;
+    if (fw && roster.length) {
+      const rows = rosterRows(roster, fw, scoring);
+      const { lineup } = bestLineup(rows, readSticky<Slots>("fantasy.slots", DEFAULT_SLOTS));
+      const starters = lineup.filter((l) => l.row).map((l) => l.row!);
+      const total = starters.reduce((a, r) => a + (r.proj ?? 0), 0);
+      const empty = lineup.length - starters.length;
+      lines.push({ key: "total", node: <>Your lineup projects <b>{total.toFixed(1)}</b> {SCORING_LABEL[scoring]} points{empty ? <>, with <b>{empty}</b> slot{empty === 1 ? "" : "s"} still open</> : null}.</> });
+      const best = starters.filter((r) => r.p?.matchup_rank).sort((a, b) => a.p!.matchup_rank! - b.p!.matchup_rank!)[0];
+      if (best?.p) lines.push({ key: "matchup", tone: "up", node: <><b>{best.entry.name}</b> has your best matchup: {nick(best.p.opponent)} give up the {ordinal(best.p.matchup_rank!)} most to {best.p.position}s.</> });
+      const hurt = rows.filter((r) => r.p?.status).slice(0, 2);
+      hurt.forEach((r) => lines.push({ key: `inj-${r.entry.player_id}`, tone: "warn", node: <><b>{r.entry.name}</b> is listed {r.p!.status}{OUT.includes(r.p!.status!) ? ", so he's out of your lineup" : ""}.</> }));
+      const moved = rows.filter((r) => r.p?.role && r.p.role.before >= 3).map((r) => ({ r, d: (r.p!.role!.last3 - r.p!.role!.before) / r.p!.role!.before }))
+        .sort((a, b) => Math.abs(b.d) - Math.abs(a.d))[0];
+      if (moved && Math.abs(moved.d) >= 0.25) lines.push({ key: "role", tone: moved.d > 0 ? "up" : "down", node: <><b>{moved.r.entry.name}</b>'s role is {moved.d > 0 ? "growing" : "shrinking"}: {moved.r.p!.role!.before.toFixed(1)} to {moved.r.p!.role!.last3.toFixed(1)} chances a game.</> });
+    } else if (fw) {
+      const want = (p.positions.filter((x) => x !== "K") as string[]).slice(0, 2);
+      (want.length ? want : ["RB", "WR"]).forEach((pos) => {
+        const top = fw.players.filter((x) => x.position === pos && x.proj[scoring] && !(x.status && OUT.includes(x.status))).sort((a, b) => (lens.ceiling ? b.proj[scoring]!.high - a.proj[scoring]!.high : b.proj[scoring]!.value - a.proj[scoring]!.value))[0];
+        if (top) lines.push({ key: `top-${pos}`, node: <>Top {pos} {lens.ceiling ? "ceiling" : "play"}: <b>{top.name}</b> {top.home ? "vs" : "at"} {top.opponent}, {(lens.ceiling ? top.proj[scoring]!.high : top.proj[scoring]!.value).toFixed(1)} projected.</> });
+      });
+      lines.push({ key: "add", node: <>Add your roster on the <Link to="/fantasy">Fantasy page</Link> and this becomes your lineup.</> });
+    }
+  } else if (lens.mode === "betting") {
+    const alert = (board?.alerts ?? []).slice().sort((a, b) => b.severity - a.severity)[0];
+    if (alert) lines.push({ key: "move", node: <><b>Biggest move:</b> {alert.title}.</> });
+    const off = (board?.rows ?? []).filter((r) => r.outliers.length > 0).length;
+    if (board) lines.push({ key: "off", tone: off ? "up" : undefined, node: off ? <><b>{off}</b> prop{off === 1 ? " has" : "s have"} one book off the consensus.</> : <>Every book agrees with the consensus right now.</> });
+  } else {
+    const big = [...open].sort((a, b) => (b.total_line ?? 0) - (a.total_line ?? 0))[0];
+    if (big) lines.push({ key: "big", node: <>Highest total on the slate: <b>{big.away_team} at {big.home_team}</b>, {big.total_line}.</> });
+    const tight = [...open].filter((g) => g.spread_line !== null).sort((a, b) => Math.abs(a.spread_line!) - Math.abs(b.spread_line!))[0];
+    if (tight) lines.push({ key: "tight", node: <>Closest on paper: <b>{tight.away_team} at {tight.home_team}</b>, {Math.abs(tight.spread_line!) === 0 ? "a pick'em" : `${Math.abs(tight.spread_line!)} points`}.</> });
+  }
+  if (fav && p.team) {
+    const opp = fav.home_team === p.team ? fav.away_team : fav.home_team;
+    const sp = spreadFor(fav, p.team);
+    const hi = fav.spread_line !== null && fav.total_line !== null ? (fav.total_line + fav.spread_line) / 2 : null;
+    const mine = hi === null ? null : fav.home_team === p.team ? hi : fav.total_line! - hi;
+    lines.push({ key: "fav", node: fav.home_score !== null
+      ? <>The <b>{nick(p.team)}</b> finished {fav.home_team === p.team ? `${fav.home_score}-${fav.away_score}` : `${fav.away_score}-${fav.home_score}`} against the {nick(opp)}.</>
+      : <>The <b>{nick(p.team)}</b> {fav.home_team === p.team ? "host" : "visit"} the {nick(opp)} {dayOf(fav.gameday)}{sp ? <>, {sp}</> : null}{mine !== null ? <>, expected to score {mine.toFixed(1)}</> : null}.</> });
+  } else if (p.team && games.length) {
+    lines.push({ key: "bye", node: <>The <b>{nick(p.team)}</b> are on bye this week.</> });
+  }
+
+  const MODE = { fantasy: "fantasy", betting: "betting", learn: "following the game", default: "everything" }[lens.mode];
+  return (
+    <div className="home-brief">
+      <div className="home-brief-head"><Spark size={16} /><span>Your week</span></div>
+      {lines.length === 0 ? <div className="home-brief-line muted">Pulling your week together…</div> : (
+        <ul className="home-brief-lines">
+          {lines.slice(0, 4).map((l, i) => <li key={l.key} className={l.tone ?? ""} style={{ animationDelay: `${120 + i * 90}ms` }}>{l.node}</li>)}
+        </ul>
+      )}
+      <div className="home-brief-foot"><span>Tailored for {MODE}</span><button className="linkish" onClick={onTailor}>Change answers</button></div>
+    </div>
+  );
+}
+
+/** The hero's right side before any tailoring: the invitation to it. A
+ *  tailored visitor gets their briefing there instead. */
+function Setup({ onTailor }: { onTailor: () => void }) {
+  return (
+    <button className="home-setup invite" onClick={onTailor}>
+      <span className="home-setup-top"><Spark size={18} /><b>Tailor it to you</b></span>
+      <span className="muted">A few quick questions, and every page rearranges around what you actually check: fantasy, betting, or following the game.</span>
+      <span className="home-setup-cta">Start →</span>
+    </button>
+  );
 }
 
 // --- modules -------------------------------------------------------------------
@@ -139,19 +247,25 @@ function MyTeam({ fw }: { fw: FantasyWeek | null }) {
   return (
     <Card title="Your fantasy team" to="/fantasy" link="full lineup">
       <div className="home-myteam">
-        <div className="home-big"><span className="num">{total.toFixed(1)}</span><span className="muted small">projected, {SCORING_LABEL[scoring]}{lens.ceiling ? " (you play for ceilings: check the high end on the fantasy page)" : ""}</span></div>
-        <table className="tbl compact"><tbody>
-          {res.lineup.map((l, i) => (
-            <tr key={i}>
-              <td className="left slot">{SLOT_LABEL[l.slot]}</td>
-              <td className="left">{l.row ? <Link to={`/research?player=${l.row.entry.player_id}`}>{l.row.entry.name}</Link> : <span className="under">empty</span>}
-                {l.row?.p?.status && <span className={`pill ${OUT.includes(l.row.p.status) ? "under" : "warn"}`}>{l.row.p.status}</span>}</td>
-              <td className="left small muted">{l.row?.p ? `${l.row.p.home ? "vs" : "@"} ${l.row.p.opponent}` : ""}</td>
-              <td className="num"><b>{l.row?.proj?.toFixed(1) ?? "–"}</b></td>
-            </tr>
+        <div className="home-big"><span className="num">{total.toFixed(1)}</span><span className="muted small">projected {SCORING_LABEL[scoring]} points{lens.ceiling ? ", but your format pays for ceilings" : ""}</span></div>
+        <div className="home-lineup">
+          {res.lineup.filter((l) => l.row).map((l, i) => (
+            <div key={i} className="home-lineup-row">
+              <span className="slot">{SLOT_LABEL[l.slot]}</span>
+              <span className="who"><Link to={`/research?player=${l.row!.entry.player_id}`}>{l.row!.entry.name}</Link>
+                {l.row!.p?.status && <span className={`pill ${OUT.includes(l.row!.p.status) ? "under" : "warn"}`}>{l.row!.p.status}</span>}</span>
+              <span className="opp">{l.row!.p ? `${l.row!.p.home ? "vs" : "@"} ${l.row!.p.opponent}` : ""}</span>
+              <b className="num">{l.row!.proj?.toFixed(1)}</b>
+            </div>
           ))}
-        </tbody></table>
-        {empty.length > 0 && <div className="small" style={{ marginTop: 8 }}><span className="under">{empty.length} empty slot{empty.length === 1 ? "" : "s"}</span> ({[...new Set(empty)].join(", ")}). <Link to="/fantasy">Add players</Link> to fill them.</div>}
+          {empty.length > 0 && (
+            <div className="home-lineup-row empty">
+              <span className="slot">{empty.length} open</span>
+              <span className="who">{empty.join(", ")}</span>
+              <Link to="/fantasy" className="opp">add players →</Link>
+            </div>
+          )}
+        </div>
         {(trouble.length > 0 || questionable.length > 0) && (
           <ul className="home-alerts">
             {trouble.map((t) => <li key={t} className="down">{t}</li>)}
@@ -219,14 +333,14 @@ function GameCard({ g, title, note }: { g: ScheduleGame; title: string; note?: s
   return (
     <Card title={title} to={`/matchups?game=${g.game_id}`} link="full matchup">
       <div className="home-game">
-        <div className="home-game-teams"><TeamTag abbr={g.away_team} name /><span className="muted">at</span><TeamTag abbr={g.home_team} name /></div>
-        <div className="small muted">{dayOf(g.gameday)} {g.gameday?.slice(5)} {g.gametime}{note ? ` · ${note}` : ""}</div>
-        {g.home_score !== null ? <div className="home-big"><span className="num">{g.away_score}-{g.home_score}</span><span className="muted small">final</span></div> : (
-          <div className="tiles" style={{ marginTop: 8 }}>
-            <div className="tile"><div className="k">Expected points</div><div className="v" style={{ fontSize: 16 }}>{ai !== null ? `${g.away_team} ${ai.toFixed(1)} · ${g.home_team} ${hi!.toFixed(1)}` : "–"}</div><div className="s">from the spread and total</div></div>
-            <div className="tile"><div className="k">Total</div><div className="v">{g.total_line ?? "–"}</div><div className="s">points, both teams</div></div>
+        <div className="home-game-teams"><TeamTag abbr={g.away_team} name /><span className="muted small">at</span><TeamTag abbr={g.home_team} name /></div>
+        <div className="small muted">{dayOf(g.gameday)} {g.gameday?.slice(5).replace("-", "/")} · {g.gametime}{note ? ` · ${note}` : ""}</div>
+        {g.home_score !== null ? <div className="home-big" style={{ marginTop: 10 }}><span className="num">{g.away_score}-{g.home_score}</span><span className="muted small">final</span></div> : ai !== null ? (
+          <div className="home-split" title="Points each team is expected to score, from the betting spread and total">
+            <div className="home-split-labels"><span><b className="num">{ai.toFixed(1)}</b> {g.away_team}</span><span className="muted small">expected points · total {g.total_line}</span><span>{g.home_team} <b className="num">{hi!.toFixed(1)}</b></span></div>
+            <div className="home-split-bar"><i style={{ flex: ai, background: "var(--cat-1)" }} /><i style={{ flex: hi!, background: "var(--cat-3)" }} /></div>
           </div>
-        )}
+        ) : <div className="hint" style={{ marginTop: 8 }}>No betting line posted yet.</div>}
       </div>
     </Card>
   );

@@ -69,9 +69,22 @@ function Tabs() {
   const [open, setOpen] = useState(false);
   useEffect(() => setOpen(false), [loc.pathname]);
   const inMore = tucked.some((t) => t.path === loc.pathname);
+  // Whether the tab strip runs past its box, for the fade on its edge.
+  const strip = useRef<HTMLElement>(null);
+  const [overflowing, setOverflowing] = useState(false);
+  useEffect(() => {
+    const el = strip.current;
+    if (!el) return;
+    const check = () => setOverflowing(el.scrollWidth - el.scrollLeft - el.clientWidth > 2);
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    el.addEventListener("scroll", check, { passive: true });
+    return () => { ro.disconnect(); el.removeEventListener("scroll", check); };
+  }, [shown.length]);
   return (
     <>
-      <nav className="nav" data-tour="nav">
+      <nav className={`nav ${overflowing ? "overflowing" : ""}`} data-tour="nav" ref={strip}>
         {shown.map((t) => <NavLink key={t.path} to={tabLink(t.path, last[t.path], meta)} data-tour={`nav:${t.path}`}>{t.label}</NavLink>)}
       </nav>
       {tucked.length > 0 && (
@@ -241,6 +254,13 @@ function Shell() {
   useEffect(() => { if (meta) warmAll(meta, settings); }, [meta, settings.includeSample, settings.since]);
   const mobile = useMobile();
   const loc = useLocation();
+  // A tailored profile gives the whole site its mode's colour (see the
+  // data-mode rules in styles.css); untailored, the attribute is absent.
+  const { mode } = useLens();
+  useEffect(() => {
+    if (mode === "default") document.documentElement.removeAttribute("data-mode");
+    else document.documentElement.setAttribute("data-mode", mode);
+  }, [mode]);
   const [sheet, setSheet] = useState<"more" | "search" | "menu" | null>(null);
   useEffect(() => setSheet(null), [loc.pathname, loc.search]);
   // On a phone a new section starts at its top: arriving halfway down a page

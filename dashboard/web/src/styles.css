@@ -48,6 +48,18 @@
 html, body, #root { height: 100%; }
 body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 14px; line-height: 1.5; }
 a { color: var(--accent); text-decoration: none; }
+/* Mode colour. A tailored profile sets data-mode on <html>, and the site takes
+   that mode's accent: teal for fantasy, violet for betting, blue for following
+   along. --mode-1/--mode-2 feed the gradients (the hero glow, the lead card's
+   edge, the Tailor button). The over/under greens and reds never change. */
+:root { --mode-1: var(--cat-1); --mode-2: var(--cat-2); --mode-glow: rgba(90,156,245,0.10); }
+:root[data-mode="fantasy"] { --accent: #3fb6c4; --accent-2: #23909d; --mode-1: #3fb6c4; --mode-2: #5a9cf5; --mode-glow: rgba(63,182,196,0.13); }
+:root[data-mode="betting"] { --accent: #a982f0; --accent-2: #8a5fe0; --mode-1: #a982f0; --mode-2: #e07ab8; --mode-glow: rgba(169,130,240,0.13); }
+:root[data-mode="learn"] { --accent: #5a9cf5; --accent-2: #3d7fe0; --mode-1: #5a9cf5; --mode-2: #a982f0; --mode-glow: rgba(90,156,245,0.12); }
+:root[data-theme="light"][data-mode="fantasy"] { --accent: #13818e; --accent-2: #0f6c77; --mode-1: #1e8f9c; --mode-2: #2b6fd4; --mode-glow: rgba(30,143,156,0.10); }
+:root[data-theme="light"][data-mode="betting"] { --accent: #6f42c1; --accent-2: #5b33a6; --mode-1: #6f42c1; --mode-2: #c2408f; --mode-glow: rgba(111,66,193,0.09); }
+:root[data-theme="light"][data-mode="learn"] { --accent: #2b6fd4; --accent-2: #2460ba; --mode-1: #2b6fd4; --mode-2: #6f42c1; --mode-glow: rgba(43,111,212,0.09); }
+
 a:hover { text-decoration: underline; }
 button, input, select { font: inherit; color: inherit; }
 button { cursor: pointer; }
@@ -83,6 +95,8 @@ h3 { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spa
    the tabs give up their width first and scroll, so the buttons on the right
    stay reachable instead of running off the edge. */
 .topbar > .nav { min-width: 0; overflow-x: auto; scrollbar-width: none; }
+/* When the tabs run past the edge, fade it so the cut reads as "more this way". */
+.topbar > .nav.overflowing { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent); }
 .topbar > .nav::-webkit-scrollbar { display: none; }
 .topbar .search { width: clamp(150px, 17vw, 240px); }
 .topbar .theme-btn { flex: none; }
@@ -683,47 +697,88 @@ button, a, .clickable, .chip, summary { -webkit-tap-highlight-color: transparent
   .tailor-btn, .tailor-btn::before, .tailor-btn .spark, .tailor-step, .tailor-summary li, .tailor-changes li { animation: none; }
 }
 
-/* Home */
+/* Home. One container width for everything; 16px between cards, 24px
+   between sections. The hero is two columns (the question and search, and how
+   the site is set up), the start points one even row, and the modules two
+   independent stacks so neither column waits on the other's height. */
 a.brand { color: var(--text); }
 a.brand:hover { text-decoration: none; opacity: 0.85; }
-.home { max-width: 1180px; margin: 0 auto; }
-.home-hero { padding: 26px 0 18px; }
+.home { max-width: 1200px; margin: 0 auto; padding: 8px 0 32px; display: grid; gap: 24px; }
+.home-hero { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 32px; align-items: center; padding-top: 20px; }
 .home-kicker { font-size: 11.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); font-weight: 600; }
-.home-hero h1 { font-size: 28px; margin: 6px 0 14px; letter-spacing: -0.01em; }
-.omni { position: relative; max-width: 640px; }
-.omni-input { width: 100%; font-size: 15px; padding: 11px 14px; border-radius: 12px; }
+.home-hero h1 { font-size: 30px; line-height: 1.15; margin: 8px 0 6px; letter-spacing: -0.015em; }
+.home-lede { margin: 0 0 16px; color: var(--muted); font-size: 14px; }
+.omni { position: relative; }
+.omni-input { width: 100%; font-size: 15px; padding: 12px 16px; border-radius: 12px; }
 .omni-results { position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 30; background: var(--panel); border: 1px solid var(--border-2); border-radius: 12px; box-shadow: 0 16px 40px rgba(0,0,0,0.35); padding: 6px; max-height: 60vh; overflow: auto; }
 .omni-group { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); padding: 6px 8px 2px; }
 .omni-hit { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; background: none; border: 0; border-radius: 8px; padding: 6px 8px; color: var(--text); font-size: 13px; }
 .omni-hit.on { background: var(--panel-2); }
 .omni-icon { width: 28px; height: 20px; border-radius: 4px; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; background: var(--bg-2); color: var(--muted); border: 1px solid var(--border); flex: none; }
-.home-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 16px; }
-.home-tile { display: flex; flex-direction: column; gap: 3px; padding: 12px 14px; border-radius: 10px; background: var(--panel); border: 1px solid var(--border); color: var(--text); }
-.home-tile:hover { border-color: var(--accent); text-decoration: none; }
-.home-tile span { font-size: 12px; color: var(--muted); }
-.home-tailor { display: flex; align-items: center; gap: 10px; margin-top: 14px; padding: 12px 14px; width: 100%; max-width: 640px; text-align: left; border-radius: 12px; border: 1px solid transparent; color: var(--text); font-size: 13px;
-  background: linear-gradient(var(--panel), var(--panel)) padding-box, linear-gradient(120deg, var(--cat-1), var(--cat-2), var(--cat-3)) border-box; }
-.home-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; align-items: start; }
-.home-mod.lead { grid-column: span 2; grid-row: span 2; }
-@media (max-width: 1000px) { .home-grid { grid-template-columns: 1fr; } .home-mod.lead { grid-column: auto; grid-row: auto; } }
-.home-card { height: 100%; }
-.home-row { display: flex; align-items: baseline; gap: 8px; padding: 5px 0; border-top: 1px solid var(--border); color: var(--text); }
-.home-row:first-of-type { border-top: 0; }
-.home-row > :last-child { margin-left: auto; }
-a.home-row:hover { text-decoration: none; background: var(--panel-2); }
-.home-sub { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); margin: 8px 0 2px; }
-.home-top { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 4px 16px; }
-.home-big { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; }
-.home-big .num { font-size: 30px; font-weight: 700; }
-.home-alerts { margin: 10px 0 0; padding-left: 18px; font-size: 12.5px; }
+
+.home-setup { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; padding: 16px; border-radius: 12px; background: var(--panel); border: 1px solid var(--border); font-size: 13px; text-align: left; color: var(--text); }
+.home-setup.invite { border-color: transparent; background: linear-gradient(var(--panel), var(--panel)) padding-box, linear-gradient(120deg, var(--cat-1), var(--cat-2), var(--cat-3)) border-box; }
+.home-setup.invite:hover { background: linear-gradient(var(--panel-2), var(--panel-2)) padding-box, linear-gradient(120deg, var(--cat-1), var(--cat-2), var(--cat-3)) border-box; }
+.home-setup-top { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.home-setup-cta { color: var(--accent); font-weight: 600; }
+
+.home-tiles { display: grid; grid-template-columns: repeat(var(--n, 4), minmax(0, 1fr)); gap: 12px; }
+/* Six start points are two rows of three: one row of six truncates every label. */
+.home-tiles[data-n="6"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.home-tile { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 12px; background: var(--panel); border: 1px solid var(--border); color: var(--text); min-width: 0; }
+.home-tile:hover { border-color: var(--accent); text-decoration: none; background: var(--panel-2); }
+.home-tile-icon { flex: none; width: 38px; height: 38px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; background: rgba(90,156,245,0.12); color: var(--accent); }
+.home-tile-text { display: flex; flex-direction: column; min-width: 0; }
+.home-tile-text b, .home-tile-text span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.home-tile-text b { font-size: 13.5px; }
+.home-tile-text span { font-size: 12px; color: var(--muted); }
+
+.home-cols { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.home-col { display: grid; gap: 16px; min-width: 0; }
+.home-col:empty { display: none; }
+.home-card { margin: 0; }
+.home-row { display: flex; align-items: baseline; gap: 8px; padding: 7px 0; border-top: 1px solid var(--border); color: var(--text); min-width: 0; }
+.home-row:first-of-type { border-top: 0; padding-top: 0; }
+.home-row > :last-child { margin-left: auto; white-space: nowrap; }
+a.home-row:hover { text-decoration: none; color: var(--accent); }
+.home-sub { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); margin: 10px 0 4px; }
+.home-top > div:first-child .home-sub, .home-top .home-sub:first-child { margin-top: 0; }
+.home-top { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 4px 24px; }
+.home-big { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
+.home-big .num { font-size: 32px; font-weight: 700; line-height: 1; }
+.home-lineup { display: grid; }
+.home-lineup-row { display: grid; grid-template-columns: 56px minmax(0, 1fr) auto 56px; align-items: center; gap: 12px; padding: 8px 0; border-top: 1px solid var(--border); font-size: 13.5px; }
+.home-lineup-row:first-child { border-top: 0; }
+.home-lineup-row .slot { font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+.home-lineup-row .who { min-width: 0; display: flex; align-items: center; gap: 6px; overflow: hidden; }
+.home-lineup-row .who a { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.home-lineup-row .opp { color: var(--muted); font-size: 12.5px; text-align: right; }
+.home-lineup-row .num { text-align: right; }
+.home-lineup-row.empty .who { color: var(--muted); }
+.home-lineup-row.empty .opp { grid-column: 3 / 5; color: var(--accent); }
+.home-alerts { margin: 12px 0 0; padding-left: 18px; font-size: 12.5px; }
 .home-alerts li.down::marker { color: var(--under); }
 .home-alerts li.warn::marker { color: var(--push); }
-.home-empty p { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
-.home-game-teams { display: flex; align-items: center; gap: 8px; font-size: 16px; margin-bottom: 4px; }
-.home-slate { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
-.home-slate-game { display: flex; flex-direction: column; padding: 7px 9px; border-radius: 8px; background: var(--bg-2); border: 1px solid var(--border); color: var(--text); font-size: 13px; }
+.home-empty p { margin: 0 0 12px; color: var(--muted); font-size: 13px; }
+.home-game-teams { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 15px; margin-bottom: 4px; }
+.home-split { margin-top: 14px; }
+.home-split-labels { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 6px; font-size: 13px; }
+.home-split-labels .num { font-size: 18px; }
+.home-split-bar { display: flex; gap: 3px; height: 8px; border-radius: 4px; overflow: hidden; }
+.home-split-bar i { display: block; min-width: 4px; }
+.home-slate { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+/* A full slate is sixteen games: four across fills the wide column evenly. */
+.home-main .home-slate { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 640px) { .home-main .home-slate { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.home-slate-game { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: 8px; background: var(--bg-2); border: 1px solid var(--border); color: var(--text); font-size: 13px; }
 .home-slate-game:hover { border-color: var(--accent); text-decoration: none; }
-.roster .slot, .home-myteam .slot { width: 1%; white-space: nowrap; color: var(--muted); font-family: var(--mono); font-size: 11.5px; }
+.roster .slot { width: 1%; white-space: nowrap; color: var(--muted); font-family: var(--mono); font-size: 11.5px; }
+
+@media (max-width: 1100px) { .home-hero { grid-template-columns: 1fr; align-items: start; } .home-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } .home-tiles[data-n="6"] { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 900px) { .home-cols { grid-template-columns: 1fr; } }
+@media (max-width: 640px) { .home { gap: 18px; } .home-hero { padding-top: 4px; } .home-hero h1 { font-size: 24px; } .home-tiles, .home-tiles[data-n="6"] { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; } .home-tile { padding: 12px; gap: 8px; flex-direction: column; align-items: flex-start; } .home-tile-icon { width: 32px; height: 32px; }
+  /* Narrow tiles: the title may wrap, and the subtitle gives way to it. */
+  .home-tile-text b { white-space: normal; } .home-tile-text span { display: none; } }
 
 /* Layouts (lib/layouts.ts) */
 .lay { display: grid; gap: 14px; }
@@ -739,3 +794,48 @@ a.home-row:hover { text-decoration: none; background: var(--panel-2); }
 .tailor-pick { display: flex; align-items: center; gap: 12px; margin: 10px 0; flex-wrap: wrap; }
 .tailor-pick > span { width: 90px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
 .tailor .search { max-width: 360px; }
+
+/* Tailored: the same page, but it should feel made for someone. Everything
+   below keys off data-mode, so an untailored visit is unchanged. */
+:root[data-mode] .home-hero { position: relative; isolation: isolate; }
+:root[data-mode] .home-hero::before {
+  /* Kept inside the hero and sized to its nearest side, so the glow has
+     faded to nothing before any edge: bled past the page it got clipped into
+     a visible rectangle. */
+  content: ""; position: absolute; z-index: -1; inset: 0; pointer-events: none;
+  background: radial-gradient(closest-side at 24% 55%, var(--mode-glow), transparent), radial-gradient(closest-side at 82% 50%, var(--mode-glow), transparent);
+}
+.mode-word { font-style: normal; background: linear-gradient(90deg, var(--mode-1), var(--mode-2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+.home-brief { position: relative; display: flex; flex-direction: column; gap: 10px; padding: 16px 18px; border-radius: 14px; border: 1px solid transparent;
+  background: linear-gradient(var(--panel), var(--panel)) padding-box, linear-gradient(140deg, var(--mode-1), transparent 45%, transparent 60%, var(--mode-2)) border-box;
+  box-shadow: 0 18px 40px -18px var(--mode-glow), 0 10px 28px rgba(0,0,0,0.22); }
+.home-brief-head { display: flex; align-items: center; gap: 8px; font-size: 11.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.home-brief-head span { background: linear-gradient(90deg, var(--mode-1), var(--mode-2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.home-brief-lines { list-style: none; margin: 0; padding: 0; display: grid; gap: 9px; font-size: 13.5px; line-height: 1.45; }
+.home-brief-lines li { position: relative; padding-left: 16px; animation: tailor-in 0.45s ease-out both; }
+.home-brief-lines li::before { content: ""; position: absolute; left: 0; top: 0.55em; width: 6px; height: 6px; border-radius: 50%; background: var(--mode-1); }
+.home-brief-lines li.up::before { background: var(--over); }
+.home-brief-lines li.down::before { background: var(--under); }
+.home-brief-lines li.warn::before { background: var(--push); }
+.home-brief-foot { display: flex; justify-content: space-between; gap: 10px; padding-top: 10px; border-top: 1px solid var(--border); font-size: 12px; color: var(--faint); }
+
+/* Depth: tailored cards sit a little above the page. */
+:root[data-mode] .panel { border-radius: 14px; box-shadow: 0 1px 0 rgba(255,255,255,0.025) inset, 0 10px 26px -14px rgba(0,0,0,0.45); }
+:root[data-theme="light"][data-mode] .panel { box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 10px 26px -16px rgba(0,0,0,0.18); }
+/* The lead module wears the mode's edge. */
+:root[data-mode] .home-main > div:first-child .home-card { border-color: transparent;
+  background: linear-gradient(var(--panel), var(--panel)) padding-box, linear-gradient(120deg, var(--mode-1), var(--border) 35%, var(--border) 70%, var(--mode-2)) border-box; }
+:root[data-mode] .home-card .panel-head h3 { color: var(--text); }
+:root[data-mode] .home-big .num { background: linear-gradient(90deg, var(--text), var(--mode-1)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+:root[data-mode] .home-tile-icon { background: color-mix(in srgb, var(--mode-1) 16%, transparent); color: var(--mode-1); }
+:root[data-mode] .tailor-btn::before { background: conic-gradient(from var(--tailor-ang), var(--mode-1), var(--mode-2), var(--mode-1)); }
+
+/* The page settles in: cards rise in order, main column first. */
+.home-col > div { animation: tailor-in 0.45s ease-out both; }
+.home-main > div:nth-child(2) { animation-delay: 0.08s; }
+.home-side > div:nth-child(1) { animation-delay: 0.05s; }
+.home-side > div:nth-child(2) { animation-delay: 0.12s; }
+.home-side > div:nth-child(3) { animation-delay: 0.19s; }
+.home-tiles .home-tile { animation: tailor-in 0.4s ease-out both; }
+@media (prefers-reduced-motion: reduce) { .home-col > div, .home-tiles .home-tile, .home-brief-lines li { animation: none; } }
