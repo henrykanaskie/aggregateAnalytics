@@ -27,6 +27,16 @@ const POSITIONS: Pos[] = ["QB", "RB", "WR", "TE", "K", "DST"];
 // Kicker and defense come last and never flex (fitsSlot only matches them to their own slot).
 const SHORT: Record<Slot, string> = { QB: "QB", RB: "RB", WR: "WR", TE: "TE", FLEX: "FLEX", SFLEX: "SFLX", K: "K", DST: "D/ST" };
 const OUT = ["Out", "Doubtful", "IR", "Suspended", "Not playing"];
+/** Common league shapes, one tap each. Anything else is the steppers. */
+const PRESETS: { label: string; slots: Slots }[] = [
+  { label: "Standard", slots: DEFAULT_SLOTS },
+  { label: "Superflex", slots: { ...DEFAULT_SLOTS, SFLEX: 1 } },
+  { label: "2 Flex", slots: { ...DEFAULT_SLOTS, FLEX: 2 } },
+  { label: "3 WR", slots: { ...DEFAULT_SLOTS, WR: 3 } },
+  { label: "2 QB", slots: { ...DEFAULT_SLOTS, QB: 2 } },
+  { label: "No K / D/ST", slots: { ...DEFAULT_SLOTS, K: 0, DST: 0 } },
+];
+const sameSlots = (a: Slots, b: Slots) => SLOT_ORDER.every((k) => a[k] === b[k]);
 // Deep enough for an imported bench, IR and taxi squad.
 const MAX_ROSTER = 30;
 
@@ -67,6 +77,7 @@ export default function MyTeam({ data, scoring, loading, roster, setRoster, slot
   const [starters, setLineup] = useSticky<string[] | null>("fantasy.lineup", null);
   const [pick, setPick] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  const [slotsOpen, setSlotsOpen] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [allTips, setAllTips] = useState(false);
   const [importing, setImporting] = useState(!!handoff);
@@ -299,10 +310,31 @@ export default function MyTeam({ data, scoring, loading, roster, setRoster, slot
           <h3>Starters</h3>
           <div className="actions">
             {pick && <span className="hint">tap who to swap with</span>}
+            <button className={`btn sm ${slotsOpen ? "primary" : "ghost"}`} title="Change the lineup slots: superflex, extra flex, 2 QB…" onClick={() => setSlotsOpen(!slotsOpen)}>
+              Lineup<span className="mt-lineup-sum">: {SLOT_ORDER.filter((k) => slots[k] > 0).map((k) => `${slots[k] > 1 ? slots[k] : ""}${SHORT[k]}`).join(" · ")}</span>
+            </button>
             <button className={`chip ${pastDots ? "on" : ""}`} title="Each player's games this season as dots on his range bar" onClick={() => setPastDots(!pastDots)}>past weeks</button>
             {!auto && !pick && <button className="btn sm ghost" onClick={() => setLineup(null)}>auto</button>}
           </div>
         </div>
+        {slotsOpen && (
+          <div className="mt-slots mt-slots-top">
+            <div className="mt-presets">
+              {PRESETS.map((pr) => <button key={pr.label} className={`chip ${sameSlots(slots, pr.slots) ? "on" : ""}`} onClick={() => setSlots(pr.slots)}>{pr.label}</button>)}
+            </div>
+            <div className="mt-steppers">
+              {SLOT_ORDER.map((s) => (
+                <span key={s} className="mt-stepper" title={s === "FLEX" ? "RB, WR or TE" : s === "SFLEX" ? "Superflex: QB, RB, WR or TE" : undefined}>
+                  <b>{SHORT[s]}</b>
+                  <button className="mt-btn" aria-label={`Fewer ${s}`} disabled={slots[s] <= 0} onClick={() => setSlots({ ...slots, [s]: slots[s] - 1 })}>−</button>
+                  <span className="num">{slots[s]}</span>
+                  <button className="mt-btn" aria-label={`More ${s}`} disabled={slots[s] >= 4} onClick={() => setSlots({ ...slots, [s]: slots[s] + 1 })}>+</button>
+                </span>
+              ))}
+            </div>
+            <div className="hint">FLEX takes an RB, WR or TE; SFLX (superflex) also takes a QB. An import sets these from your league.</div>
+          </div>
+        )}
         <div className="mt-list">{current.filled.map((f, i) => f.id ? row(f.id, f.slot) : <div key={`empty-${i}`} className="mt-row empty"><span className="mt-slot">{SHORT[f.slot]}</span><span className="muted small">Empty</span></div>)}</div>
       </div>
 
@@ -324,15 +356,7 @@ export default function MyTeam({ data, scoring, loading, roster, setRoster, slot
         </div>
         {editing && (
           <div className="mt-slots">
-            <span className="hint">Lineup slots</span>
-            {SLOT_ORDER.map((s) => (
-              <span key={s} className="mt-stepper">
-                <b>{SHORT[s]}</b>
-                <button className="mt-btn" aria-label={`Fewer ${s}`} disabled={slots[s] <= 0} onClick={() => setSlots({ ...slots, [s]: slots[s] - 1 })}>−</button>
-                <span className="num">{slots[s]}</span>
-                <button className="mt-btn" aria-label={`More ${s}`} disabled={slots[s] >= 4} onClick={() => setSlots({ ...slots, [s]: slots[s] + 1 })}>+</button>
-              </span>
-            ))}
+            <span className="hint">Lineup slots are under <b>Lineup</b> at the top of Starters.</span>
             <button className="btn sm ghost" style={{ color: "var(--under)" }} onClick={() => { if (window.confirm("Remove every player from your team?")) { setRoster([]); setLineup(null); setEditing(false); } }}>Clear team</button>
           </div>
         )}

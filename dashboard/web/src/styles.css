@@ -1120,3 +1120,9 @@ th.range-col { white-space: nowrap; }
   .ss-table th { max-width: 110px; }
   .mt-odds .faint { display: none; }
 }
+
+/* Lineup slots editor at the top of Starters (MyTeam.tsx) */
+.mt-slots-top { flex-direction: column; align-items: stretch; margin: 0 0 10px; padding: 0 0 12px; border-top: 0; border-bottom: 1px dashed var(--border-2); }
+.mt-presets, .mt-steppers { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+.mt-presets { gap: 6px; }
+@media (max-width: 760px) { .mt-lineup-sum { display: none; } }
