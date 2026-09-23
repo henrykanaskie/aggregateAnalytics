@@ -2,6 +2,7 @@ import { api, api2, api3, api4, api5, apiFantasy, apiGet, Meta, ScheduleGame } f
 import { busy, isFresh } from "./cache";
 import { readSticky } from "./sticky";
 import type { Settings } from "../state";
+import { activeProfile } from "./profile";
 
 // Warming the cache at startup so a tab is already loaded by the time it is
 // opened. The queue is drained one request at a time: these endpoints scan
@@ -101,7 +102,7 @@ export function warmAll(meta: Meta, settings: Settings): void {
   urls.push(api.predictions.url(undefined, week("predictions.week")));
   // The fantasy week costs the API a couple of seconds cold, so it is warmed
   // only for someone who said fantasy is what they are here for.
-  if (settings.profile?.purposes.includes("fantasy")) urls.push(apiFantasy.fantasyWeek.url(meta.season, week("fantasy.week")));
+  if (activeProfile(settings)?.purposes.includes("fantasy")) urls.push(apiFantasy.fantasyWeek.url(meta.season, week("fantasy.week")));
   urls.push(api5.gradeSummary.url(readSticky<number | null>("results.season", null) ?? undefined));
   urls.push(api.status.url());
 

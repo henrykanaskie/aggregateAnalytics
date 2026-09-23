@@ -126,7 +126,8 @@ function TailorPanel() {
       <div className="panel-head"><h3>Your layout</h3>
         <div className="actions">
           <button className="btn sm primary" onClick={() => setEditing(true)}>{p ? "Change answers" : "Tailor it to me"}</button>
-          {p && <button className="btn sm" title="Forget the answers and show every page and panel" onClick={() => setSettings({ profile: null })}>Show everything</button>}
+          {p && <button className="btn sm" title={settings.tailored !== false ? "Show every page as it is for everyone; your answers are kept" : "Lay the site out by your answers again"} onClick={() => setSettings({ tailored: settings.tailored === false })}>{settings.tailored !== false ? "Switch to standard" : "Switch back to tailored"}</button>}
+          {p && <button className="btn sm ghost" title="Forget the answers" onClick={() => { if (window.confirm("Clear your tailoring answers?")) setSettings({ profile: null, tailored: true }); }}>Clear answers</button>}
         </div>
       </div>
       {!p && <div className="small muted">Every page and panel is showing. A few questions about what you are here for (betting, fantasy, or following the game), the positions you follow and how much detail you want will rearrange the pages around it.</div>}

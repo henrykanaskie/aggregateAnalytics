@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { apiFantasy, FantasyPlayer, FantasyWeek } from "../api";
 import { ApplyField, Banner, Field, FilterFold, Seg, Spinner, TeamTag } from "../components/common";
 import { fmtPct } from "../lib/format";
-import { FANTASY_KEY, fantasyHref, fantasyStatFor, Scoring, SCORING_LABEL, useLens } from "../lib/profile";
+import { activeProfile, FANTASY_KEY, fantasyHref, fantasyStatFor, Scoring, SCORING_LABEL, useLens } from "../lib/profile";
 import { rankTint } from "../lib/rank";
 import StartSit from "../components/StartSit";
 import { DEFAULT_SLOTS, RosterEntry, Slots, toEntry } from "../components/MyRoster";
@@ -38,7 +38,7 @@ function roleChange(p: FantasyPlayer): number | null {
 export default function Fantasy() {
   const { meta, settings } = useMeta();
   const nav = useNavigate();
-  const profile = settings.profile;
+  const profile = activeProfile(settings);
   const [week, setWeek] = useSticky<number | null>("fantasy.week", null);
   // The scoring the profile names wins; without one the page keeps its own.
   const [ownScoring, setOwnScoring] = useSticky<Scoring>("fantasy.scoring", "ppr");

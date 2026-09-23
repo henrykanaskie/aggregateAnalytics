@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import Tailor from "./Tailor";
 import { useMeta } from "../state";
-import { Tags, useLens } from "../lib/profile";
+import { activeProfile, Tags, useLens } from "../lib/profile";
 
 export interface Tucked { id: string; label: string; node: React.ReactNode }
 
@@ -12,7 +12,7 @@ export default function More({ items }: { items: Tucked[] }) {
   const { settings, setSettings } = useMeta();
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState(false);
-  const profile = settings.profile;
+  const profile = activeProfile(settings);
   if (!items.length || !profile) return null;
   const toggle = (id: string) => setOpen((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const pin = (id: string) => setSettings({ profile: { ...profile, pinned: [...new Set([...profile.pinned, id])] } });

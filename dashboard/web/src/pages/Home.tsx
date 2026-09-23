@@ -7,7 +7,7 @@ import { bestLineup, DEFAULT_SLOTS, RosterEntry, rosterRows, SLOT_LABEL, Slots }
 import OmniSearch from "../components/OmniSearch";
 import { ICONS } from "../components/Icons";
 import Tailor from "../components/Tailor";
-import { fantasyHref, Mode, SCORING_LABEL, useLens } from "../lib/profile";
+import { activeProfile, fantasyHref, Mode, SCORING_LABEL, useLens } from "../lib/profile";
 import { readSticky } from "../lib/sticky";
 import { useQuery } from "../lib/useQuery";
 import { useMeta } from "../state";
@@ -131,7 +131,7 @@ const spreadFor = (g: ScheduleGame, team: string) => {
  *  game. Plain rules over live numbers, nothing more. */
 function Briefing({ fw, games, board, onTailor }: { fw: FantasyWeek | null; games: ScheduleGame[]; board: Board | null; onTailor: () => void }) {
   const lens = useLens();
-  const { teamByAbbr } = useMeta();
+  const { teamByAbbr, setSettings } = useMeta();
   const p = lens.profile!;
   const nick = (t: string) => teamByAbbr.get(t)?.team_nick ?? t;
   const lines: { key: string; node: React.ReactNode; tone?: "up" | "down" | "warn" }[] = [];
@@ -195,7 +195,7 @@ function Briefing({ fw, games, board, onTailor }: { fw: FantasyWeek | null; game
           {lines.slice(0, 4).map((l, i) => <li key={l.key} className={l.tone ?? ""} style={{ animationDelay: `${120 + i * 90}ms` }}>{l.node}</li>)}
         </ul>
       )}
-      <div className="home-brief-foot"><span>Tailored for {MODE}</span><button className="linkish" onClick={onTailor}>Change answers</button></div>
+      <div className="home-brief-foot"><span>Tailored for {MODE}</span><span><button className="linkish" onClick={onTailor}>Change answers</button> · <button className="linkish" onClick={() => setSettings({ tailored: false })}>Standard view</button></span></div>
     </div>
   );
 }
@@ -316,7 +316,7 @@ function Movers({ fw }: { fw: FantasyWeek | null }) {
 
 function FavGame({ games }: { games: ScheduleGame[] }) {
   const { settings, teamByAbbr } = useMeta();
-  const fav = settings.profile?.team;
+  const fav = activeProfile(settings)?.team;
   const g = fav ? games.find((x) => x.home_team === fav || x.away_team === fav) : null;
   if (!fav) {
     // Without a favorite, the week's biggest game by total.
