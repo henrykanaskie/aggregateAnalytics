@@ -30,7 +30,10 @@ const inflight = new Map<string, Promise<any>>();
 // one stale frame from an old shape before the refetch lands, so bump it when
 // in doubt: the cost is one slow visit, and the cost of not bumping is a
 // render against data that no longer looks like the code expects.
-const CACHE_VERSION = "1";
+// 2 (2026-09-23): /api/fantasy/week changed what its fields mean (ESPN sets
+// who plays and the depth order, `recent` is this season only), and a visitor
+// kept seeing the old week painted first.
+const CACHE_VERSION = "2";
 const PREFIX = `pdq.v${CACHE_VERSION}:`;
 const MAX_ENTRY = 3_000_000;    // characters; bigger payloads stay memory-only
 const MAX_AGE = 7 * 86_400_000;  // a mirrored entry older than this is dropped
