@@ -3,9 +3,10 @@ import { Link, useNavigate } from "react-router-dom";
 import { apiFantasy, FantasyPlayer, FantasyWeek } from "../api";
 import { ApplyField, Banner, Field, FilterFold, Seg, Spinner, TeamTag } from "../components/common";
 import { fmtPct } from "../lib/format";
-import { FANTASY_KEY, Scoring, SCORING_LABEL } from "../lib/profile";
+import { FANTASY_KEY, Scoring, SCORING_LABEL, useLens } from "../lib/profile";
 import { rankTint } from "../lib/rank";
 import StartSit from "../components/StartSit";
+import MyRoster, { DEFAULT_SLOTS, RosterEntry, Slots, toEntry } from "../components/MyRoster";
 import { useSticky } from "../lib/sticky";
 import { useQuery } from "../lib/useQuery";
 import { useMeta } from "../state";
@@ -16,7 +17,7 @@ import { useMobile } from "../lib/useMobile";
 // Everything here is read from /api/fantasy/week, which projects all three
 // scoring formats at once, so switching format is a re-sort, not a request.
 
-type Pos = "ALL" | "MINE" | "QB" | "RB" | "WR" | "TE";
+type Pos = "ALL" | "ROSTER" | "MINE" | "QB" | "RB" | "WR" | "TE";
 type SortKey = "proj" | "low" | "high" | "last3" | "implied" | "matchup";
 const OUT = ["Out", "Doubtful", "IR"];
 
@@ -49,7 +50,10 @@ export default function Fantasy() {
   const [q, setQ] = useState("");
   const [hideOut, setHideOut] = useSticky("fantasy.hideOut", true);
   const [starters, setStarters] = useSticky("fantasy.starters", true);
-  const [sort, setSort] = useState<{ k: SortKey; d: 1 | -1 }>({ k: "proj", d: -1 });
+  // Best ball and DFS play for the big week, so they rank by ceiling.
+  const lens = useLens();
+  const [sort, setSort] = useState<{ k: SortKey; d: 1 | -1 }>({ k: lens.ceiling ? "high" : "proj", d: -1 });
+  const setsLineups = !profile || !profile.purposes.includes("fantasy") || (lens.profile?.fantasyFormat ?? "season") === "season";
   // On a phone the player (with the start / sit button) is the pinned first
   // column and the projection comes straight after it, so the number the page
   // is ranked by is on screen without a sideways swipe.
@@ -57,6 +61,14 @@ export default function Fantasy() {
   // Players picked for start/sit. Kept across weeks and visits: the same
   // decision tends to come back every week.
   const [compare, setCompare] = useSticky<string[]>("fantasy.compare", []);
+  // The roster lives in this browser, like the tailoring answers.
+  const [roster, setRoster] = useSticky<RosterEntry[]>("fantasy.roster", []);
+  const [slots, setSlots] = useSticky<Slots>("fantasy.slots", DEFAULT_SLOTS);
+  const onRoster = useMemo(() => new Set(roster.map((r) => r.player_id)), [roster]);
+  const star = (p: FantasyPlayer) => setRoster((r) => (onRoster.has(p.player_id) ? r.filter((x) => x.player_id !== p.player_id) : [...r, toEntry(p)]));
+  const starBtn = (p: FantasyPlayer) => (
+    <button className={`star-btn ${onRoster.has(p.player_id) ? "on" : ""}`} title={onRoster.has(p.player_id) ? "Take off my roster" : "Add to my roster"} onClick={(e) => { e.stopPropagation(); star(p); }}>{onRoster.has(p.player_id) ? "★" : "☆"}</button>
+  );
   const toggle = (id: string) => setCompare((c) => (c.includes(id) ? c.filter((x) => x !== id) : c.length >= 4 ? c : [...c, id]));
 
   const shown = week ?? meta?.week ?? null;
@@ -73,14 +85,15 @@ export default function Fantasy() {
 
   const rows = useMemo(() => {
     let r = data?.players ?? [];
-    if (pos === "MINE") r = r.filter((p) => (mine as string[]).includes(p.position));
+    if (pos === "ROSTER") r = r.filter((p) => onRoster.has(p.player_id));
+    else if (pos === "MINE") r = r.filter((p) => (mine as string[]).includes(p.position));
     else if (pos !== "ALL") r = r.filter((p) => p.position === pos);
     if (team) r = r.filter((p) => p.team === team || p.opponent === team);
     if (q.trim()) { const s = q.trim().toLowerCase(); r = r.filter((p) => p.name.toLowerCase().includes(s)); }
     if (hideOut) r = r.filter((p) => !p.status || !OUT.includes(p.status));
     // A team's QB1, top two backs, top three receivers and TE1: the players a
     // lineup is actually built from. The rest are one click away.
-    if (starters) r = r.filter((p) => p.depth_rank === null || p.depth_rank <= ({ QB: 1, RB: 2, WR: 3, TE: 1 }[p.position] ?? 1));
+    if (starters && pos !== "ROSTER") r = r.filter((p) => p.depth_rank === null || p.depth_rank <= ({ QB: 1, RB: 2, WR: 3, TE: 1 }[p.position] ?? 1));
     return [...r].sort((a, b) => {
       const x = val(a, sort.k), y = val(b, sort.k);
       if (x === null && y === null) return 0;
@@ -88,7 +101,7 @@ export default function Fantasy() {
       if (y === null) return -1;
       return (x - y) * sort.d;
     });
-  }, [data, pos, team, q, hideOut, starters, sort, scoring]);
+  }, [data, pos, team, q, hideOut, starters, sort, scoring, onRoster]);
 
   // Position ranks by projection, over everyone who plays, so filtering the
   // table never renumbers a player.
@@ -130,7 +143,7 @@ export default function Fantasy() {
   return (
     <div>
       <div className="page-head">
-        <div><h1>Fantasy{shown ? ` · week ${shown}` : ""}</h1><div className="muted small">Every starter on a team that plays this week, ranked by projected {SCORING_LABEL[scoring]} points, next to the matchup and the role behind the number.</div></div>
+        <div><h1>Fantasy{shown ? ` · week ${shown}` : ""}</h1><div className="muted small">Every starter on a team that plays this week, ranked by {lens.ceiling ? "ceiling (the big week your format pays for)" : "projected"} {SCORING_LABEL[scoring]} points, next to the matchup and the role behind the number.</div></div>
       </div>
 
       <div className="panel" style={{ marginBottom: 12 }}>
@@ -138,7 +151,7 @@ export default function Fantasy() {
           summary={`Week ${shown ?? ""} · ${pos === "ALL" ? "all positions" : pos === "MINE" ? "your positions" : pos} · ${SCORING_LABEL[scoring]}`}>
         <div className="controls">
           <ApplyField label="Week" value={shown ?? 1} onApply={setWeek} show={(v) => `week ${v}`}>{(d, set) => <select className="input" value={d} onChange={(e) => set(Number(e.target.value))}>{weeks.map((w) => <option key={w} value={w}>Week {w}</option>)}</select>}</ApplyField>
-          <Field label="Position"><Seg value={pos} options={[{ v: "ALL", l: "All" }, ...(mine.length > 1 ? [{ v: "MINE" as Pos, l: `Yours (${mine.join(", ")})` }] : []), { v: "QB", l: "QB" }, { v: "RB", l: "RB" }, { v: "WR", l: "WR" }, { v: "TE", l: "TE" }]} onChange={setPos} /></Field>
+          <Field label="Position"><Seg value={pos} options={[{ v: "ALL", l: "All" }, ...(roster.length ? [{ v: "ROSTER" as Pos, l: `My roster (${roster.length})` }] : []), ...(mine.length > 1 ? [{ v: "MINE" as Pos, l: `Yours (${mine.join(", ")})` }] : []), { v: "QB", l: "QB" }, { v: "RB", l: "RB" }, { v: "WR", l: "WR" }, { v: "TE", l: "TE" }]} onChange={setPos} /></Field>
           {profile?.purposes.includes("fantasy")
             ? <Field label="Scoring"><span className="hint" style={{ lineHeight: "28px" }}>{SCORING_LABEL[scoring]} (from your answers)</span></Field>
             : <Field label="Scoring"><Seg value={ownScoring} options={[{ v: "ppr", l: "PPR" }, { v: "half", l: "Half" }, { v: "std", l: "Std" }]} onChange={setOwnScoring} /></Field>}
@@ -156,6 +169,13 @@ export default function Fantasy() {
       {loading && !data && <div className="empty"><Spinner /> projecting the week…</div>}
       {data && data.injury_week !== null && data.injury_week < data.week && (
         <Banner kind="info">Week {data.week} injury reports are not filed yet (they come out Wednesday to Friday), so nobody below is marked hurt. Check back before kickoff.</Banner>
+      )}
+
+      {data && setsLineups && (
+        <div style={{ marginBottom: 14 }}>
+          <MyRoster data={data} scoring={scoring} roster={roster} setRoster={setRoster} slots={slots} setSlots={setSlots}
+            onCompare={(ids) => { setCompare(ids); setTimeout(() => document.querySelector(".start-sit")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50); }} />
+        </div>
       )}
 
       {data && compare.length > 0 && (
@@ -215,12 +235,12 @@ export default function Fantasy() {
                   const pr = p.proj[scoring];
                   const rc = roleChange(p);
                   return (
-                    <tr key={p.player_id} className={`clickable ${fav && p.team === fav ? "fav-row" : ""} ${compare.includes(p.player_id) ? "picked-row" : ""}`} onClick={() => open(p)}>
+                    <tr key={p.player_id} className={`clickable ${fav && p.team === fav ? "fav-row" : ""} ${compare.includes(p.player_id) ? "picked-row" : ""} ${onRoster.has(p.player_id) ? "roster-row" : ""}`} onClick={() => open(p)}>
                       {!mobile && <td>{cmp(p)}</td>}
                       {!mobile && <td className="num muted">{posRank.has(p.player_id) ? `${p.position}${posRank.get(p.player_id)}` : "–"}</td>}
                       <td className="left">
-                        {mobile ? <div className="fx-player">{cmp(p)}<div className="fx-name"><b>{p.name}</b><span className="muted tiny">{posRank.has(p.player_id) ? `${p.position}${posRank.get(p.player_id)}` : p.position} · {p.team}</span></div></div>
-                          : <><b>{p.name}</b> <span className="muted">{p.position}{p.depth_rank ?? ""}</span> </>}
+                        {mobile ? <div className="fx-player">{cmp(p)}{starBtn(p)}<div className="fx-name"><b>{p.name}</b><span className="muted tiny">{posRank.has(p.player_id) ? `${p.position}${posRank.get(p.player_id)}` : p.position} · {p.team}</span></div></div>
+                          : <>{starBtn(p)}<b>{p.name}</b> <span className="muted">{p.position}{p.depth_rank ?? ""}</span> </>}
                         {statusPill(p)}
                         {p.new_to_team && p.stats_team && <span className="pill warn" title={`New to ${p.team}. The numbers are from ${p.stats_team}.`}>was {p.stats_team}</span>}
                         {!pr && <span className="pill" title={`Fewer than ${data.method.min_games} games on record`}>{p.games === 0 ? "no games yet" : "small sample"}</span>}

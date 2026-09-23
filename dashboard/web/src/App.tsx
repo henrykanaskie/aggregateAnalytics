@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { Link, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import PlayerSearch from "./components/PlayerSearch";
 import Board from "./pages/Board";
 import Games from "./pages/Games";
@@ -11,12 +11,14 @@ import Matchups from "./pages/Matchups";
 import Results from "./pages/Results";
 import Coaches from "./pages/Coaches";
 import Fantasy from "./pages/Fantasy";
+import Home from "./pages/Home";
 import Tour from "./components/Tour";
 import Welcome from "./components/Welcome";
 import Tailor from "./components/Tailor";
 import Sheet from "./components/Sheet";
 import { ICONS, IconClose, IconHelp, IconMenu, IconMoon, IconMore, IconSearch, IconSliders, IconSun } from "./components/Icons";
 import { useMobile } from "./lib/useMobile";
+import Spark from "./components/Spark";
 import { arrange, TABS, useLens } from "./lib/profile";
 import { gameWeek, warmAll } from "./lib/prefetch";
 import { clearSticky, readSticky, useSticky, writeSticky } from "./lib/sticky";
@@ -43,6 +45,11 @@ function tabLink(path: string, last: string | undefined, meta: Meta | null): str
   return gw && gw.season === meta.season && gw.week === week ? last : path;
 }
 
+/** The tabs in the order this profile reaches for them, ready for arrange(). */
+function orderedTabs(lens: ReturnType<typeof useLens>) {
+  return [...TABS].sort((a, b) => lens.tabOrder.indexOf(a.path) - lens.tabOrder.indexOf(b.path)).map((t) => ({ ...t, id: `tab:${t.path}` }));
+}
+
 function Tabs() {
   const loc = useLocation();
   const { meta } = useMeta();
@@ -56,8 +63,9 @@ function Tabs() {
   // On a phone the tabs scroll sideways, so the lit one is brought into view
   // rather than left somewhere past the edge.
   useEffect(() => { document.querySelector<HTMLElement>(".nav a.active")?.scrollIntoView({ inline: "nearest", block: "nearest" }); }, [loc.pathname]);
-  // Tabs outside the tailored profile go behind "More" rather than away.
-  const { shown, tucked } = arrange(useLens(), TABS.map((t) => ({ ...t, id: `tab:${t.path}` })));
+  // Tabs come in the order this profile reaches for them, and the ones
+  // outside it go behind "More" rather than away.
+  const { shown, tucked } = arrange(useLens(), orderedTabs(useLens()));
   const [open, setOpen] = useState(false);
   useEffect(() => setOpen(false), [loc.pathname]);
   const inMore = tucked.some((t) => t.path === loc.pathname);
@@ -90,7 +98,7 @@ function BottomNav({ onMore, moreOpen }: { onMore: () => void; moreOpen: boolean
   const loc = useLocation();
   const { meta } = useMeta();
   const [last] = useSticky<Record<string, string>>("nav.last", {});
-  const { shown } = arrange(useLens(), TABS.map((t) => ({ ...t, id: `tab:${t.path}` })));
+  const { shown } = arrange(useLens(), orderedTabs(useLens()));
   const bar = shown.filter((t) => t.path !== "/settings").slice(0, 4);
   const at = bar.findIndex((t) => t.path === loc.pathname);
   const idx = moreOpen || at < 0 ? bar.length : at;
@@ -118,7 +126,7 @@ function MoreSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const loc = useLocation();
   const { meta } = useMeta();
   const [last] = useSticky<Record<string, string>>("nav.last", {});
-  const { shown, tucked } = arrange(useLens(), TABS.map((t) => ({ ...t, id: `tab:${t.path}` })));
+  const { shown, tucked } = arrange(useLens(), orderedTabs(useLens()));
   const bar = new Set(shown.filter((t) => t.path !== "/settings").slice(0, 4).map((t) => t.path));
   const rest = shown.filter((t) => !bar.has(t.path));
   const tile = (t: (typeof TABS)[number], k: number) => {
@@ -158,10 +166,10 @@ function MobileHeader({ onSearch, onMenu, pinned }: { onSearch: () => void; onMe
   }, []);
   return (
     <header className={`topbar mtop ${away && !pinned ? "away" : ""}`}>
-      <div className="brand" data-tour="brand">
+      <Link to="/" className="brand" data-tour="brand" aria-label="Home">
         <span className="dot" />Aggregate Analytics
         {meta && <span className="week-chip">Wk {meta.week}</span>}
-      </div>
+      </Link>
       <div className="spacer" />
       <button className="icon-btn" aria-label="Search players" data-tour="search" onClick={onSearch}><IconSearch /></button>
       <button className="icon-btn" aria-label="Menu" onClick={onMenu}><IconMenu /></button>
@@ -177,7 +185,7 @@ function MenuSheet({ open, onClose, onTailor, onWelcome }: { open: boolean; onCl
       <div className="menu-list">
         <button className="menu-row" onClick={onTailor}>
           <span className="menu-icon"><IconSliders /></span>
-          <span><b>{settings.profile ? "Tailored to you" : "Tailor it to me"}</b><span className="sub">{settings.profile ? "Change your answers and the pages rearrange" : "Six quick questions, and the pages rearrange around them"}</span></span>
+          <span><b>{settings.profile ? "Tailored to you" : "Tailor it to me"}</b><span className="sub">{settings.profile ? "Change your answers and the pages rearrange" : "A few quick questions, and every page rearranges around them"}</span></span>
         </button>
         <button className="menu-row" onClick={onWelcome}>
           <span className="menu-icon"><IconHelp /></span>
@@ -206,12 +214,6 @@ function SearchSheet({ open, onClose }: { open: boolean; onClose: () => void }) 
   );
 }
 
-// "/" opens the lines board for anyone here for betting (and anyone who has
-// not said), the fantasy week for fantasy players, and research for the rest.
-function Home() {
-  const { betting, fantasy } = useLens();
-  return betting ? <Board /> : <Navigate to={fantasy ? "/fantasy" : "/research"} replace />;
-}
 
 function rollWeek(meta: Meta): void {
   const now = `${meta.season}-${meta.week}`;
@@ -255,11 +257,13 @@ function Shell() {
         <MobileHeader onSearch={() => setSheet("search")} onMenu={() => setSheet("menu")} pinned={stage === "tour"} />
       ) : (
         <header className="topbar">
-          <div className="brand" data-tour="brand"><span className="dot" />Aggregate Analytics{meta && <span className="muted" style={{ fontWeight: 400 }}> · {meta.season} wk {meta.week}</span>}</div>
+          <Link to="/" className="brand" data-tour="brand" title="Home"><span className="dot" />Aggregate Analytics{meta && <span className="muted" style={{ fontWeight: 400 }}> · {meta.season} wk {meta.week}</span>}</Link>
           <Tabs />
           <div className="spacer" />
           <div data-tour="search"><PlayerSearch onSelect={(p) => nav(`/research?player=${p.player_id}`)} placeholder="Jump to player…" /></div>
-          <button className="theme-btn" title="Answer a few questions and the pages rearrange around what you care about" onClick={() => setStage("tailor")}>{settings.profile ? "Tailored" : "Tailor"}</button>
+          <button className={`tailor-btn ${settings.profile ? "set" : ""}`} title={settings.profile ? "Your layout is tailored. Change the answers any time." : "Answer a few questions and the pages rearrange around what you care about"} onClick={() => setStage("tailor")}>
+            <Spark /><span className="label">{settings.profile ? "Tailored" : "Tailor"}</span>
+          </button>
           <button className="theme-btn" title="Welcome notes and guided tour" onClick={() => setStage("welcome")}>?</button>
           <button className="theme-btn" title="toggle light / dark" onClick={() => setSettings({ theme: settings.theme === "dark" ? "light" : "dark" })}>{settings.theme === "dark" ? "Light" : "Dark"}</button>
         </header>

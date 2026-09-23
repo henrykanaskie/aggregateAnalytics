@@ -31,6 +31,10 @@ import { api5, DvpFactors } from "../api";
 import FantasySnapshot from "../components/FantasySnapshot";
 import More from "../components/More";
 import { arrange, isDefPos, Tags, useLens } from "../lib/profile";
+import { RESEARCH_GUIDE, researchLayout } from "../lib/layouts";
+import LayoutGrid from "../components/LayoutGrid";
+import Spark from "../components/Spark";
+import { useSticky } from "../lib/sticky";
 
 // The season chips pick a set; null means every season.
 const sameSeasons = (a: number[] | null, b: number[] | null) =>
@@ -65,6 +69,8 @@ export default function Research() {
   const [rollWin, setRollWin] = useState(5);
   const [gameFilter, setGameFilter] = useState<{ ids: Set<string>; label: string; key: string } | null>(null);   // from the teammates panel
   const [adjust, setAdjust] = useState(false);
+  // Fantasy and learning layouts keep the rarely used filters folded away.
+  const [allFilters, setAllFilters] = useSticky<boolean>("research.allFilters", lens.mode === "default" || lens.mode === "betting");
   const [factors, setFactors] = useState<DvpFactors | null>(null);
 
   // A custom line belongs to the stat it was typed against. It used to survive
@@ -263,13 +269,15 @@ export default function Research() {
     { id: "research:prediction", label: "Prediction", col: "side", tags: { for: ["betting"] }, node: <Defer minHeight={120} when={core}><PredictionSlot playerId={pid} market={market} line={line} proj={marketRow?.proj ?? null} statFmt={stat?.fmt} /></Defer> },
   ];
   const { shown, tucked } = arrange(lens, slots);
+  const layout = researchLayout(lens.mode, lens.profile);
+  const guide = lens.mode !== "default" && lens.profile?.experience === "new" ? RESEARCH_GUIDE[lens.mode] : null;
 
   return (
     <div>
       {err && <div className="banner err">{err}</div>}
       {loading && !player && <div className="empty"><Spinner /> loading…</div>}
       {player && (
-        <div className={settings.focus ? "focus-on" : ""}>
+        <div className={`${settings.focus ? "focus-on" : ""} ${lens.profile?.experience === "pro" ? "expert" : ""}`}>
           <div className="panel" style={{ marginBottom: 14, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }} data-tour="research-player">
             <div style={{ flex: 1 }}><PlayerHeader p={player} game={lines?.game ?? null} /></div>
             <button className={`btn focus-toggle ${settings.focus ? "on" : ""}`} title="Highlight the stats that matter for this player and prop; dim the rest" onClick={() => setSettings({ focus: !settings.focus })}>{settings.focus ? "★ Focus on" : "☆ Focus"}</button>
@@ -278,6 +286,7 @@ export default function Research() {
           {lens.betting && <FeedBanner />}
           {changedTeam && <div className="banner warn"><b>New team.</b> Every game below was with <b>{lastTeam}</b>; {player.name} is now on <b>{player.team}</b>. Role, quarterback and scheme have changed, so weight recent form lightly and lean on the <Link to={`/teams?team=${player.team}`}>{player.team} usage tree</Link> and the matchup panel for the new context.</div>}
           {!changedTeam && rawRows.length > 0 && rawRows.length < 6 && <div className="banner info"><b>Small sample.</b> Only {rawRows.length} games on record; treat every rate on this page as noise until there are more.</div>}
+          {guide && <div className="banner info mode-guide"><Spark size={15} /><span>{guide}</span></div>}
           {gameFilter && <div className="banner info" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><span>Showing only games <b>{gameFilter.label}</b> ({gameFilter.ids.size} games)</span><button className="btn sm" onClick={() => setGameFilter(null)}>clear</button></div>}
 
           {/* Prop / stat selection */}
@@ -309,6 +318,9 @@ export default function Research() {
                 active={[filters.n !== settings.nGames, filters.seasonType !== "ALL", filters.venue !== "ALL", filters.role !== "ALL", !!filters.opponent, filters.weather !== "ALL", !!filters.qb, adjust, filters.minSnapPct !== null, !!filters.seasons].filter(Boolean).length}
                 summary={`${filters.n ? `last ${filters.n}` : "every game"}${filters.venue !== "ALL" ? ` · ${filters.venue.toLowerCase()}` : ""}${filters.opponent ? ` · vs ${filters.opponent}` : ""}`}>
               <Field label="Last N games"><input className="input num" type="number" min={1} value={filters.n ?? ""} placeholder="all" onChange={(e) => setFilters({ ...filters, n: e.target.value === "" ? null : Number(e.target.value) })} /></Field>
+              {(() => { const n = [filters.seasonType !== "ALL", filters.venue !== "ALL", filters.role !== "ALL", !!filters.opponent, filters.weather !== "ALL", !!filters.qb, adjust, filters.minSnapPct !== null, filters.seasons !== null].filter(Boolean).length;
+                return <Field label="Filters"><button className={`chip ${allFilters ? "on" : ""}`} onClick={() => setAllFilters(!allFilters)}>{allFilters ? "fewer filters" : `more filters${n ? ` · ${n} on` : ""}`}</button></Field>; })()}
+              {allFilters && <>
               <Field label="Games"><Seg value={filters.seasonType} options={[{ v: "ALL", l: "All" }, { v: "REG", l: "Regular" }, { v: "POST", l: "Playoffs" }]} onChange={(v) => setFilters({ ...filters, seasonType: v })} /></Field>
               <Field label="Venue"><Seg value={filters.venue} options={[{ v: "ALL", l: "All" }, { v: "HOME", l: "Home" }, { v: "AWAY", l: "Away" }]} onChange={(v) => setFilters({ ...filters, venue: v })} /></Field>
               <Field label="Role"><Seg value={filters.role} options={[{ v: "ALL", l: "All" }, { v: "FAV", l: "Fav" }, { v: "DOG", l: "Dog" }]} onChange={(v) => setFilters({ ...filters, role: v })} /></Field>
@@ -322,14 +334,17 @@ export default function Research() {
                   {seasons.map((s) => { const on = !d || d.includes(s); return <button type="button" key={s} className={`chip ${on ? "on" : ""}`} onClick={() => { const cur = d ?? seasons; const next = on ? cur.filter((x) => x !== s) : [...cur, s]; set(next.length === seasons.length ? null : next); }}>{s}</button>; })}
                 </div>}
               </ApplyField>
+              </>}
               </FilterFold>
             </div>
           </div>
 
-          <div className="grid grid-main">
-            <div className="grid" style={{ gap: 14 }}>{shown.filter((x) => x.col === "main").map((x) => <Fragment key={x.id}>{x.node}</Fragment>)}</div>
-            <div className="grid" style={{ gap: 14, alignContent: "start" }}>{shown.filter((x) => x.col === "side").map((x) => <Fragment key={x.id}>{x.node}</Fragment>)}</div>
-          </div>
+          {layout ? <LayoutGrid rows={layout} panels={shown} /> : (
+            <div className="grid grid-main">
+              <div className="grid" style={{ gap: 14 }}>{shown.filter((x) => x.col === "main").map((x) => <Fragment key={x.id}>{x.node}</Fragment>)}</div>
+              <div className="grid" style={{ gap: 14, alignContent: "start" }}>{shown.filter((x) => x.col === "side").map((x) => <Fragment key={x.id}>{x.node}</Fragment>)}</div>
+            </div>
+          )}
           <More items={tucked} />
         </div>
       )}

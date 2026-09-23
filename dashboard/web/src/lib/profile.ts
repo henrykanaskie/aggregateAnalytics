@@ -8,6 +8,11 @@ import { useMeta } from "../state";
 export type Purpose = "betting" | "fantasy" | "learn";
 export type FocusPos = "QB" | "RB" | "WR" | "TE" | "K";
 export type Scoring = "ppr" | "half" | "std";
+/** What someone usually comes to do first; it decides the home page's lead
+ *  and which page each mode puts first. */
+export type Start = "player" | "games" | "fantasy" | "betting";
+/** The page arrangement a profile gets. "default" is the untailored one. */
+export type Mode = "fantasy" | "betting" | "learn" | "default";
 
 export interface Profile {
   purposes: Purpose[];      // at least one
@@ -16,11 +21,22 @@ export interface Profile {
   scoring: Scoring;
   depth: "quick" | "deep";
   team: string | null;
+  start: Start;
+  /** Season-long picks a weekly lineup; best ball and DFS live on ceilings. */
+  fantasyFormat: "season" | "bestball" | "dfs";
+  betStyle: "props" | "games" | "both";
+  /** Whether the lead of a page is a chart or a table. */
+  view: "charts" | "tables";
+  /** New: explanations stay. Experienced: the page drops them for density. */
+  experience: "new" | "pro";
   /** Panels moved back up by hand, by id, whatever the rules say about them. */
   pinned: string[];
 }
 
-export const EMPTY_PROFILE: Profile = { purposes: [], positions: [], defense: "some", scoring: "ppr", depth: "deep", team: null, pinned: [] };
+export const EMPTY_PROFILE: Profile = {
+  purposes: [], positions: [], defense: "some", scoring: "ppr", depth: "deep", team: null, pinned: [],
+  start: "player", fantasyFormat: "season", betStyle: "both", view: "charts", experience: "new",
+};
 
 export const FANTASY_KEY: Record<Scoring, string> = { ppr: "fantasy_points_ppr", half: "fantasy_points_half", std: "fantasy_points" };
 export const SCORING_LABEL: Record<Scoring, string> = { ppr: "PPR", half: "half PPR", std: "standard" };
@@ -53,6 +69,12 @@ const PLAIN_WORDS: Words = { line: "benchmark", lines: "benchmarks", over: "abov
 
 export interface Lens {
   profile: Profile | null;
+  /** Which arrangement the pages use (see lib/layouts.ts). */
+  mode: Mode;
+  /** Fantasy formats that play for the big week rather than the safe one. */
+  ceiling: boolean;
+  /** The tabs, most useful first for this profile. */
+  tabOrder: string[];
   /** Lines, books and hit rates against a line are the point. */
   betting: boolean;
   fantasy: boolean;
@@ -64,11 +86,34 @@ export interface Lens {
   hideGroups: Set<string>;
 }
 
-export function lensOf(profile: Profile | null): Lens {
+/** The mode a profile lays out in: what they come to do first, when that is
+ *  one of the things they said they are here for, else their first purpose. */
+export function modeOf(p: Profile | null): Mode {
+  if (!p || !p.purposes.length) return "default";
+  const want: Record<Start, Purpose> = { fantasy: "fantasy", betting: "betting", player: p.purposes[0], games: p.purposes.includes("betting") && p.betStyle !== "props" ? "betting" : "learn" };
+  const m = want[p.start];
+  return p.purposes.includes(m) ? m : p.purposes[0];
+}
+
+const BASE_ORDER = ["/research", "/fantasy", "/board", "/matchups", "/games", "/teams", "/coaches", "/predictions", "/results", "/settings"];
+function tabOrderOf(p: Profile | null, mode: Mode): string[] {
+  if (!p) return BASE_ORDER;
+  const first: string[] =
+    mode === "fantasy" ? ["/fantasy", "/research", "/matchups", "/teams"]
+      : mode === "betting" ? (p.betStyle === "games" ? ["/games", "/matchups", "/board", "/research"] : ["/board", "/research", "/matchups", "/games"])
+      : p.start === "games" ? ["/matchups", "/teams", "/research", "/coaches"] : ["/research", "/teams", "/coaches", "/matchups"];
+  return [...first, ...BASE_ORDER.filter((x) => !first.includes(x))];
+}
+
+export function lensOf(stored: Profile | null): Lens {
+  // Profiles saved before a question existed get its default.
+  const profile = stored ? { ...EMPTY_PROFILE, ...stored } : null;
+  const mode = modeOf(profile);
   const betting = !profile || profile.purposes.includes("betting");
   const fantasy = !!profile && profile.purposes.includes("fantasy");
   return {
-    profile, betting, fantasy,
+    profile, betting, fantasy, mode, tabOrder: tabOrderOf(profile, mode),
+    ceiling: !!profile && fantasy && profile.fantasyFormat !== "season",
     fantasyKey: FANTASY_KEY[profile?.scoring ?? "ppr"],
     words: betting ? BET_WORDS : PLAIN_WORDS,
     shows: (id, t) => !!profile?.pinned.includes(id) || fits(profile, t),
@@ -100,10 +145,16 @@ export function describe(p: Profile, teamName?: string): string[] {
   const out: string[] = [];
   const names: Record<Purpose, string> = { betting: "betting props", fantasy: "fantasy football", learn: "following the game" };
   out.push(`Here for ${p.purposes.map((x) => names[x]).join(" and ")}`);
-  if (p.purposes.includes("fantasy")) { const l = SCORING_LABEL[p.scoring]; out.push(`${l[0].toUpperCase()}${l.slice(1)} scoring`); }
+  const START: Record<Start, string> = { player: "Usually starts by looking up a player", games: "Usually starts with this week's games", fantasy: "Usually starts with their fantasy team", betting: "Usually starts with the betting lines" };
+  out.push(START[p.start]);
+  if (p.purposes.includes("fantasy")) {
+    const l = SCORING_LABEL[p.scoring];
+    out.push(`${l[0].toUpperCase()}${l.slice(1)} scoring, ${{ season: "season-long", bestball: "best ball", dfs: "daily fantasy" }[p.fantasyFormat]}`);
+  }
+  if (p.purposes.includes("betting")) out.push({ props: "Bets player props", games: "Bets spreads and totals", both: "Bets props and game lines" }[p.betStyle]);
   out.push(p.positions.length ? `Most interested in ${p.positions.join(", ")}` : "Every position");
   out.push(p.defense === "yes" ? "Defense included, down to individual defenders" : p.defense === "some" ? "Team defense only, no individual defenders" : "No defense");
-  out.push(p.depth === "quick" ? "Just the essentials" : "Every detail");
+  out.push(`${p.depth === "quick" ? "Just the essentials" : "Every detail"}, ${p.view === "charts" ? "charts first" : "tables first"}, ${p.experience === "new" ? "with explanations" : "no hand-holding"}`);
   if (p.team) out.push(`Favorite team: ${teamName ?? p.team}`);
   return out;
 }
