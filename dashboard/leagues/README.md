@@ -35,7 +35,9 @@ note, and `/api/leagues/yahoo/start` answers 503.
   terms for commercial use.
 - **ESPN**: no official API; Disney's terms restrict automated access without
   written permission. Public leagues only, no cookies, so no credentials are
-  handled, but this is the one to review first.
+  handled, but this is the one to review first. Private leagues, and how sites
+  like FantasyPros sync them, are in [ESPN_PRIVATE_SYNC.md](ESPN_PRIVATE_SYNC.md)
+  (parked).
 - **Yahoo**: official, but its developer terms still apply to commercial use.
 
 ## Matching players
