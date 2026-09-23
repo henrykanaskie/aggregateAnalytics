@@ -1,17 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Link, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import PlayerSearch from "./components/PlayerSearch";
-import Board from "./pages/Board";
-import Games from "./pages/Games";
-import Predictions from "./pages/Predictions";
-import Research from "./pages/Research";
-import Settings from "./pages/Settings";
-import Teams from "./pages/Teams";
-import Matchups from "./pages/Matchups";
-import Results from "./pages/Results";
-import Coaches from "./pages/Coaches";
-import Fantasy from "./pages/Fantasy";
-import Home from "./pages/Home";
 import Tour from "./components/Tour";
 import Welcome from "./components/Welcome";
 import Tailor from "./components/Tailor";
@@ -24,6 +13,20 @@ import { gameWeek, warmAll } from "./lib/prefetch";
 import { clearSticky, readSticky, useSticky, writeSticky } from "./lib/sticky";
 import { MetaProvider, useMeta } from "./state";
 import type { Meta } from "./api";
+import { Spinner } from "./components/common";
+
+// Each page is its own chunk, so a phone paints the one it opened on without
+// first downloading every chart on every other tab. The rest are fetched as
+// soon as the first page is up (see Shell), so switching tabs stays instant.
+const PAGES = {
+  Board: () => import("./pages/Board"), Games: () => import("./pages/Games"), Predictions: () => import("./pages/Predictions"),
+  Research: () => import("./pages/Research"), Settings: () => import("./pages/Settings"), Teams: () => import("./pages/Teams"),
+  Matchups: () => import("./pages/Matchups"), Results: () => import("./pages/Results"), Coaches: () => import("./pages/Coaches"),
+  Fantasy: () => import("./pages/Fantasy"), Home: () => import("./pages/Home"),
+};
+const Board = lazy(PAGES.Board), Games = lazy(PAGES.Games), Predictions = lazy(PAGES.Predictions), Research = lazy(PAGES.Research),
+  Settings = lazy(PAGES.Settings), Teams = lazy(PAGES.Teams), Matchups = lazy(PAGES.Matchups), Results = lazy(PAGES.Results),
+  Coaches = lazy(PAGES.Coaches), Fantasy = lazy(PAGES.Fantasy), Home = lazy(PAGES.Home);
 
 // Which player, coach, team or game a page is showing lives in the query
 // string, and a plain link to "/coaches" would throw it away. Each tab points
@@ -114,22 +117,23 @@ function BottomNav({ onMore, moreOpen }: { onMore: () => void; moreOpen: boolean
   const { shown } = arrange(useLens(), orderedTabs(useLens()));
   const bar = shown.filter((t) => t.path !== "/settings").slice(0, 4);
   const at = bar.findIndex((t) => t.path === loc.pathname);
-  const idx = moreOpen || at < 0 ? bar.length : at;
   const hereInMore = at < 0 && TABS.find((t) => t.path === loc.pathname);
+  // Home is not a tab, so nothing is lit there.
+  const idx = moreOpen || hereInMore ? bar.length : at;
   return (
     <nav className="tabbar" data-tour="nav" style={{ ["--n" as string]: bar.length + 1, ["--i" as string]: idx }}>
-      <span className="tabbar-pill" aria-hidden="true" />
+      <span className="tabbar-pill" aria-hidden="true" style={idx < 0 ? { opacity: 0 } : undefined} />
       {bar.map((t) => {
         const Icon = ICONS[t.path];
         return (
           <NavLink key={t.path} to={tabLink(t.path, last[t.path], meta)} data-tour={`nav:${t.path}`} className={({ isActive }) => (isActive && !moreOpen ? "on" : "")}
             onClick={(e) => { if (loc.pathname === t.path) { e.preventDefault(); window.scrollTo({ top: 0, behavior: "smooth" }); } }}>
-            <Icon /><span>{t.label.replace("Lines board", "Board")}</span>
+            {({ isActive }) => <><Icon active={isActive && !moreOpen} /><span>{t.label.replace("Lines board", "Board")}</span></>}
           </NavLink>
         );
       })}
       <button className={moreOpen || hereInMore ? "on" : ""} onClick={onMore} aria-haspopup="dialog">
-        {hereInMore && !moreOpen ? ICONS[hereInMore.path]({}) : <IconMore />}<span>{hereInMore && !moreOpen ? hereInMore.label : "More"}</span>
+        {hereInMore && !moreOpen ? ICONS[hereInMore.path]({ active: true }) : <IconMore active={moreOpen} />}<span>{hereInMore && !moreOpen ? hereInMore.label : "More"}</span>
       </button>
     </nav>
   );
@@ -146,7 +150,7 @@ function MoreSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
     const Icon = ICONS[t.path];
     return (
       <NavLink key={t.path} to={tabLink(t.path, last[t.path], meta)} onClick={onClose} className={`more-tile ${loc.pathname === t.path ? "on" : ""}`} style={{ animationDelay: `${40 + k * 30}ms` }}>
-        <span className="more-tile-icon"><Icon size={24} /></span>{t.label}
+        <span className="more-tile-icon"><Icon size={28} active={loc.pathname === t.path} /></span>{t.label}
       </NavLink>
     );
   };
@@ -252,6 +256,11 @@ function Shell() {
   // Load every tab in the background as soon as meta lands, so opening one is
   // a render rather than a round trip.
   useEffect(() => { if (meta) warmAll(meta, settings); }, [meta, settings.includeSample, settings.since]);
+  useEffect(() => {
+    const go = () => Object.values(PAGES).forEach((load) => load().catch(() => {}));
+    const t = window.setTimeout(go, 1200);
+    return () => window.clearTimeout(t);
+  }, []);
   const mobile = useMobile();
   const loc = useLocation();
   // A tailored profile gives the whole site its mode's colour (see the
@@ -291,6 +300,7 @@ function Shell() {
       <main className="main">
         {error && <div className="banner err">API unreachable: {error}. Start it with <code>uvicorn dashboard.api.app:app --port 8017</code>.</div>}
         <div className="page" key={loc.pathname}>
+          <Suspense fallback={<div className="empty"><Spinner /></div>}>
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/research" element={<Research />} />
@@ -304,6 +314,7 @@ function Shell() {
             <Route path="/results" element={<Results />} />
             <Route path="/settings" element={<Settings />} />
           </Routes>
+          </Suspense>
         </div>
       </main>
       {mobile && <>

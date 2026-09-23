@@ -29,7 +29,7 @@ export default function PlayerSearch({ onSelect, placeholder = "Search any playe
   // chase the caret; waiting for the slide to finish keeps it still.
   useEffect(() => {
     if (!inline || !autoFocus) return;
-    const t = window.setTimeout(() => input.current?.focus({ preventScroll: true }), 260);
+    const t = window.setTimeout(() => input.current?.focus({ preventScroll: true }), 180);
     return () => window.clearTimeout(t);
   }, [inline, autoFocus]);
   const pick = (p: PlayerLite) => {
@@ -37,7 +37,7 @@ export default function PlayerSearch({ onSelect, placeholder = "Search any playe
     onSelect(p); setQ(""); setOpen(false);
   };
   const row = (p: PlayerLite, k: number) => (
-    <div key={p.player_id} className={`row ${k === i ? "active" : ""}`} style={inline ? { animationDelay: `${Math.min(k, 10) * 22}ms` } : undefined}
+    <div key={p.player_id} className={`row ${k === i ? "active" : ""}`} style={inline ? { animationDelay: `${Math.min(k, 6) * 15}ms` } : undefined}
       onMouseEnter={() => setI(k)} onMouseDown={inline ? undefined : () => pick(p)} onClick={inline ? () => pick(p) : undefined}>
       <Headshot src={p.headshot} size={inline ? 48 : 36} />
       <div style={{ minWidth: 0 }}>

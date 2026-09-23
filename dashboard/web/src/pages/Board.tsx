@@ -312,7 +312,7 @@ function PropCards({ rows, books, sort, setSort, onOpen }: {
           const byBook = new Map(r.books.map((b) => [b.book, b]));
           const pOver = r.proj?.p_over ?? null;
           return (
-            <div key={`${r.event_id}-${r.market}-${r.player_id ?? r.player_name}`} className="prop-card" style={{ animationDelay: `${(k % 24) * 18}ms` }}
+            <div key={`${r.event_id}-${r.market}-${r.player_id ?? r.player_name}`} className="prop-card" style={k < 6 ? { animationDelay: `${k * 25}ms` } : { animation: "none" }}
               role="button" tabIndex={0} onClick={() => onOpen(r)} onKeyDown={(e) => { if (e.key === "Enter") onOpen(r); }}>
               <div className="pc-top">
                 <div className="pc-who">
