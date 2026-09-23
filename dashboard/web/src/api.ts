@@ -225,6 +225,7 @@ export interface AngleTrackRecord { season: number | null; current: boolean; wee
  *  low / high: a bad week and a good week (20th and 80th percentile) simulated
  *  from the player's own games around that value. base: the site's baseline. */
 export interface FantasyProj { value: number; low: number; high: number; base: number | null; last3: number | null; source?: "espn" | "baseline" }
+export interface FantasyRecent { season: number; week: number; opp: string | null; pts: Record<"ppr" | "half" | "std", number | null> }
 export interface FantasyPlayer {
   player_id: string; name: string; position: "QB" | "RB" | "WR" | "TE" | "K" | "DST"; team: string; depth_rank: number | null; headshot: string | null;
   new_to_team: boolean; stats_team: string | null; target_share: number | null; carry_share: number | null;
@@ -234,6 +235,8 @@ export interface FantasyPlayer {
   matchup_text?: string | null;
   /** D/ST only: the points its opponent is expected to score. */
   opp_implied?: number | null;
+  /** The last few games, oldest first, scored in every format. */
+  recent?: FantasyRecent[];
   proj: Record<"ppr" | "half" | "std", FantasyProj | null>; role: { last3: number; before: number } | null;
 }
 export interface FantasyWeek {

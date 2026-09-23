@@ -66,6 +66,14 @@ a { color: var(--accent); text-decoration: none; }
 :root[data-mode] .panel { border-color: var(--mode-line); }
 :root[data-mode] .topbar { border-bottom-color: var(--mode-line); box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--mode-1) 14%, transparent); }
 :root[data-mode] .topbar .nav a.active { box-shadow: inset 0 -2px 0 var(--mode-1); }
+/* The standard view wears the same signature at about half volume, in the
+   site's own blue: faint outlines, a hairline under the top bar, a thin
+   underline on the active tab. Tailoring turns each of these up and gives
+   them the mode's colour, so the two still read as different. */
+:root:not([data-mode]) { --mode-line: color-mix(in srgb, var(--accent) 10%, var(--border)); }
+:root:not([data-mode]) .panel { border-color: var(--mode-line); }
+:root:not([data-mode]) .topbar { border-bottom-color: var(--mode-line); }
+:root:not([data-mode]) .topbar .nav a.active { box-shadow: inset 0 -1.5px 0 color-mix(in srgb, var(--accent) 65%, transparent); }
 
 a:hover { text-decoration: underline; }
 /* A name (a player, a team, a coach, a game) reads as text, and shows it is a
@@ -803,7 +811,12 @@ a.home-row:hover { text-decoration: none; color: var(--accent); }
 
 /* Tailored: the same page, but it should feel made for someone. Everything
    below keys off data-mode, so an untailored visit is unchanged. */
-:root[data-mode] .home-hero { position: relative; isolation: isolate; }
+.home-hero { position: relative; isolation: isolate; }
+:root:not([data-mode]) .home-hero::before {
+  content: ""; position: absolute; z-index: -1; inset: 0; pointer-events: none;
+  background: radial-gradient(closest-side at 24% 55%, rgba(90,156,245,0.035), transparent);
+}
+:root[data-theme="light"]:not([data-mode]) .home-hero::before { background: radial-gradient(closest-side at 24% 55%, rgba(43,111,212,0.03), transparent); }
 :root[data-mode] .home-hero::before {
   /* Kept inside the hero and sized to its nearest side, so the glow has
      faded to nothing before any edge: bled past the page it got clipped into
@@ -831,6 +844,7 @@ a.home-row:hover { text-decoration: none; color: var(--accent); }
 :root[data-theme="light"][data-mode] .panel { box-shadow: 0 1px 2px rgba(0,0,0,0.03), 0 6px 18px -14px rgba(0,0,0,0.16); }
 /* The lead module wears the mode's edge. */
 :root[data-mode] .home-main > div:first-child .home-card { border-color: color-mix(in srgb, var(--mode-1) 38%, var(--border)); }
+:root:not([data-mode]) .home-main > div:first-child .home-card { border-color: color-mix(in srgb, var(--accent) 20%, var(--border)); }
 :root[data-mode] .home-card .panel-head h3 { color: var(--text); }
 :root[data-mode] .home-tile-icon { background: color-mix(in srgb, var(--mode-1) 12%, transparent); color: var(--mode-1); }
 :root[data-mode] .tailor-btn::before { background: conic-gradient(from var(--tailor-ang), var(--mode-1), var(--mode-2), var(--mode-1)); }
@@ -902,9 +916,6 @@ a.home-row:hover { text-decoration: none; color: var(--accent); }
 .mt-who { min-width: 0; }
 .mt-name { font-weight: 600; font-size: 14.5px; color: var(--text); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mt-sub { font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-.mt-range { position: relative; height: 5px; margin: 7px 0 4px; border-radius: 3px; background: var(--border); }
-.mt-range .band { position: absolute; top: 0; bottom: 0; border-radius: 3px; background: linear-gradient(90deg, var(--under), var(--push) 35%, var(--over)); opacity: 0.8; }
-.mt-range .tick { position: absolute; top: -3px; width: 3px; height: 11px; margin-left: -1.5px; border-radius: 2px; background: var(--text); }
 .mt-odds { display: flex; gap: 8px; font-size: 11.5px; font-family: var(--mono); flex-wrap: wrap; }
 .mt-odds .boom { color: var(--over); }
 .mt-odds .bust { color: var(--under); }
@@ -941,3 +952,18 @@ a.home-row:hover { text-decoration: none; color: var(--accent); }
 .tailor-pop button span { font-size: 12px; color: var(--muted); }
 .tailor-pop button:hover { background: var(--panel-2); }
 .tailor-pop button.danger b { color: var(--under); }
+
+/* The range bar (components/RangeBar.tsx): this week's floor-to-ceiling band,
+   the projection tick, and the last few games as dots on the same scale. */
+.range-bar { position: relative; height: 5px; margin: 7px 0 4px; border-radius: 3px; background: var(--border); }
+.range-bar.with-dots { margin: 9px 0 7px; }
+.range-bar .band { position: absolute; top: 0; bottom: 0; border-radius: 3px; background: linear-gradient(90deg, var(--under), var(--push) 35%, var(--over)); opacity: 0.8; }
+.range-bar .tick { position: absolute; top: -3px; width: 3px; height: 11px; margin-left: -1.5px; border-radius: 2px; background: var(--text); z-index: 2; }
+.range-bar .dot { position: absolute; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: var(--panel); border: 1.5px solid var(--muted); z-index: 1; }
+.range-bar .dot.above { border-color: var(--over); }
+.range-bar .dot.below { border-color: var(--under); }
+.range-bar .dot.latest { width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; border-width: 2px; background: var(--text); z-index: 3; }
+.range-bar .dot.clipped { border-style: dashed; }
+.range-col { min-width: 150px; width: 170px; }
+th.range-col { white-space: nowrap; }
+.tiny-chip { padding: 1px 7px; font-size: 11px; margin-left: 4px; text-transform: none; letter-spacing: 0; }
