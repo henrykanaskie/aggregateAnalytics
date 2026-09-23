@@ -215,7 +215,7 @@ const FANTASY: Step[] = [
     where: () => "/fantasy", sel: '[data-tour="fantasy-myteam"]', optional: true, prep: fantasyView(2),
     when: ({ lens }) => !lens.profile || !lens.fantasy || lens.profile.fantasyFormat === "season",
     title: "My team",
-    body: ({ mobile }) => <>Add your roster once and this sets the best lineup by projection, benches anyone out or on bye, and lists the week's close calls and worries. {tap(mobile)} a starter and then a bench player to swap them, and set your league's slots at the bottom. Home picks it up too.</>,
+    body: ({ mobile }) => <>Add your roster once and this sets the best lineup by projection, benches anyone out or on bye, and lists the week's close calls and worries. {tap(mobile)} a starter and then a bench player to swap them, and set your league's lineup slots (or pick a preset) under Lineup at the top of Starters. Home picks it up too.</>,
   },
 ];
 

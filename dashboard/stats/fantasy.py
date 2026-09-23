@@ -10,7 +10,9 @@ without asking again.
 Who counts as playing comes from the matchup page's "who gets the ball"
 (:func:`matchups.offense_personnel`): this season's depth chart for the names,
 last season or this one for the numbers. So a receiver who changed teams in
-March is listed with his new team, and flagged, rather than missed.
+March is listed with his new team, and flagged, rather than missed. Once
+ESPN's projections for the week are pulled, :func:`reconcile` corrects that
+list against them: who is on which team, who starts, who is not playing.
 """
 
 from __future__ import annotations
@@ -136,16 +138,17 @@ def finish(player_id: str, espn: dict[str, dict], series: dict[str, list[float]]
     return out
 
 
-#: How many past games ride along with each player, for the range bar's dots.
-RECENT_N = 8
-
-
-def _recent(games: list[dict], pts: dict[str, str] | None = None, same: str | None = None) -> list[dict]:
-    """The last few games as {season, week, opp, pts: {ppr, half, std}}.
-    ``pts`` maps each format to a column; ``same`` is one column that scores
-    every format alike (kickers, defenses)."""
+def _recent(games: list[dict], season: int, pts: dict[str, str] | None = None, same: str | None = None) -> list[dict]:
+    """This season's games so far as {season, week, opp, pts: {ppr, half, std}},
+    for the range bar's dots. Last season's games still feed the floor and
+    ceiling, where the sample size matters; the dots are what he has done
+    this year, so a week 2 player shows one dot, not eight from a different
+    team or role. ``pts`` maps each format to a column; ``same`` is one column
+    that scores every format alike (kickers, defenses)."""
     out = []
-    for g in games[-RECENT_N:]:
+    for g in games:
+        if g["season"] != season:
+            continue
         vals = {sc: g.get(same if same else pts[sc]) for sc in SCORINGS}
         out.append({"season": g["season"], "week": g["week"], "opp": g.get("opponent_team"),
                     "pts": {sc: None if v is None else round(float(v), 1) for sc, v in vals.items()}})
@@ -290,7 +293,7 @@ def special_teams(season: int, week: int, opp_of: dict[str, dict], listed: dict[
                         "matchup_text": (f"{teams.get(team, team)} are expected to score {o['implied']:.1f}, the {_ord(implied_rank[team])} most this week"
                                          if o["implied"] and team in implied_rank else None),
                         "status": inj["status"] if inj else None, "injury": inj["injury"] if inj else None,
-                        "proj": proj, "recent": _recent(weeks, same="kick_pts")})
+                        "proj": proj, "recent": _recent(weeks, season, same="kick_pts")})
 
         # D/ST: its own sacks and takeaways, scaled by how much this opponent
         # gives away, plus the points-allowed tiers at the opponent's implied total.
@@ -311,7 +314,83 @@ def special_teams(season: int, week: int, opp_of: dict[str, dict], listed: dict[
                         "matchup_rank": give_rank.get(opp), "matchup_n": len(give_rank) or None,
                         "matchup_text": (f"{teams.get(opp, opp)} give up {og:.1f} sacks and turnovers a game, the {_ord(give_rank[opp])} most, "
                                          f"and are expected to score {opp_pts:.1f}") if og is not None and opp in give_rank else None,
-                        "proj": proj, "recent": _recent(weeks, same="dst_pts")})
+                        "proj": proj, "recent": _recent(weeks, season, same="dst_pts")})
+    return out
+
+
+# --- who is playing ---------------------------------------------------------------
+#
+# The depth chart and the injury report both run behind the week: the chart is
+# refreshed weekly, and the report says nothing until Wednesday and never
+# names the backup who starts in a hurt player's place. ESPN's projection file
+# is current to the last pull, so where it exists it settles who plays:
+# a player it moved to another team moves, one it has on no team (released)
+# or on a team not playing leaves the list, a player it projects who is not on
+# the chart joins it, and the order within a position is ESPN's, so the backup
+# projected as this week's starter is the one ranked first.
+
+#: A projection this small is a depth player ESPN lists for completeness.
+ESPN_MIN_ADD = 1.0
+#: ESPN projects a zero for a player it does not expect to play at all.
+NOT_PLAYING = "Not playing"
+#: Practice participation is not a game status; said plainly so "DNP" (did
+#: not practice) is not read as "did not play".
+PRACTICE = {"DNP": "Missed practice", "Limited": "Limited practice"}
+
+
+def _players_info(pids: list[str]) -> dict[str, dict]:
+    if not pids:
+        return {}
+    df = (pl.read_parquet(RAW_DIR / "players.parquet", columns=["gsis_id", "display_name", "headshot"])
+          .filter(pl.col("gsis_id").is_in(pids)))
+    return {r["gsis_id"]: r for r in df.to_dicts()}
+
+
+def reconcile(roster: list[dict], espn: dict[str, dict], opp_of: dict[str, dict], season: int) -> list[dict]:
+    """The skill-position list, brought in line with ESPN's file for the week.
+    Without a file the list is returned as it came, statuses relabelled."""
+    for r in roster:
+        r["status"] = PRACTICE.get(r["status"], r["status"])
+    if not espn:
+        return roster
+    out: list[dict] = []
+    seen: set[str] = set()
+    for r in roster:
+        e = espn.get(r["player_id"])
+        if e and e["team"] != r["team"]:
+            if e["team"] not in opp_of:
+                continue                      # released, or his new team is on bye
+            r = {**r, **opp_of[e["team"]], "team": e["team"], "new_to_team": True, "stats_team": r["stats_team"] or r["team"]}
+        seen.add(r["player_id"])
+        out.append(r)
+    extra = [(pid, e) for pid, e in espn.items()
+             if pid not in seen and e["position"] in POSITIONS and e["team"] in opp_of and e["ppr"] >= ESPN_MIN_ADD]
+    info = _players_info([pid for pid, _ in extra])
+    for pid, e in extra:
+        i = info.get(pid, {})
+        out.append({"player_id": pid, "name": i.get("display_name") or e["name"], "position": e["position"], "team": e["team"],
+                    "depth_rank": None, "headshot": i.get("headshot"), "new_to_team": False, "stats_team": None,
+                    "target_share": None, "carry_share": None, "status": None, "injury": None, **opp_of[e["team"]]})
+    for r in out:
+        e = espn.get(r["player_id"])
+        if not e:
+            continue
+        # The injury report names the injury, so it wins where it has a
+        # game status; ESPN's status fills in the rest.
+        if e["status"] and (not r["status"] or r["status"] in PRACTICE.values()):
+            r["status"] = e["status"]
+        if e["ppr"] <= 0 and not r["status"]:
+            r["status"], r["injury"] = NOT_PLAYING, "ESPN projects him for zero points this week"
+    # Re-rank each team's position by ESPN's projection; anyone ESPN does not
+    # project goes after those it does, in the chart's order.
+    groups: dict[tuple[str, str], list[dict]] = {}
+    for r in out:
+        r["chart_rank"] = r.get("depth_rank")
+        groups.setdefault((r["team"], r["position"]), []).append(r)
+    for g in groups.values():
+        g.sort(key=lambda r: (-(espn[r["player_id"]]["ppr"]) if r["player_id"] in espn else 1.0, r["chart_rank"] or 99))
+        for i, r in enumerate(g):
+            r["depth_rank"] = i + 1
     return out
 
 
@@ -356,8 +435,9 @@ def week_rankings(season: int, week: int) -> dict:
                 **o,
             })
 
-    series = _series([r["player_id"] for r in roster], season, week)
     espn = espn_proj.load(season, week)
+    roster = reconcile(roster, espn, opp_of, season)
+    series = _series([r["player_id"] for r in roster], season, week)
     for r in roster:
         gl = series.get(r["player_id"], [])
         factor, ctx = dvp_factor(r["position"], "fantasy_points_ppr", r["opponent"], season, week)
@@ -368,7 +448,7 @@ def week_rankings(season: int, week: int) -> dict:
         base = {s: (_proj(gl, k, factor) or {}).get("value") for s, k in SCORINGS.items()}
         r["proj"] = finish(r["player_id"], espn, {s: [float(g[k]) for g in gl if g.get(k) is not None] for s, k in SCORINGS.items()}, base, 2.0)
         r["role"] = _role(gl, r["position"])
-        r["recent"] = _recent(gl, SCORINGS)
+        r["recent"] = _recent(gl, season, SCORINGS)
 
     roster.extend(special_teams(season, week, opp_of, listed_by_team, espn))
 

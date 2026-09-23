@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { apiFantasy, FantasyPlayer, FantasyWeek } from "../api";
+import { apiFantasy, FantasyPlayer, FantasyWeek, LEAGUE_HANDOFF, LeagueImport } from "../api";
 import { ApplyField, Banner, Field, FilterFold, Seg, Spinner, TeamTag } from "../components/common";
 import { fmtPct } from "../lib/format";
 import { activeProfile, FANTASY_KEY, fantasyHref, fantasyStatFor, Scoring, SCORING_LABEL, useLens } from "../lib/profile";
@@ -21,7 +21,7 @@ import { useMobile } from "../lib/useMobile";
 
 type Pos = "ALL" | "ROSTER" | "MINE" | "QB" | "RB" | "WR" | "TE" | "K" | "DST";
 type SortKey = "proj" | "low" | "high" | "last3" | "implied" | "matchup";
-const OUT = ["Out", "Doubtful", "IR"];
+const OUT = ["Out", "Doubtful", "IR", "Suspended", "Not playing"];
 
 // A bare date parses as UTC midnight, which is the evening before across the
 // US; noon keeps it on its own day.
@@ -70,6 +70,23 @@ export default function Fantasy() {
   // The roster lives in this browser, like the tailoring answers.
   const [roster, setRoster] = useSticky<RosterEntry[]>("fantasy.roster", []);
   const [slots, setSlots] = useSticky<Slots>("fantasy.slots", DEFAULT_SLOTS);
+  // Back from signing in with Yahoo: the callback left the result in this
+  // tab's sessionStorage (dashboard/leagues/router.py). Read it once, open
+  // My team on it, and take ?import off the address.
+  const [handoff, setHandoff] = useState<LeagueImport | { error: string } | null>(null);
+  useEffect(() => {
+    if (!new URLSearchParams(window.location.search).has("import")) return;
+    try {
+      const raw = window.sessionStorage.getItem(LEAGUE_HANDOFF);
+      window.sessionStorage.removeItem(LEAGUE_HANDOFF);
+      if (raw) { setHandoff(JSON.parse(raw)); setView("team"); }
+    } catch { /* storage blocked: nothing to pick up */ }
+    // Only the address bar: a router navigation would remount this page and
+    // drop the result just read.
+    window.history.replaceState(window.history.state, "", window.location.pathname);
+  }, []);
+  // A league's scoring applies unless the tailoring answers already set it.
+  const takeScoring = (s: Scoring) => { if (profile?.purposes.includes("fantasy")) return false; setOwnScoring(s); return true; };
   const onRoster = useMemo(() => new Set(roster.map((r) => r.player_id)), [roster]);
   const star = (p: FantasyPlayer) => setRoster((r) => (onRoster.has(p.player_id) ? r.filter((x) => x.player_id !== p.player_id) : [...r, toEntry(p)]));
   const starBtn = (p: FantasyPlayer) => (
@@ -145,6 +162,13 @@ export default function Fantasy() {
     <td className="num muted">{pr ? pr.low.toFixed(1) : "–"}</td>
     <td className="num muted">{pr ? pr.high.toFixed(1) : "–"}</td>
   </>;
+  // A player's tags (injury, new team, too few games), kept on the name's
+  // line so a tagged row is the same height as every other.
+  const tags = (p: FantasyPlayer, pr: FantasyPlayer["proj"][Scoring]) => <>
+    {statusPill(p)}
+    {p.new_to_team && p.stats_team && <span className="pill warn" title={`New to ${p.team}. The numbers are from ${p.stats_team}.`}>was {p.stats_team}</span>}
+    {!pr && <span className="pill" title={`Fewer than ${data?.method.min_games ?? 2} games on record`}>{p.games === 0 ? "no games yet" : "small sample"}</span>}
+  </>;
   const open = (p: FantasyPlayer) => nav(fantasyHref(p, fantasyStatFor(p.position, FANTASY_KEY[scoring])));
   const who = (p: FantasyPlayer) => <><Link to={fantasyHref(p)} onClick={(e) => e.stopPropagation()}>{p.name}</Link> <span className="muted">{p.position} {p.team}</span></>;
 
@@ -168,7 +192,7 @@ export default function Fantasy() {
       {teamView ? <>
         <div className="panel" style={{ marginBottom: 12 }}><FilterFold id="fantasy-team" summary={`Week ${shown ?? ""} · ${SCORING_LABEL[scoring]}`}><div className="controls">{weekField}{scoringField}</div></FilterFold></div>
         {error && <Banner kind="err">{error}</Banner>}
-        <div data-tour="fantasy-myteam"><MyTeam data={data ?? null} scoring={scoring} loading={loading} roster={roster} setRoster={setRoster} slots={slots} setSlots={setSlots} /></div>
+        <div data-tour="fantasy-myteam"><MyTeam data={data ?? null} scoring={scoring} loading={loading} roster={roster} setRoster={setRoster} slots={slots} setSlots={setSlots} onScoring={takeScoring} handoff={handoff} /></div>
       </> : <>
       <div className="panel" style={{ marginBottom: 12 }}>
         <FilterFold id="fantasy" active={(pos !== "ALL" ? 1 : 0) + (team ? 1 : 0) + (q.trim() ? 1 : 0)}
@@ -241,8 +265,8 @@ export default function Fantasy() {
                 <th className="left">Game</th>
                 {th("matchup", "Matchup", "How much this defense gives up to the position, this season blended with last. Green is generous.")}
                 {th("implied", "Team pts", "Points the team is expected to score, from the betting spread and total")}
-                {!mobile && <>{th("proj", "Proj")}{th("low", "Floor", "A bad week: the 20th percentile of weeks simulated from his own games")}{th("high", "Ceiling", "A good week: the 80th percentile of weeks simulated from his own games")}<th className="range-col" title="This week's floor to ceiling, with the projection as the white tick and each of his last 8 games as a dot (newest largest)">
-                  <span>Range{pastDots ? " · last 8" : ""}</span> <button className={`chip tiny-chip ${pastDots ? "on" : ""}`} onClick={() => setPastDots(!pastDots)}>past weeks</button></th></>}
+                {!mobile && <>{th("proj", "Proj")}{th("low", "Floor", "A bad week: the 20th percentile of weeks simulated from his own games")}{th("high", "Ceiling", "A good week: the 80th percentile of weeks simulated from his own games")}<th className="range-col" title="This week's floor to ceiling, with the projection as the white tick and each of his games this season as a dot (newest largest)">
+                  <span>Range{pastDots ? " · this season" : ""}</span> <button className={`chip tiny-chip ${pastDots ? "on" : ""}`} onClick={() => setPastDots(!pastDots)}>past weeks</button></th></>}
                 {th("last3", "Last 3", "Average over the last three games")}
                 <th title="Targets plus carries (QB: attempts plus carries) a game, the last three against the dozen before">Role</th>
                 <th title="Share of the team's targets / carries">Tgt / car</th>
@@ -255,12 +279,9 @@ export default function Fantasy() {
                     <tr key={p.player_id} className={`clickable ${fav && p.team === fav ? "fav-row" : ""} ${compare.includes(p.player_id) ? "picked-row" : ""} ${onRoster.has(p.player_id) ? "roster-row" : ""}`} onClick={() => open(p)}>
                       {!mobile && <td>{cmp(p)}</td>}
                       {!mobile && <td className="num muted">{posRank.has(p.player_id) ? `${p.position}${posRank.get(p.player_id)}` : "–"}</td>}
-                      <td className="left">
-                        {mobile ? <div className="fx-player">{cmp(p)}{starBtn(p)}<div className="fx-name"><b>{p.name}</b><span className="muted tiny">{posRank.has(p.player_id) ? `${p.position}${posRank.get(p.player_id)}` : p.position} · {p.team}</span></div></div>
-                          : <>{starBtn(p)}<b>{p.name}</b> <span className="muted">{p.position === "DST" ? "D/ST" : p.position}{["K", "DST"].includes(p.position) ? "" : p.depth_rank ?? ""}</span> </>}
-                        {statusPill(p)}
-                        {p.new_to_team && p.stats_team && <span className="pill warn" title={`New to ${p.team}. The numbers are from ${p.stats_team}.`}>was {p.stats_team}</span>}
-                        {!pr && <span className="pill" title={`Fewer than ${data.method.min_games} games on record`}>{p.games === 0 ? "no games yet" : "small sample"}</span>}
+                      <td className="left fx-cell">
+                        {mobile ? <div className="fx-player">{cmp(p)}{starBtn(p)}<div className="fx-name"><b title={p.name}>{p.name}</b><span className="muted tiny fx-sub">{posRank.has(p.player_id) ? `${p.position}${posRank.get(p.player_id)}` : p.position} · {p.team}{tags(p, pr)}</span></div></div>
+                          : <div className="fx-line">{starBtn(p)}<b className="fx-full" title={p.name}>{p.name}</b> <span className="muted">{p.position === "DST" ? "D/ST" : p.position}{["K", "DST"].includes(p.position) ? "" : p.depth_rank ?? ""}</span>{tags(p, pr)}</div>}
                       </td>
                       {mobile && proj(pr)}
                       <td className="left small"><TeamTag abbr={p.team} /> <span className="muted">{p.home ? "vs" : "@"}</span> {p.opponent} <span className="faint tiny">{dayOf(p.gameday)}</span></td>
@@ -278,7 +299,7 @@ export default function Fantasy() {
             </table>
           </div>
           <div className="hint" style={{ marginTop: 8 }}>
-            Projection: ESPN's weekly projection, converted to your scoring{data.method.espn ? "" : " (not pulled for this week yet, so the site's own baseline stands in)"}. Floor and ceiling come from simulating the week out of each player's own last {data.method.n_games} games, shifted onto that projection and weighted toward the latest: the floor is a bad week (20th percentile), the ceiling a good one (80th), so a boom-or-bust player gets a wider, lopsided range. Players ESPN does not project use the site's baseline, a recency-weighted average scaled by the matchup, marked with a dot. It is a reference point, not a forecast.
+            Projection: ESPN's weekly projection, converted to your scoring{data.method.espn ? "" : " (not pulled for this week yet, so the site's own baseline stands in)"}. ESPN's file also sets who plays: a backup it projects as this week's starter is ranked first on his depth chart, and a player it projects for zero is marked not playing. Floor and ceiling come from simulating the week out of each player's own last {data.method.n_games} games, shifted onto that projection and weighted toward the latest: the floor is a bad week (20th percentile), the ceiling a good one (80th), so a boom-or-bust player gets a wider, lopsided range. Players ESPN does not project use the site's baseline, a recency-weighted average scaled by the matchup, marked with a dot. It is a reference point, not a forecast.
           </div>
         </div>
       )}

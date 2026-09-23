@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Link, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import ErrorBoundary from "./components/ErrorBoundary";
 import PlayerSearch from "./components/PlayerSearch";
 import Tour from "./components/Tour";
 import Welcome from "./components/Welcome";
@@ -314,6 +315,7 @@ function Shell() {
       <main className="main">
         {error && <div className="banner err">API unreachable: {error}. Start it with <code>uvicorn dashboard.api.app:app --port 8017</code>.</div>}
         <div className="page" key={loc.pathname}>
+          <ErrorBoundary>
           <Suspense fallback={<div className="empty"><Spinner /></div>}>
           <Routes>
             <Route path="/" element={<Home />} />
@@ -329,6 +331,7 @@ function Shell() {
             <Route path="/settings" element={<Settings />} />
           </Routes>
           </Suspense>
+          </ErrorBoundary>
         </div>
       </main>
       {mobile && <>

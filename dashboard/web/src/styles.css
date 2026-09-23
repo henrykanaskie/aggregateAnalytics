@@ -749,7 +749,9 @@ button, a, .clickable, .chip, summary { -webkit-tap-highlight-color: transparent
 }
 .fx-player { display: flex; align-items: center; gap: 9px; }
 .fx-name { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
-.fx-name b { overflow: hidden; text-overflow: ellipsis; }
+.fx-name b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fx-sub { display: flex; align-items: center; gap: 5px; white-space: nowrap; overflow: hidden; }
+.fx-sub .pill { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 10px; padding: 0 6px; }
 @media (max-width: 760px) { .cmp-btn { width: 28px; height: 28px; border-radius: 8px; flex: none; font-size: 15px; } }
 .pc-one { margin-top: 10px; font-size: 12px; color: var(--muted); }
 .pc-one b { color: var(--text); }
@@ -997,8 +999,9 @@ a.home-row:hover { text-decoration: none; color: var(--accent); }
 .mt-slot.bn { background: var(--panel-2); color: var(--muted); }
 .mt-who { min-width: 0; }
 .mt-name { font-weight: 600; font-size: 14.5px; color: var(--text); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mt-sub { font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-.mt-odds { display: flex; gap: 8px; font-size: 11.5px; font-family: var(--mono); flex-wrap: wrap; }
+.mt-sub { font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: center; flex-wrap: nowrap; white-space: nowrap; overflow: hidden; min-width: 0; }
+.mt-sub .pill { flex-shrink: 0; }
+.mt-odds { display: flex; gap: 8px; font-size: 11.5px; font-family: var(--mono); flex-wrap: nowrap; white-space: nowrap; overflow: hidden; }
 .mt-odds .boom { color: var(--over); }
 .mt-odds .bust { color: var(--under); }
 .mt-proj { display: flex; flex-direction: column; align-items: flex-end; min-width: 44px; }
@@ -1018,7 +1021,7 @@ a.home-row:hover { text-decoration: none; color: var(--accent); }
 .mt-stepper .num { min-width: 12px; text-align: center; }
 @media (max-width: 760px) {
   .mt-row { grid-template-columns: 40px minmax(0, 1fr) auto auto; gap: 8px; padding: 10px 2px; }
-  .mt-row > img, .mt-row > span:nth-child(2):not(.muted) { display: none; }
+  .mt-row > .headshot { display: none; }
   .mt-insight { align-items: flex-start; }
   .mt-insight .btn { align-self: center; }
   .mt-total .v { font-size: 30px; }
@@ -1104,3 +1107,43 @@ a.home-row:hover { text-decoration: none; color: var(--accent); }
 .range-col { min-width: 150px; width: 170px; }
 th.range-col { white-space: nowrap; }
 .tiny-chip { padding: 1px 7px; font-size: 11px; margin-left: 4px; text-transform: none; letter-spacing: 0; }
+
+/* League import (components/LeagueImport.tsx) */
+.league-import { display: flex; flex-direction: column; gap: 8px; width: min(100%, 520px); text-align: left; padding: 12px; margin: 8px 0 12px;
+  border: 1px solid var(--border-2); border-radius: 10px; background: var(--panel-2); }
+.league-import .li-head { display: flex; justify-content: space-between; align-items: center; }
+.league-import .li-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.league-import .li-row .input { flex: 1 1 200px; min-width: 0; }
+.league-import .li-result { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--border-2); padding-top: 8px; }
+
+/* Error boundary (components/ErrorBoundary.tsx) */
+.crash { max-width: 640px; margin: 24px auto; display: flex; flex-direction: column; gap: 10px; }
+.crash h2 { font-size: 18px; margin: 0; }
+.crash p { margin: 0; font-size: 13.5px; }
+.crash-msg { white-space: pre-wrap; word-break: break-word; font-size: 12px; padding: 10px; border-radius: 8px;
+  background: var(--panel-2); border: 1px solid var(--border-2); color: var(--under); margin: 0; }
+.crash-actions { display: flex; gap: 8px; }
+
+/* One line per player however long the name: the name gives way (ellipsis,
+   full name on hover), the tags and the rest of the row never wrap under it. */
+.headshot { display: inline-block; flex-shrink: 0; border-radius: 4px; background: var(--bg-2); }
+.fx-line { display: flex; align-items: center; gap: 5px; white-space: nowrap; min-width: 0; }
+.fx-line .fx-full { overflow: hidden; text-overflow: ellipsis; max-width: 190px; }
+.fx-line .pill { flex-shrink: 0; }
+
+/* Start / sit table: names on one line, the label column never squeezed to a
+   word per line. On a phone the table scrolls sideways and the labels' small
+   print (in each label's hover text on desktop too) is dropped. */
+.ss-table th { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; }
+.ss-table .ss-label { min-width: 120px; }
+@media (max-width: 760px) {
+  .ss-table .ss-hint { display: none; }
+  .ss-table th { max-width: 110px; }
+  .mt-odds .faint { display: none; }
+}
+
+/* Lineup slots editor at the top of Starters (MyTeam.tsx) */
+.mt-slots-top { flex-direction: column; align-items: stretch; margin: 0 0 10px; padding: 0 0 12px; border-top: 0; border-bottom: 1px dashed var(--border-2); }
+.mt-presets, .mt-steppers { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+.mt-presets { gap: 6px; }
+@media (max-width: 760px) { .mt-lineup-sum { display: none; } }

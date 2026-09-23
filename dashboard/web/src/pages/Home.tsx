@@ -28,7 +28,7 @@ const LAYOUT: Record<Mode, { main: ModuleKey[]; side: ModuleKey[] }> = {
   default: { main: ["slate"], side: ["favgame", "continue"] },
 };
 
-const OUT = ["Out", "Doubtful", "IR"];
+const OUT = ["Out", "Doubtful", "IR", "Suspended", "Not playing"];
 const dayOf = (d: string | null) => (d ? new Date(`${d}T12:00:00`).toLocaleDateString(undefined, { weekday: "short" }) : "");
 
 export default function Home() {

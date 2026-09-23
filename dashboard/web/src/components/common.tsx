@@ -57,8 +57,10 @@ export function TeamTag({ abbr, name = false }: { abbr: string | null | undefine
 }
 export function Headshot({ src, size = 36 }: { src: string | null | undefined; size?: number }) {
   const [err, setErr] = React.useState(false);
-  if (!src || err) return <span style={{ width: size, height: size * 0.73, borderRadius: 4, background: "var(--bg-2)", display: "inline-block" }} />;
-  return <img src={src} onError={() => setErr(true)} style={{ width: size, height: size * 0.73, objectFit: "cover", borderRadius: 4, background: "var(--bg-2)" }} alt="" />;
+  // Display comes from the .headshot class, never an inline style, so a
+  // layout can hide the picture and the blank placeholder alike.
+  if (!src || err) return <span className="headshot" style={{ width: size, height: size * 0.73 }} />;
+  return <img className="headshot" src={src} onError={() => setErr(true)} style={{ width: size, height: size * 0.73, objectFit: "cover" }} alt="" />;
 }
 export function SampleBanner({ sources }: { sources: string[] }) {
   if (!sources.includes("sample")) return null;

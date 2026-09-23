@@ -19,7 +19,7 @@ import { marksFor } from "./FantasySnapshot";
 // what is pushing it, and the table shows the numbers behind those.
 
 const COLORS = ["var(--cat-1)", "var(--cat-3)", "var(--cat-2)", "var(--cat-5)"];
-const OUT = ["Out", "Doubtful", "IR"];
+const OUT = ["Out", "Doubtful", "IR", "Suspended", "Not playing"];
 const SIMS = 8000;
 
 /** A seeded generator, so the same comparison gives the same percentages
@@ -64,7 +64,8 @@ function reasons(p: FantasyPlayer, others: FantasyPlayer[], scoring: Scoring, bo
     const mine = f(p); if (mine === null || mine === undefined) return false;
     return others.every((o) => { const v = f(o); return v === null || v === undefined || mine > v; });
   };
-  if (p.status && OUT.includes(p.status)) down.push(`Listed ${p.status}${p.injury ? ` (${p.injury.toLowerCase()})` : ""}.`);
+  if (p.status === "Not playing") down.push("ESPN projects him for zero points: not expected to play.");
+  else if (p.status && OUT.includes(p.status)) down.push(`Listed ${p.status}${p.injury ? ` (${p.injury.toLowerCase()})` : ""}.`);
   else if (p.status) down.push(`${p.status} on the injury report${p.injury ? ` (${p.injury.toLowerCase()})` : ""}.`);
   if (!pr) down.push(p.games === 0 ? "No games on record yet, so there is nothing to project from." : "Too few games to project with any confidence.");
   const m = matchupWord(p);
@@ -125,11 +126,13 @@ export default function StartSit({ players, missing, scoring, onRemove, onClear 
   const pTop = top ? shares.get(top.player_id) ?? 0 : 0;
   const close = players.length >= 2 && second && pTop - (shares.get(second.player_id) ?? 0) < (players.length === 2 ? 0.1 : 0.08);
 
-  // Last eight regular-season games each, lined up by how long ago they were.
-  const N = 8;
-  const chart = Array.from({ length: N }, (_, i) => {
-    const row: Record<string, number | string | null> = { ago: i === N - 1 ? "last" : `${N - 1 - i} ago` };
-    for (const p of players) { const g = (logs[p.player_id] ?? []).slice(-N); const r = g[i - (N - g.length)]; row[p.player_id] = r ? val(r, statOf(p)) : null; }
+  // This season's games so far, by week: the same games the range bar dots
+  // show (p.recent, built by the API), so a week 3 comparison has two points,
+  // not six from last season. A bye or a missed game is a gap in the line.
+  const weeks = [...new Set(players.flatMap((p) => (p.recent ?? []).map((g) => g.week)))].sort((a, b) => a - b);
+  const chart = weeks.map((w) => {
+    const row: Record<string, number | string | null> = { wk: `Wk ${w}` };
+    for (const p of players) { const g = (p.recent ?? []).find((x) => x.week === w); row[p.player_id] = g ? g.pts[scoring] ?? null : null; }
     return row;
   });
 
@@ -147,8 +150,8 @@ export default function StartSit({ players, missing, scoring, onRemove, onClear 
     { label: "Team pts", hint: "from the betting spread and total; for a D/ST, what its opponent is expected to score", get: (p) => (p.position === "DST" ? null : p.implied), show: (p) => (p.position === "DST" ? `${p.opp_implied ?? "–"} opp` : p.implied ?? "–"), better: "high" },
     { label: "Role", skip: (ps: FantasyPlayer[]) => ps.every((p) => ["K", "DST"].includes(p.position)), hint: "targets + carries a game, last 3 vs before", get: (p) => p.role?.last3 ?? null, show: (p) => (p.role ? `${p.role.last3} (was ${p.role.before})` : "–"), better: "high" },
     { label: "Target / carry share", skip: (ps: FantasyPlayer[]) => ps.every((p) => ["QB", "K", "DST"].includes(p.position)), get: () => null, show: (p) => (p.position === "QB" ? "–" : `${fmtPct(p.target_share)} / ${fmtPct(p.carry_share)}`) },
-    { label: "Boom weeks", skip: (ps: FantasyPlayer[]) => ps.every((p) => p.position === "DST"), hint: "last 16 games", get: (p) => rate(p, true), show: (p) => { const r = rate(p, true); return r === null ? (p.position === "DST" ? "–" : "…") : `${fmtPct(r)} ≥ ${marksFor(p.position, scoring)[0]}`; }, better: "high" },
-    { label: "Bust weeks", skip: (ps: FantasyPlayer[]) => ps.every((p) => p.position === "DST"), hint: "last 16 games", get: (p) => rate(p, false), show: (p) => { const r = rate(p, false); return r === null ? (p.position === "DST" ? "–" : "…") : `${fmtPct(r)} < ${marksFor(p.position, scoring)[1]}`; }, better: "low" },
+    { label: "Boom weeks", skip: (ps: FantasyPlayer[]) => ps.every((p) => p.position === "DST"), hint: "last 16 games, into last season", get: (p) => rate(p, true), show: (p) => { const r = rate(p, true); return r === null ? (p.position === "DST" ? "–" : "…") : `${fmtPct(r)} ≥ ${marksFor(p.position, scoring)[0]}`; }, better: "high" },
+    { label: "Bust weeks", skip: (ps: FantasyPlayer[]) => ps.every((p) => p.position === "DST"), hint: "last 16 games, into last season", get: (p) => rate(p, false), show: (p) => { const r = rate(p, false); return r === null ? (p.position === "DST" ? "–" : "…") : `${fmtPct(r)} < ${marksFor(p.position, scoring)[1]}`; }, better: "low" },
   ];
   const bestOf = (m: Metric) => {
     if (!m.better || players.length < 2) return null;
@@ -201,11 +204,11 @@ export default function StartSit({ players, missing, scoring, onRemove, onClear 
 
       {players.length >= 2 && (
         <div className="tbl-wrap" style={{ marginTop: 12 }}>
-          <table className="tbl compact">
-            <thead><tr><th className="left" />{players.map((p, i) => <th key={p.player_id} style={{ color: COLORS[i] }}>{p.name}</th>)}</tr></thead>
+          <table className="tbl compact ss-table">
+            <thead><tr><th className="left" />{players.map((p, i) => <th key={p.player_id} style={{ color: COLORS[i] }} title={p.name}>{p.name}</th>)}</tr></thead>
             <tbody>{metrics.filter((m) => !m.skip?.(players)).map((m) => { const b = bestOf(m); return (
               <tr key={m.label}>
-                <td className="left">{m.label}{m.hint && <div className="faint tiny">{m.hint}</div>}</td>
+                <td className="left ss-label">{m.label}{m.hint && <div className="faint tiny ss-hint">{m.hint}</div>}</td>
                 {players.map((p) => { const v = m.get(p); return <td key={p.player_id} className={`num ${b !== null && v === b ? "over" : ""}`} style={{ background: m.tint?.(p) }}>{m.show(p)}</td>; })}
               </tr>
             ); })}</tbody>
@@ -213,13 +216,13 @@ export default function StartSit({ players, missing, scoring, onRemove, onClear 
         </div>
       )}
 
-      {players.length >= 2 && players.some((p) => (logs[p.player_id] ?? []).length > 0) && (
+      {players.length >= 2 && chart.length > 0 && (
         <div style={{ marginTop: 12 }}>
-          <div className="hint" style={{ marginBottom: 4 }}>{SCORING_LABEL[scoring]} points, last {N} regular-season games each</div>
+          <div className="hint" style={{ marginBottom: 4 }}>{SCORING_LABEL[scoring]} points, this season's games</div>
           <ResponsiveContainer width="100%" height={200}>
             <LineChart data={chart} margin={{ top: 6, right: 12, left: -14, bottom: 0 }}>
               <CartesianGrid stroke={T.grid} vertical={false} />
-              <XAxis dataKey="ago" tick={{ fill: T.tick, fontSize: 10.5 }} tickLine={false} axisLine={{ stroke: T.axis }} />
+              <XAxis dataKey="wk" tick={{ fill: T.tick, fontSize: 10.5 }} tickLine={false} axisLine={{ stroke: T.axis }} />
               <YAxis tick={{ fill: T.tick, fontSize: 10.5 }} tickLine={false} axisLine={false} width={40} />
               <Tooltip contentStyle={T.tooltip} formatter={(v: any, id: any) => [typeof v === "number" ? v.toFixed(1) : "–", players.find((p) => p.player_id === id)?.name ?? id]} />
               <Legend formatter={(id: any) => players.find((p) => p.player_id === id)?.name ?? id} wrapperStyle={{ fontSize: 12 }} />
