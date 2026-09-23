@@ -3,11 +3,12 @@ import { Link } from "react-router-dom";
 import { IconBolt, IconDown, IconPlus, IconShield, IconSwap, IconTrash, IconWarn } from "./Icons";
 import type { FantasyPlayer, FantasyWeek, PlayerLite } from "../api";
 import { FANTASY_KEY, fantasyHref, fantasyStatFor, Scoring, SCORING_LABEL } from "../lib/profile";
-import { DEFAULT_SLOTS, RosterEntry, Slots, toEntry } from "./MyRoster";
+import { DEFAULT_SLOTS, fitsSlot, placeLineup, RosterEntry, SLOT_ORDER, Slots, toEntry } from "./MyRoster";
 import { useSticky } from "../lib/sticky";
 import { marksFor } from "./FantasySnapshot";
 import { Headshot, Spinner } from "./common";
 import PlayerSearch from "./PlayerSearch";
+import RangeBar, { rangeMax } from "./RangeBar";
 
 // My team: the roster someone actually has, starters and bench, kept in this
 // browser. The roster and the slots are the same ones the tailoring questions
@@ -22,14 +23,12 @@ type Pos = "QB" | "RB" | "WR" | "TE" | "K" | "DST";
 type Slot = keyof Slots;
 
 const POSITIONS: Pos[] = ["QB", "RB", "WR", "TE", "K", "DST"];
-// Kicker and defense come last and never flex (fits() below only matches them to their own slot).
-const SLOT_ORDER: Slot[] = ["QB", "RB", "WR", "TE", "FLEX", "SFLEX", "K", "DST"];
+// Kicker and defense come last and never flex (fitsSlot only matches them to their own slot).
 const SHORT: Record<Slot, string> = { QB: "QB", RB: "RB", WR: "WR", TE: "TE", FLEX: "FLEX", SFLEX: "SFLX", K: "K", DST: "D/ST" };
-const FLEXIBLE = ["RB", "WR", "TE"];
 const OUT = ["Out", "Doubtful", "IR"];
 const MAX_ROSTER = 20;
 
-const fits = (slot: Slot, pos: string) => slot === pos || (slot === "FLEX" && FLEXIBLE.includes(pos)) || (slot === "SFLEX" && (pos === "QB" || FLEXIBLE.includes(pos)));
+const fits = fitsSlot;
 
 /** Standard normal CDF (Abramowitz and Stegun 7.1.26), good to 1e-7. */
 function phi(z: number): number {
@@ -49,22 +48,8 @@ export function boomBust(p: FantasyPlayer, scoring: Scoring): { boom: number; bu
   return { boom: 1 - phi((marks[0] - pr.value) / sd), bust: phi((marks[1] - pr.value) / sd), marks };
 }
 
-interface Filled { slot: Slot; id: string | null }
-
-/** Put a set of starters into slots: own position first, best projection
- *  first, then whatever is left into FLEX. Anyone who fits nowhere comes back
- *  in `extra` rather than being dropped silently. */
-function place(ids: string[], slots: Slots, posOf: (id: string) => string, score: (id: string) => number): { filled: Filled[]; extra: string[] } {
-  const left = [...ids].sort((a, b) => score(b) - score(a));
-  const filled: Filled[] = [];
-  for (const slot of SLOT_ORDER) {
-    for (let i = 0; i < slots[slot]; i++) {
-      const k = left.findIndex((id) => fits(slot, posOf(id)));
-      filled.push({ slot, id: k === -1 ? null : left.splice(k, 1)[0] });
-    }
-  }
-  return { filled, extra: left };
-}
+type Filled = { slot: Slot; id: string | null };
+const place = placeLineup;
 
 interface Insight { kind: "swap" | "warn" | "floor" | "ceiling" | "bust"; text: React.ReactNode; action?: { label: string; run: () => void } }
 
@@ -78,6 +63,8 @@ export default function MyTeam({ data, scoring, loading, roster, setRoster, slot
   const [editing, setEditing] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [allTips, setAllTips] = useState(false);
+  // Past games as dots on each player's range bar.
+  const [pastDots, setPastDots] = useSticky<boolean>("fantasy.pastDots", true);
   const slots = { ...DEFAULT_SLOTS, ...savedSlots };
   const byId = useMemo(() => new Map((data?.players ?? []).map((p) => [p.player_id, p])), [data]);
   const key = FANTASY_KEY[scoring];
@@ -209,7 +196,7 @@ export default function MyTeam({ data, scoring, loading, roster, setRoster, slot
     );
   }
 
-  const maxHigh = Math.max(10, ...ids.map((id) => band(id)?.high ?? 0));
+  const maxHigh = rangeMax(ids.map((id) => ({ b: band(id), recent: pastDots ? byId.get(id)?.recent : undefined })), scoring);
   const row = (id: string, slot: Slot | "BN") => {
     const r = roster.find((x) => x.player_id === id)!;
     const p = byId.get(id);
@@ -230,12 +217,7 @@ export default function MyTeam({ data, scoring, loading, roster, setRoster, slot
             {r.position === "DST" ? "D/ST" : r.position} · {p?.team ?? r.team ?? "FA"}{p ? <> {p.home ? "vs" : "@"} {p.opponent}</> : null}
             {w ? <span className="pill under">{w}</span> : p?.status ? <span className="pill warn">{p.status}</span> : null}
           </div>
-          {b && (
-            <div className="mt-range" title={`floor ${b.low.toFixed(1)} · projection ${b.value.toFixed(1)} · ceiling ${b.high.toFixed(1)}`}>
-              <span className="band" style={{ left: `${(b.low / maxHigh) * 100}%`, width: `${((b.high - b.low) / maxHigh) * 100}%` }} />
-              <span className="tick" style={{ left: `${(b.value / maxHigh) * 100}%` }} />
-            </div>
-          )}
+          {b && <RangeBar b={b} recent={p?.recent} scoring={scoring} max={maxHigh} dots={pastDots} />}
           {bb && <div className="mt-odds"><span className="boom">Boom {Math.round(bb.boom * 100)}%</span><span className="bust">Bust {Math.round(bb.bust * 100)}%</span><span className="faint">{b!.low.toFixed(1)} to {b!.high.toFixed(1)}</span></div>}
         </div>
         <div className="mt-proj"><b>{b ? b.value.toFixed(1) : "–"}</b><span>proj</span></div>
@@ -293,6 +275,7 @@ export default function MyTeam({ data, scoring, loading, roster, setRoster, slot
           <h3>Starters</h3>
           <div className="actions">
             {pick && <span className="hint">tap who to swap with</span>}
+            <button className={`chip ${pastDots ? "on" : ""}`} title="Each player's last 8 games as dots on his range bar" onClick={() => setPastDots(!pastDots)}>past weeks</button>
             {!auto && !pick && <button className="btn sm ghost" onClick={() => setLineup(null)}>auto</button>}
           </div>
         </div>

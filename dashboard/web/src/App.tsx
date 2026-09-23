@@ -7,7 +7,7 @@ import Tailor from "./components/Tailor";
 import Sheet from "./components/Sheet";
 import { ICONS, IconClose, IconHelp, IconMenu, IconMoon, IconMore, IconSearch, IconSliders, IconSun } from "./components/Icons";
 import { useMobile } from "./lib/useMobile";
-import Spark from "./components/Spark";
+import TailorMenu from "./components/TailorMenu";
 import { arrange, TABS, useLens } from "./lib/profile";
 import { gameWeek, warmAll } from "./lib/prefetch";
 import { clearSticky, readSticky, useSticky, writeSticky } from "./lib/sticky";
@@ -202,8 +202,18 @@ function MenuSheet({ open, onClose, onTailor, onWelcome }: { open: boolean; onCl
       <div className="menu-list">
         <button className="menu-row" onClick={onTailor}>
           <span className="menu-icon"><IconSliders /></span>
-          <span><b>{settings.profile ? "Tailored to you" : "Tailor it to me"}</b><span className="sub">{settings.profile ? "Change your answers and the pages rearrange" : "A few quick questions, and every page rearranges around them"}</span></span>
+          <span><b>{settings.profile ? "Change your answers" : "Tailor it to me"}</b><span className="sub">{settings.profile ? "Run the questions again from where you left them" : "A few quick questions, and every page rearranges around them"}</span></span>
         </button>
+        {settings.profile && (
+          <div className="menu-row static">
+            <span className="menu-icon"><IconSliders /></span>
+            <span><b>Layout</b><span className="sub">{settings.tailored !== false ? "Tailored to your answers" : "Standard, answers kept"}</span></span>
+            <div className="theme-switch" role="radiogroup" aria-label="Layout">
+              <button role="radio" aria-checked={settings.tailored !== false} className={settings.tailored !== false ? "on" : ""} onClick={() => setSettings({ tailored: true })}>Tailored</button>
+              <button role="radio" aria-checked={settings.tailored === false} className={settings.tailored === false ? "on" : ""} onClick={() => setSettings({ tailored: false })}>Standard</button>
+            </div>
+          </div>
+        )}
         <button className="menu-row" onClick={onWelcome}>
           <span className="menu-icon"><IconHelp /></span>
           <span><b>Welcome and tour</b><span className="sub">What the numbers are, and a one-minute walk through</span></span>
@@ -290,9 +300,7 @@ function Shell() {
           <Tabs />
           <div className="spacer" />
           <div data-tour="search"><PlayerSearch onSelect={(p) => nav(`/research?player=${p.player_id}`)} placeholder="Jump to player…" /></div>
-          <button className={`tailor-btn ${settings.profile ? "set" : ""}`} title={settings.profile ? "Your layout is tailored. Change the answers any time." : "Answer a few questions and the pages rearrange around what you care about"} onClick={() => setStage("tailor")}>
-            <Spark /><span className="label">{settings.profile ? "Tailored" : "Tailor"}</span>
-          </button>
+          <TailorMenu onTailor={() => setStage("tailor")} />
           <button className="theme-btn" title="Welcome notes and guided tour" onClick={() => setStage("welcome")}>?</button>
           <button className="theme-btn" title="toggle light / dark" onClick={() => setSettings({ theme: settings.theme === "dark" ? "light" : "dark" })}>{settings.theme === "dark" ? "Light" : "Dark"}</button>
         </header>

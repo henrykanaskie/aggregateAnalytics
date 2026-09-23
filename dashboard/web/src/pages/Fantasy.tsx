@@ -3,9 +3,10 @@ import { Link, useNavigate } from "react-router-dom";
 import { apiFantasy, FantasyPlayer, FantasyWeek } from "../api";
 import { ApplyField, Banner, Field, FilterFold, Seg, Spinner, TeamTag } from "../components/common";
 import { fmtPct } from "../lib/format";
-import { FANTASY_KEY, fantasyHref, fantasyStatFor, Scoring, SCORING_LABEL, useLens } from "../lib/profile";
+import { activeProfile, FANTASY_KEY, fantasyHref, fantasyStatFor, Scoring, SCORING_LABEL, useLens } from "../lib/profile";
 import { rankTint } from "../lib/rank";
 import StartSit from "../components/StartSit";
+import RangeBar, { rangeMax } from "../components/RangeBar";
 import { DEFAULT_SLOTS, RosterEntry, Slots, toEntry } from "../components/MyRoster";
 import MyTeam from "../components/MyTeam";
 import { useSticky } from "../lib/sticky";
@@ -38,7 +39,7 @@ function roleChange(p: FantasyPlayer): number | null {
 export default function Fantasy() {
   const { meta, settings } = useMeta();
   const nav = useNavigate();
-  const profile = settings.profile;
+  const profile = activeProfile(settings);
   const [week, setWeek] = useSticky<number | null>("fantasy.week", null);
   // The scoring the profile names wins; without one the page keeps its own.
   const [ownScoring, setOwnScoring] = useSticky<Scoring>("fantasy.scoring", "ppr");
@@ -53,6 +54,7 @@ export default function Fantasy() {
   const [starters, setStarters] = useSticky("fantasy.starters", true);
   // Best ball and DFS play for the big week, so they rank by ceiling.
   const lens = useLens();
+  const [pastDots, setPastDots] = useSticky<boolean>("fantasy.pastDots", true);
   const [sort, setSort] = useState<{ k: SortKey; d: 1 | -1 }>({ k: lens.ceiling ? "high" : "proj", d: -1 });
   const setsLineups = !profile || !profile.purposes.includes("fantasy") || (lens.profile?.fantasyFormat ?? "season") === "season";
   // On a phone the player (with the start / sit button) is the pinned first
@@ -106,6 +108,8 @@ export default function Fantasy() {
       return (x - y) * sort.d;
     });
   }, [data, pos, team, q, hideOut, starters, sort, scoring, onRoster]);
+  // One scale for every bar in the table, so they compare row to row.
+  const rangeScale = useMemo(() => rangeMax(rows.map((p) => ({ b: p.proj[scoring], recent: pastDots ? p.recent : undefined })), scoring), [rows, scoring, pastDots]);
 
   // Position ranks by projection, over everyone who plays, so filtering the
   // table never renumbers a player.
@@ -237,7 +241,8 @@ export default function Fantasy() {
                 <th className="left">Game</th>
                 {th("matchup", "Matchup", "How much this defense gives up to the position, this season blended with last. Green is generous.")}
                 {th("implied", "Team pts", "Points the team is expected to score, from the betting spread and total")}
-                {!mobile && <>{th("proj", "Proj")}{th("low", "Floor", "A bad week: the 20th percentile of weeks simulated from his own games")}{th("high", "Ceiling", "A good week: the 80th percentile of weeks simulated from his own games")}</>}
+                {!mobile && <>{th("proj", "Proj")}{th("low", "Floor", "A bad week: the 20th percentile of weeks simulated from his own games")}{th("high", "Ceiling", "A good week: the 80th percentile of weeks simulated from his own games")}<th className="range-col" title="This week's floor to ceiling, with the projection as the white tick and each of his last 8 games as a dot (newest largest)">
+                  <span>Range{pastDots ? " · last 8" : ""}</span> <button className={`chip tiny-chip ${pastDots ? "on" : ""}`} onClick={() => setPastDots(!pastDots)}>past weeks</button></th></>}
                 {th("last3", "Last 3", "Average over the last three games")}
                 <th title="Targets plus carries (QB: attempts plus carries) a game, the last three against the dozen before">Role</th>
                 <th title="Share of the team's targets / carries">Tgt / car</th>
@@ -262,6 +267,7 @@ export default function Fantasy() {
                       <td className="num" style={{ background: rankTint(p.matchup_rank, p.matchup_n) }} title={p.matchup_text ?? (p.matchup_rank ? `${p.opponent} gives up the ${ordinal(p.matchup_rank)} most to ${p.position}s (projection ×${p.factor})` : undefined)}>{p.matchup_rank ? (p.matchup_rank <= 8 ? "easy" : p.matchup_rank > (p.matchup_n ?? 32) - 8 ? "tough" : "neutral") : "–"}</td>
                       <td className="num muted" title={p.position === "DST" ? "Points the opponent is expected to score" : undefined}>{p.position === "DST" ? <>{p.opp_implied ?? "–"} <span className="faint tiny">opp</span></> : p.implied ?? "–"}</td>
                       {!mobile && proj(pr)}
+                      {!mobile && <td className="range-col">{pr ? <RangeBar b={pr} recent={p.recent} scoring={scoring} max={rangeScale} dots={pastDots} /> : null}</td>}
                       <td className="num">{pr?.last3 != null ? pr.last3.toFixed(1) : "–"}</td>
                       <td className={`num ${rc === null ? "muted" : rc >= 0.2 ? "over" : rc <= -0.2 ? "under" : ""}`} title={p.role ? `${p.role.last3} a game lately, ${p.role.before} before` : undefined}>{rc === null ? "–" : rc >= 0.2 ? "▲ growing" : rc <= -0.2 ? "▼ shrinking" : "steady"}</td>
                       <td className="num muted">{["QB", "K", "DST"].includes(p.position) ? "–" : `${fmtPct(p.target_share)} / ${fmtPct(p.carry_share)}`}</td>

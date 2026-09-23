@@ -127,9 +127,15 @@ export function lensOf(stored: Profile | null): Lens {
   };
 }
 
+/** The profile the site should lay out by: the saved answers, unless
+ *  tailoring has been switched off (answers kept) or there are none. */
+export function activeProfile(s: { profile: Profile | null; tailored?: boolean }): Profile | null {
+  return s.tailored === false ? null : s.profile;
+}
+
 export function useLens(): Lens {
   const { settings } = useMeta();
-  return lensOf(settings.profile);
+  return lensOf(activeProfile(settings));
 }
 
 /** The pages, in the order the nav shows them, and who each is for. */

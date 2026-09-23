@@ -30,7 +30,7 @@ import TeamSharePies from "../components/TeamSharePies";
 import { api5, DvpFactors } from "../api";
 import FantasySnapshot from "../components/FantasySnapshot";
 import More from "../components/More";
-import { arrange, fantasyStatFor, isDefPos, Tags, useLens } from "../lib/profile";
+import { activeProfile, arrange, fantasyStatFor, isDefPos, Tags, useLens } from "../lib/profile";
 import { RESEARCH_GUIDE, researchLayout } from "../lib/layouts";
 import LayoutGrid from "../components/LayoutGrid";
 import Spark from "../components/Spark";
@@ -393,12 +393,12 @@ function PredictionSlot({ playerId, market, line, proj, statFmt }: { playerId: s
 function QuickPicks() {
   const { meta, settings } = useMeta();
   const nav = useNavigate();
-  const [team, setTeam] = useState(settings.profile?.team ?? "");
+  const [team, setTeam] = useState(activeProfile(settings)?.team ?? "");
   // The positions someone follows come first, in the order they are listed.
-  const want = settings.profile?.positions ?? [];
+  const want = activeProfile(settings)?.positions ?? [];
   const rank = (pos: string) => { const i = want.indexOf(pos as never); return i === -1 ? want.length : i; };
   // Defenders are left out for a profile that does not follow them.
-  const skipDef = !!settings.profile && settings.profile.defense !== "yes";
+  const skipDef = !!activeProfile(settings) && activeProfile(settings)!.defense !== "yes";
   const [rows, setRows] = useState<{ player_id: string; name: string; position: string; games: number; ppr: number }[]>([]);
   useEffect(() => {
     if (!team || !meta) { setRows([]); return; }

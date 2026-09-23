@@ -8,6 +8,7 @@ import { fmtStat } from "../lib/format";
 import { useSticky } from "../lib/sticky";
 import { useQuery } from "../lib/useQuery";
 import { useMeta } from "../state";
+import { activeProfile } from "../lib/profile";
 import TeamScatter from "../components/TeamScatter";
 import UsageTree from "../components/UsageTree";
 import TeamSharePies from "../components/TeamSharePies";
@@ -21,7 +22,7 @@ export default function Teams() {
   const [sp, setSp] = useSearchParams();
   const team = sp.get("team") ?? "";
   // With no team picked, a favorite from the tailoring answers opens instead.
-  const fav = settings.profile?.team;
+  const fav = activeProfile(settings)?.team;
   // Once per visit, so clearing the team afterwards is not undone.
   const seededFav = useRef(false);
   useEffect(() => { if (!team && fav && !seededFav.current) setSp({ team: fav }, { replace: true }); seededFav.current = true; }, [team, fav]);

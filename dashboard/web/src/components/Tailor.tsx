@@ -121,7 +121,7 @@ export default function Tailor({ onDone, onCancel }: { onDone: () => void; onCan
   const flip = <T,>(list: T[], v: T) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
   // A single choice answers the screen: show the tick, then move on.
   const answer = (patch: Partial<Profile>) => { set(patch); window.clearTimeout(timer.current); timer.current = window.setTimeout(() => setI((n) => n + 1), 260); };
-  const save = () => { setSettings({ profile: p }); if (fantasy) writeSticky("fantasy.roster", roster); onDone(); };
+  const save = () => { setSettings({ profile: p, tailored: true }); if (fantasy) writeSticky("fantasy.roster", roster); onDone(); };
   const addPlayer = (pl: PlayerLite) => setRoster((r) => (r.some((x) => x.player_id === pl.player_id) ? r : [...r, { player_id: pl.player_id, name: pl.name, position: pl.position, team: pl.team }]));
 
   const teams = (meta?.teams ?? []).filter((t) => !["OAK", "SD", "STL", "LAR"].includes(t.team_abbr)).sort((a, b) => a.team_name.localeCompare(b.team_name));

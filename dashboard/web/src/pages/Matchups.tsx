@@ -12,7 +12,7 @@ import { useMeta } from "../state";
 import { rankTint, shownRank } from "../lib/rank";
 import { blendLabel, blendNote, staffNote } from "../lib/blend";
 import More, { Folded } from "../components/More";
-import { arrange, Tags, useLens } from "../lib/profile";
+import { activeProfile, arrange, Tags, useLens } from "../lib/profile";
 
 const OFF_KEYS = ["pass_rate", "proe", "neutral_pass_rate", "plays_pg", "sec_per_play", "third_down_conv", "shotgun_rate", "under_center_rate", "p11_rate", "p12_rate", "pa_rate", "motion_rate", "screen_rate", "deep_rate", "adot", "rb_target_share", "wr_target_share", "te_target_share", "lead_rb_share", "qb_rush_rate", "rz_td_rate", "rz_pass_rate", "rz_te_target_share", "rz_rb_target_share", "fourth_go_rate", "fga_pg", "sack_rate_taken", "int_rate", "epa_play", "explosive_rate"];
 const DEF_KEYS = ["def_epa_play", "def_pass_epa", "def_rush_epa", "def_success_rate", "def_explosive_rate", "def_pass_rate_faced", "def_third_down_conv", "def_sack_rate", "def_int_rate", "def_pressure_rate", "def_blitz_rate", "def_man_rate", "def_cover1_rate", "def_cover3_rate", "def_two_high_rate", "def_cover0_rate", "def_box_avg", "def_adot_faced", "def_deep_rate_faced", "def_rb_target_share", "def_te_target_share", "def_rz_td_rate", "def_fga_pg"];
@@ -33,7 +33,7 @@ export default function Matchups() {
   useEffect(() => { document.querySelector(".chips.swipe .chip.on")?.scrollIntoView({ inline: "center", block: "nearest" }); }, [gameId, games.length]);
   const shown = week ?? meta?.week ?? null;
   // With nothing picked, a favorite team's game opens on its own.
-  const fav = settings.profile?.team;
+  const fav = activeProfile(settings)?.team;
   useEffect(() => {
     const g = !gameId && fav ? games.find((x) => x.home_team === fav || x.away_team === fav) : null;
     if (g) setSp({ game: g.game_id }, { replace: true });

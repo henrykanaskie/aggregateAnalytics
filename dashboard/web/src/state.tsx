@@ -15,6 +15,9 @@ export interface Settings {
   /** What the tailoring questions were answered with; null until they are,
    *  which lays every page out as it always was. */
   profile: Profile | null;
+  /** false: the answers are kept but the site shows its standard layout,
+   *  until tailoring is switched back on. */
+  tailored: boolean;
 }
 //: 1999 is the first season in the cache, so as a floor it means "his whole
 //: career" for every player in it. The old default of 2016 was a guess that
@@ -23,7 +26,7 @@ export interface Settings {
 //: debuted after 2016 it made the setting look broken, because moving it
 //: changed nothing they could see.
 const CAREER = 1999;
-const DEFAULTS: Settings = { since: CAREER, nGames: 10, preferredBook: "", thresholdScale: 1, includeSample: true, showPlayoffs: true, theme: "dark", focus: false, profile: null };
+const DEFAULTS: Settings = { since: CAREER, nGames: 10, preferredBook: "", thresholdScale: 1, includeSample: true, showPlayoffs: true, theme: "dark", focus: false, profile: null, tailored: true };
 const KEY = "props-dashboard-settings-v1";
 const OLD_DEFAULT_SINCE = 2016;
 
