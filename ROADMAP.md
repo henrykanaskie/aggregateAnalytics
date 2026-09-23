@@ -1133,6 +1133,20 @@ Sunday and your snapshot was Tuesday, that timestamp is the difference between
 `snap_counts` is the one table keyed on PFR ids. Route it through
 `players.pfr_id`, per the ID table above, before it touches anything GSIS.
 
+## Parked product features (added 2026-09-23)
+
+The build focus is the **backend data handling** and the **prediction
+engine**. Site features that do not serve those two wait here, with their
+research written down so it is not redone.
+
+- **Private ESPN league sync** (the FantasyPros method: browser extension,
+  stored login cookies, scheduled re-sync). Public ESPN leagues, Sleeper and
+  Yahoo imports already ship (`dashboard/leagues/`). The method, the rights
+  question, what building it would cost and when to revisit are in
+  [`dashboard/leagues/ESPN_PRIVATE_SYNC.md`](dashboard/leagues/ESPN_PRIVATE_SYNC.md).
+  Short version: it needs user accounts and secret storage this site does not
+  have, and it runs on ESPN's tolerance, not a license.
+
 ## What is deliberately not here
 
 - Every blanked expression body and the parameters that go in them.

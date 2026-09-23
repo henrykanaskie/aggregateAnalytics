@@ -202,11 +202,11 @@ export default function StartSit({ players, missing, scoring, onRemove, onClear 
 
       {players.length >= 2 && (
         <div className="tbl-wrap" style={{ marginTop: 12 }}>
-          <table className="tbl compact">
-            <thead><tr><th className="left" />{players.map((p, i) => <th key={p.player_id} style={{ color: COLORS[i] }}>{p.name}</th>)}</tr></thead>
+          <table className="tbl compact ss-table">
+            <thead><tr><th className="left" />{players.map((p, i) => <th key={p.player_id} style={{ color: COLORS[i] }} title={p.name}>{p.name}</th>)}</tr></thead>
             <tbody>{metrics.filter((m) => !m.skip?.(players)).map((m) => { const b = bestOf(m); return (
               <tr key={m.label}>
-                <td className="left">{m.label}{m.hint && <div className="faint tiny">{m.hint}</div>}</td>
+                <td className="left ss-label">{m.label}{m.hint && <div className="faint tiny ss-hint">{m.hint}</div>}</td>
                 {players.map((p) => { const v = m.get(p); return <td key={p.player_id} className={`num ${b !== null && v === b ? "over" : ""}`} style={{ background: m.tint?.(p) }}>{m.show(p)}</td>; })}
               </tr>
             ); })}</tbody>

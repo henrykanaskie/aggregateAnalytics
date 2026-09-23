@@ -16,7 +16,7 @@ export default function RangeBar({ b, recent, scoring, max, dots = true }: {
   const games = dots ? (recent ?? []).filter((g) => g.pts[scoring] !== null && g.pts[scoring] !== undefined) : [];
   const inRange = games.filter((g) => g.pts[scoring]! >= b.low && g.pts[scoring]! <= b.high).length;
   const title = `floor ${b.low.toFixed(1)} · projection ${b.value.toFixed(1)} · ceiling ${b.high.toFixed(1)}`
-    + (games.length ? ` · ${inRange} of the last ${games.length} games inside the range` : "");
+    + (games.length ? ` · ${inRange} of his ${games.length} game${games.length === 1 ? "" : "s"} this season inside the range` : "");
   return (
     <div className={`range-bar ${games.length ? "with-dots" : ""}`} title={title}>
       <span className="band" style={{ left: at(b.low), width: `calc(${at(b.high)} - ${at(b.low)})` }} />
@@ -26,7 +26,7 @@ export default function RangeBar({ b, recent, scoring, max, dots = true }: {
         const age = games.length - 1 - i;   // 0 = the latest game
         return (
           <span key={`${g.season}-${g.week}`} className={`dot ${age === 0 ? "latest" : ""} ${v > b.high ? "above" : v < b.low ? "below" : ""} ${v > max ? "clipped" : ""}`}
-            style={{ left: at(v), opacity: 1 - age * 0.09 }} title={`${label(g)}: ${v.toFixed(1)}`} />
+            style={{ left: at(v), opacity: Math.max(0.25, 1 - age * 0.09) }} title={`${label(g)}: ${v.toFixed(1)}`} />
         );
       })}
     </div>

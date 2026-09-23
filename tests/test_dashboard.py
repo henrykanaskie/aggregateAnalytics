@@ -186,12 +186,16 @@ def test_espn_projection_parse_keeps_injury_status(monkeypatch):
 
 
 def test_recent_games_ride_along_in_every_format():
-    from dashboard.stats.fantasy import RECENT_N, SCORINGS, _recent
-    games = [{"season": 2026, "week": w, "opponent_team": "DAL", "fantasy_points": 10.0 + w, "fantasy_points_ppr": 14.0 + w,
-              "fantasy_points_half": 12.0 + w} for w in range(1, 12)]
-    out = _recent(games, SCORINGS)
-    assert len(out) == RECENT_N and out[-1]["week"] == 11 and out[0]["week"] == 11 - RECENT_N + 1   # the latest, oldest first
+    from dashboard.stats.fantasy import SCORINGS, _recent
+    last_year = [{"season": 2025, "week": w, "opponent_team": "NYG", "fantasy_points": 5.0, "fantasy_points_ppr": 7.0,
+                  "fantasy_points_half": 6.0} for w in range(10, 19)]
+    games = last_year + [{"season": 2026, "week": w, "opponent_team": "DAL", "fantasy_points": 10.0 + w, "fantasy_points_ppr": 14.0 + w,
+                          "fantasy_points_half": 12.0 + w} for w in range(1, 12)]
+    out = _recent(games, 2026, SCORINGS)
+    # This season only, all of it, oldest first: last season's weeks never show as dots.
+    assert [g["week"] for g in out] == list(range(1, 12)) and {g["season"] for g in out} == {2026}
+    assert _recent(last_year, 2026, SCORINGS) == []
     assert out[-1]["pts"] == {"ppr": 25.0, "half": 23.0, "std": 21.0} and out[-1]["opp"] == "DAL"
     # A kicker or defense scores every format alike.
-    k = _recent([{"season": 2026, "week": 2, "opponent_team": "IND", "kick_pts": 16}], same="kick_pts")
+    k = _recent([{"season": 2026, "week": 2, "opponent_team": "IND", "kick_pts": 16}], 2026, same="kick_pts")
     assert k[0]["pts"] == {"ppr": 16.0, "half": 16.0, "std": 16.0}
