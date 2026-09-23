@@ -178,7 +178,7 @@ function AnglesTab({ track: data, weeks, setWeeks, open }: { track: AngleTrackRe
   const ranked = sort === "n" ? fams : [...fams].sort((a, b) => (Number(b.n >= 5) - Number(a.n >= 5)) || (sort === "best" ? b.rate - a.rate : a.rate - b.rate) || b.n - a.n);
   return (
     <div className="grid grid-main">
-      <div className="panel">
+      <div className="panel" data-tour="results-angles">
         <div className="panel-head">
           <h3>Which angles have worked</h3>
           <div className="actions">
@@ -208,7 +208,7 @@ function AnglesTab({ track: data, weeks, setWeeks, open }: { track: AngleTrackRe
           <div className="hint" style={{ marginTop: 6 }}>An angle is right when the number it was about landed on the side it said: the team's rate against its own pre-game number, the player's game against his previous 16. This season only (last season until a game of this one is graded). Rebuilt from what was known before kickoff. Moves under 5% of the usual number (half a point for rates, 0.02 for EPA; a tenth of a defender for box counts, which sit near six and a half for everyone) are pushes and left out. Box angles only count games where that box actually showed up on at least one of the carries they were about (FTN charting); the rest are left out too. Colour needs five or more.</div>
         </details>
       </div>
-      <div className="panel">
+      <div className="panel" data-tour="results-called">
         <div className="panel-head"><h3>Called it</h3><span className="hint">clearest recent hits</span></div>
         <div className="hint" style={{ marginBottom: 8 }}>Examples of what a right call looks like, picked for how far the number moved. Not a measure of how often they are right: the table is that.</div>
         <div className="grid" style={{ gap: 8 }}>

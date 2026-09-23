@@ -168,7 +168,7 @@ export default function Fantasy() {
       {teamView ? <>
         <div className="panel" style={{ marginBottom: 12 }}><FilterFold id="fantasy-team" summary={`Week ${shown ?? ""} · ${SCORING_LABEL[scoring]}`}><div className="controls">{weekField}{scoringField}</div></FilterFold></div>
         {error && <Banner kind="err">{error}</Banner>}
-        <MyTeam data={data ?? null} scoring={scoring} loading={loading} roster={roster} setRoster={setRoster} slots={slots} setSlots={setSlots} />
+        <div data-tour="fantasy-myteam"><MyTeam data={data ?? null} scoring={scoring} loading={loading} roster={roster} setRoster={setRoster} slots={slots} setSlots={setSlots} /></div>
       </> : <>
       <div className="panel" style={{ marginBottom: 12 }}>
         <FilterFold id="fantasy" active={(pos !== "ALL" ? 1 : 0) + (team ? 1 : 0) + (q.trim() ? 1 : 0)}
@@ -201,7 +201,7 @@ export default function Fantasy() {
       )}
 
       {data && (
-        <div className="grid grid-3 deck" style={{ marginBottom: 14 }}>
+        <div className="grid grid-3 deck" style={{ marginBottom: 14 }} data-tour="fantasy-decks">
           <div className="panel">
             <div className="panel-head"><h3>Roles growing</h3><span className="hint">targets + carries, last 3 vs before</span></div>
             {risers.length === 0 ? <div className="hint">No big jumps in role this week.</div> : risers.map((p) => (

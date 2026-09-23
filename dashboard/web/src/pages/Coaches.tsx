@@ -93,7 +93,7 @@ export default function Coaches() {
       {err && <Banner kind="err">{err}</Banner>}
       {!roleReady && <Banner kind="warn">Coordinators are not in the cache yet. nflverse carries no OC or DC anywhere, so they are scraped separately: run <code>python -m data_handling.fetch_coordinators</code> and reload.</Banner>}
       <div className="grid grid-main grid-side-340">
-        <div className="panel" style={{ alignSelf: "start" }}>
+        <div className="panel" style={{ alignSelf: "start" }} data-tour="coach-list">
           <div className="controls" style={{ marginBottom: 8 }}>
             <input className="input" placeholder={`filter ${role === "HC" ? "coaches" : role + "s"}…`} value={q} onChange={(e) => setQ(e.target.value)} style={{ flex: 1 }} />
             <button className={`chip ${onlyActive ? "on" : ""}`} onClick={() => setOnlyActive(!onlyActive)}>2026 {role}s</button>
@@ -139,6 +139,7 @@ export default function Coaches() {
                     {(prof.season_roles.HC ?? 0) > 0 && <> His {prof.season_roles.HC} season{prof.season_roles.HC === 1 ? "" : "s"} as a head coach {prof.season_roles.HC === 1 ? "is" : "are"} counted here too: a head coach answers for this side of the ball as much as a coordinator does. The <b>Job</b> column says which is which.</>}
                   </div>
                 )}
+                <div data-tour="coach-fingerprint">
                 <h3 style={{ marginBottom: 6 }}>Tendency fingerprint</h3>
                 <div className="hint" style={{ marginBottom: 8 }}>Average league percentile of each tendency across his seasons (regular season). Far from the middle = a consistent identity. Colour is the percentile itself: {PCT_LEGEND}. Where a lower number is better, the percentile is taken the good way round, so green is always the good end. "Top ⅓" counts the seasons ranked in the top third of the league.</div>
                 <div className="tbl-wrap">
@@ -153,9 +154,10 @@ export default function Coaches() {
                   </table>
                 </div>
                 {fp.length === 0 && <div className="hint">Only one season on record, so there is no fingerprint to average yet.</div>}
+                </div>
               </div>
               {usage.length > 0 && (
-                <div className="panel">
+                <div className="panel" data-tour="coach-ball">
                   <div className="panel-head"><h3>Who got the ball · lead RB, WR and TE each season</h3><span className="hint">shares are of the team's regular-season targets / carries</span></div>
                   <div className="tbl-wrap"><table className="tbl compact tight">
                     <thead><tr><th className="left">Season</th><th className="left">Team</th><th className="left">RB1</th><th>Carry share</th><th>RB2 share</th><th>RB1 tgt/g</th><th>RB tgt share</th><th className="left">WR1</th><th>Tgt share</th><th className="left">TE1</th><th>Tgt share</th></tr></thead>
@@ -168,7 +170,7 @@ export default function Coaches() {
                   </table></div>
                 </div>
               )}
-              <div className="panel">
+              <div className="panel" data-tour="coach-dots">
                 <div className="panel-head"><h3>Seasons as dots</h3>
                   <div className="controls">
                     <Field label="X"><select className="input" value={ax} onChange={(e) => setSx(e.target.value)}>{axisMetrics.map((m) => <option key={m.key} value={m.key}>{m.side === "def" ? "DEF · " : ""}{m.label}</option>)}</select></Field>

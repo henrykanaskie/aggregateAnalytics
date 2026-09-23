@@ -59,7 +59,7 @@ export default function Matchups() {
   return (
     <div>
       <div className="page-head"><div><h1>Matchups</h1><div className="muted small">One game, both sides: each offense's scheme against the other defense's, the angles where two tendencies collide, who plays and who covers, every past meeting, and the props posted for it.</div></div></div>
-      <div className="panel" style={{ marginBottom: 12 }}>
+      <div className="panel" style={{ marginBottom: 12 }} data-tour="matchup-picker">
         <div className="controls">
           <ApplyField label="Week" value={week ?? meta?.week ?? 1} onApply={(v) => { setWeek(v); if (gameId) setSp({}); }} show={(v) => `week ${v}`}>{(d, set) => <select className="input" value={d} onChange={(e) => set(Number(e.target.value))}>{weeks.map((w) => <option key={w} value={w}>Week {w}</option>)}</select>}</ApplyField>
           <Field label="Game">
@@ -93,7 +93,7 @@ function GameView({ d }: { d: GameMatchup }) {
   const { data: track } = useQuery<AngleTrackRecord>(api5.angleTrack.url());
   const tIdx = useMemo(() => trackIndex(track), [track]);
   const propsPanel = (
-      <div className="panel">
+      <div className="panel" data-tour="matchup-props">
         <div className="panel-head"><h3>Props posted for this game</h3><span className="hint">{d.props.length} lines · click to research</span></div>
         {d.props.length === 0 && <div className="hint">None pulled yet. Settings → Pull from ESPN.</div>}
         {d.props.length > 0 && (
@@ -113,7 +113,7 @@ function GameView({ d }: { d: GameMatchup }) {
       </div>
   );
   const h2hPanel = (
-      <div className="panel">
+      <div className="panel" data-tour="matchup-h2h">
         <div className="panel-head"><h3>Head to head · {d.history.length} meetings since 1999</h3><span className="hint">spread and total from {d.history[0]?.a}'s side</span></div>
         {d.history.length === 0 && <div className="hint">No previous meetings in the cache.</div>}
         {d.history.length > 0 && (
@@ -172,7 +172,7 @@ function GameView({ d }: { d: GameMatchup }) {
 
       {pairs.length > 0 && <div className={`grid ${pairs.length === 2 ? "grid-2" : ""}`}>{pairs.map((x) => <Fragment key={x.id}>{x.node}</Fragment>)}</div>}
 
-      <div className="panel">
+      <div className="panel" data-tour="matchup-injuries">
         <div className="panel-head"><h3>Injury reports · week {g.week}</h3></div>
         <div className="grid grid-2">
           {[g.away_team, g.home_team].map((t) => { const rows = (d.injuries[t] ?? []).filter((r) => (r.report_status && r.report_status !== "Note") || r.practice_status); return (
@@ -238,10 +238,10 @@ function SideView({ s, metrics, labels, usageSeason, gameSeason, track, trackSea
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}><TeamTag abbr={s.offense} /> <b>offense</b> <span className="muted">vs</span> <TeamTag abbr={s.defense} /> <b>defense</b></div>
         <span className="hint">{s.offense_block.coach ? <Link to={`/coaches?coach=${encodeURIComponent(s.offense_block.coach)}`}>{s.offense_block.coach}</Link> : null} · {s.defense_block.coach ? <Link to={`/coaches?coach=${encodeURIComponent(s.defense_block.coach)}`}>{s.defense_block.coach}</Link> : null}</span>
       </div>
-      <AngleGrid title="Team angles" angles={s.angles} empty="No strong collisions between ranked tendencies on this side." track={track} season={trackSeason} offense={s.offense} defense={s.defense} />
-      <AngleGrid title="Player angles · each key player's own splits against what this defense does most" angles={s.player_angles} empty="No key player has a split that lines up with a strong tendency of this defense." track={track} season={trackSeason} offense={s.offense} defense={s.defense} />
+      <div data-tour="matchup-angles"><AngleGrid title="Team angles" angles={s.angles} empty="No strong collisions between ranked tendencies on this side." track={track} season={trackSeason} offense={s.offense} defense={s.defense} /></div>
+      <div data-tour="matchup-player-angles"><AngleGrid title="Player angles · each key player's own splits against what this defense does most" angles={s.player_angles} empty="No key player has a split that lines up with a strong tendency of this defense." track={track} season={trackSeason} offense={s.offense} defense={s.defense} /></div>
       <div className="grid grid-3">
-        <div>
+        <div data-tour="matchup-tendencies">
           <h3 style={{ marginBottom: 6 }}>{s.offense} offense · {blendLabel(s.offense_block.blend, os?.season as number)}</h3>
           {staffNote(s.offense_block.blend, "off") && <div className="hint">{staffNote(s.offense_block.blend, "off")}</div>}
           <div className="tbl-wrap"><table className="tbl compact"><thead><tr><th className="left">Tendency</th><th>Value</th><th>Rk</th><th title={`Projected against ${s.defense}`}>Here</th><th>L4</th></tr></thead><tbody>{OFF_KEYS.map((k) => <Row key={k} k={k} block={s.offense_block} />)}</tbody></table></div>
@@ -252,14 +252,16 @@ function SideView({ s, metrics, labels, usageSeason, gameSeason, track, trackSea
           {staffNote(s.defense_block.blend, "def") && <div className="hint">{staffNote(s.defense_block.blend, "def")}</div>}
           <div className="tbl-wrap"><table className="tbl compact"><thead><tr><th className="left">Tendency</th><th>Value</th><th>Rk</th><th title={`Projected against ${s.offense}`}>Here</th><th>L4</th></tr></thead><tbody>{DEF_KEYS.map((k) => <Row key={k} k={k} block={s.defense_block} />)}</tbody></table></div>
           </Folded>
+          <div data-tour="matchup-allows">
           <h3 style={{ margin: "10px 0 6px" }}>{s.defense} allows per game</h3>
           <div className="tbl-wrap"><table className="tbl compact"><thead><tr><th className="left">To</th>{["QB", "RB", "WR", "TE"].map((p) => <th key={p}>{p}</th>)}</tr></thead>
             <tbody>{["passing_yards", "rushing_yards", "receptions", "receiving_yards", "fantasy_points_ppr"].map((k) => (
               <tr key={k}><td className="left">{labels[k]}</td>{["QB", "RB", "WR", "TE"].map((p) => { const row = s.dvp[p]?.season_row; const v = row?.[k] as number | undefined; const r = row?.[`${k}_rank`] as number | undefined; const n = (row?.n_teams as number) ?? 32; const show = v !== undefined && v !== null && (s.dvp[p].stats.includes(k)); return <td key={p} className="num" style={{ background: show ? rankTint(r, n) : undefined }}>{show ? <>{v!.toFixed(1)} <span className="faint tiny">{shownRank(r, n, "low")}</span></> : <span className="faint">–</span>}</td>; })}</tr>
             ))}</tbody></table></div>
           <div className="hint">rank 1 = fewest allowed; green = generous to that position, red = stingy</div>
+          </div>
         </div>
-        <div>
+        <div data-tour="matchup-ball">
           <h3 style={{ marginBottom: 6 }}>Who gets the ball · {s.offense}{s.usage_label ? <span className="muted" style={{ textTransform: "none", letterSpacing: 0 }}> · {s.usage_label}</span> : null}</h3>
           <div className="tbl-wrap"><table className="tbl compact tight"><thead><tr><th className="left">Player</th><th>G</th><th>Tgt%</th><th>Car%</th><th>Tch/g</th><th>PPR/g</th></tr></thead>
             <tbody>{s.offense_personnel.map((p) => <tr key={p.player_id}><td className="left"><Link to={`/research?player=${p.player_id}`}>{p.player_display_name}</Link> <span className="muted">{p.position}{p.depth_rank ? p.depth_rank : ""}</span> <Listed status={p.status} injury={p.injury} />{p.new_to_team && p.stats_team ? <span className="pill warn" title={`New to ${s.offense}. The numbers here are his ${s.usage_season ?? usageSeason} season with ${p.stats_team}.`}>{p.stats_team}</span> : null}{!p.stats_team && p.games === 0 ? (s.usage_season === gameSeason

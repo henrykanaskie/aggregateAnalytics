@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMeta } from "../state";
-import { useLens } from "../lib/profile";
+import { TABS, useLens } from "../lib/profile";
 import { useMobile } from "../lib/useMobile";
 import { ICONS, IconArrow, IconClose } from "./Icons";
 import Spark from "./Spark";
@@ -26,7 +26,7 @@ const NOTES: [string, string][] = [
   ["Some lines are stand-ins.", "Until real lines are pulled from Settings, a few pages show sample numbers under an orange banner."],
 ];
 
-export default function Welcome({ onTour, onTailor, onSkip }: { onTour: () => void; onTailor: () => void; onSkip: () => void }) {
+export default function Welcome({ here = "/", onTour, onTailor, onSkip }: { here?: string; onTour: () => void; onTailor: () => void; onSkip: () => void }) {
   const { meta, settings } = useMeta();
   const lens = useLens();
   const mobile = useMobile();
@@ -43,7 +43,9 @@ export default function Welcome({ onTour, onTailor, onSkip }: { onTour: () => vo
     return () => window.removeEventListener("keydown", onKey);
   }, [onSkip]);
 
-  const LAYOUT = { fantasy: "your fantasy layout", betting: "your betting layout", learn: "your layout", default: "the site" }[lens.mode];
+  // Opened again from a page, the tour starts there, and the button says so.
+  const page = TABS.find((t) => t.path === here && t.path !== "/settings");
+  const tourSub = page ? `Starts on ${page.label}, then any page you like` : "Every page, a stop at a time. Skip or jump between pages any time";
 
   return (
     <div className="modal-veil" onClick={onSkip}>
@@ -83,7 +85,7 @@ export default function Welcome({ onTour, onTailor, onSkip }: { onTour: () => vo
         <div className="wl-actions">
           {tailored ? <>
             <button className="wl-cta" onClick={onTour} autoFocus>
-              <span><b>Show me around</b><span>A one-minute tour of {LAYOUT}</span></span><IconArrow size={18} />
+              <span><b>{page ? `Show me around ${page.label}` : "Show me around"}</b><span>{tourSub}</span></span><IconArrow size={18} />
             </button>
             <button className="btn" onClick={onTailor}>Change my answers</button>
           </> : <>
@@ -92,7 +94,7 @@ export default function Welcome({ onTour, onTailor, onSkip }: { onTour: () => vo
               <span><b>{hasAnswers ? "Switch tailoring back on" : "Tailor it to me"}</b><span>{hasAnswers ? "Your answers are kept; check them, then a tour" : "A few quick questions, then a tour of your layout"}</span></span>
               <IconArrow size={18} />
             </button>
-            <button className="btn" onClick={onTour}>Just show me around</button>
+            <button className="btn" onClick={onTour}>{page ? `Tour ${page.label}` : "Just show me around"}</button>
           </>}
           <button className="btn ghost" onClick={onSkip}>{mobile ? "Not now" : "Skip for now"}</button>
         </div>

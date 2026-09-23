@@ -24,7 +24,7 @@ function AlertsPanel({ alerts, onPick }: { alerts: import("../api").Alert[]; onP
   const shown = alerts.filter((a) => kind === "all" || a.kind === kind);
   const counts = { move: alerts.filter((a) => a.kind === "move").length, outlier: alerts.filter((a) => a.kind === "outlier").length, injury: alerts.filter((a) => a.kind === "injury").length };
   return (
-    <div className="panel" style={{ marginBottom: 12 }}>
+    <div className="panel" style={{ marginBottom: 12 }} data-tour="board-alerts">
       <div className="panel-head">
         <h3 className="clickable" onClick={() => setOpen(!open)}>{open ? "▾" : "▸"} Alerts · {alerts.length}</h3>
         <div className="chips swipe">

@@ -2,199 +2,23 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { buildCast, Cast, EMPTY_CAST } from "../lib/tourcast";
 import { useMeta } from "../state";
-import { Lens, Mode, SCORING_LABEL, TABS, useLens } from "../lib/profile";
-import { readSticky } from "../lib/sticky";
+import { useLens } from "../lib/profile";
+import { clearSticky, readSticky, writeSticky } from "../lib/sticky";
 import { useMobile } from "../lib/useMobile";
 import type { RosterEntry } from "./MyRoster";
-import { ICONS, IconClose } from "./Icons";
+import { ICONS, IconClose, IconChevron } from "./Icons";
 import Spark from "./Spark";
+import { chaptersFor, Ctx } from "./tourSteps";
 
-// The tour walks the site the visitor actually has. A tailored fantasy player
-// is shown their lineup and their own player, a bettor the board and the
-// books, someone following along the games and the teams; untailored, a
-// sampler of each. Every step says where to be, what to point at, and what to
-// say, and `where` builds a real url from the cast, so a step opens a real
-// player or game rather than describing an empty page. A step whose target
-// never renders falls back to the tab it lives under, and then to a centred
-// card.
+// The machinery that walks the tour in tourSteps.tsx. It drives the app to
+// each step's page the way a user would, finds what the step points at, lights
+// it, and places the card beside it (on a phone, docked along the bottom). A
+// step whose target never turns up is skipped if it was optional, and
+// otherwise falls back to the tab its page lives under. The tour is long, so it
+// is walked by page: a contents menu jumps to any page, "Skip page" moves on,
+// and opened from a page it starts on that page.
 
-interface Ctx { c: Cast; lens: Lens; mobile: boolean }
-
-interface Step {
-  /** Short label for the part of the site the step is in. */
-  chapter: string;
-  /** The tab whose icon sits beside the chapter, when there is one. */
-  icon?: string;
-  where?: (x: Ctx) => string | null;
-  /** What to light up. A function when the phone and desktop differ. */
-  sel?: string | ((x: Ctx) => string);
-  title: string | ((x: Ctx) => string);
-  body: (x: Ctx) => React.ReactNode;
-  /** Steps that are pointless until the cast is known wait for it. */
-  needsCast?: boolean;
-  /** Said instead of nothing when the page turns out to have no data to show. */
-  ifEmpty?: string;
-}
-
-const HIM = (c: Cast) => c.playerName ?? "this player";
 const text = (v: string | ((x: Ctx) => string), x: Ctx) => (typeof v === "string" ? v : v(x));
-const research = ({ c, lens }: Ctx) =>
-  !c.playerId ? "/research"
-    // A fantasy page charts fantasy points; everyone else gets the line.
-    : lens.mode === "fantasy" ? `/research?player=${c.playerId}&stat=${lens.fantasyKey}`
-    : `/research?player=${c.playerId}${c.market ? `&market=${c.market}` : ""}`;
-
-const LIB: Record<string, Step> = {
-  home: {
-    chapter: "Home", where: () => "/", sel: '[data-tour="home-hero"]',
-    title: ({ lens }) => (lens.profile ? "Home, arranged for you" : "Start here"),
-    body: ({ lens }) => ({
-      fantasy: "The front door opens on your fantasy week: your lineup, the best plays at your positions, and whose role is growing. The logo in the top corner always brings you back.",
-      betting: "The front door opens on the lines: what moved, where one book disagrees with the rest, and this week's spreads and totals. The logo in the top corner always brings you back.",
-      learn: "The front door opens on this week's games and a search for anything. The logo in the top corner always brings you back.",
-      default: "The front door: a search for anything with a page, a row of places to start, and this week's games underneath. The logo in the top corner always brings you back.",
-    }[lens.mode]),
-  },
-  search: {
-    chapter: "Home", where: () => "/", sel: '[data-tour="home-search"]',
-    title: "One box for anyone",
-    body: ({ mobile }) => <>Every player since 1999, all 32 teams and every head coach. Pick one and their page opens. {mobile ? "The magnifier at the top of the screen does the same from any page." : "The box in the top bar finds players from any page."}</>,
-  },
-  brief: {
-    chapter: "Home", where: () => "/", sel: '[data-tour="home-brief"]',
-    title: ({ lens }) => (lens.profile ? "Your week, in a few lines" : "Make it yours"),
-    body: ({ lens }) => lens.profile
-      ? <>Read off this week's numbers {lens.mode === "fantasy" ? "and your roster" : lens.mode === "betting" ? "and the board" : "and the schedule"}, not written by hand{lens.profile.team ? ", with your team's game at the bottom" : ""}. The links underneath change your answers or switch to the standard layout.</>
-      : <>Say whether you are here for fantasy, betting or just following along, and every page rearranges: what comes first, which tabs are up front, even the words. It takes under a minute and you can switch it off again.</>,
-  },
-  nav: {
-    chapter: "Getting around", sel: '[data-tour="nav"]',
-    title: ({ mobile }) => (mobile ? "Your sections, under your thumb" : "The tabs"),
-    body: ({ mobile, lens }) => mobile
-      ? <>The {lens.profile ? "four sections you reach for most" : "main sections"} sit along the bottom. More holds the rest, Settings included. Each one remembers the player, game or team you left it on, and tapping the one you are already in scrolls back to the top.</>
-      : <>{lens.profile ? "In the order you reach for them. Anything outside your interests waits under More rather than disappearing." : "Every section of the site."} Each tab remembers the player, game or team you left it on, so wandering off and coming back loses nothing.</>,
-  },
-  "fantasy-table": {
-    chapter: "Fantasy", icon: "/fantasy", where: () => "/fantasy", sel: '[data-tour="fantasy-table"]',
-    title: ({ lens }) => (lens.ceiling ? "Every starter, ranked by ceiling" : "Every starter, ranked"),
-    body: ({ lens, mobile }) => <>
-      Projected {SCORING_LABEL[lens.profile?.scoring ?? "ppr"]} points for everyone playing this week, with a floor for a bad week and a ceiling for a good one. Beside each: how generous the defense is to the position, the points their team is expected to score, and whether their role is growing.
-      {" "}{mobile ? "Tap" : "Click"} a row for their game-by-game points, or the + to line up to four players side by side for start or sit.
-    </>,
-  },
-  "fantasy-team": {
-    chapter: "Fantasy", icon: "/fantasy", where: () => "/fantasy", sel: '[data-tour="fantasy-views"]',
-    title: "Your own team",
-    body: () => <>Add your roster once under My team and the site sets the best lineup for the week by projection, benches anyone hurt or on bye, and points out the close calls. Home picks it up too.</>,
-  },
-  "board-table": {
-    chapter: "Lines board", icon: "/board", where: () => "/board", sel: '[data-tour="board-table"]',
-    ifEmpty: "No lines have been pulled for this week yet, so the board is empty. Settings has a free source that takes about ten seconds.",
-    title: "Every prop, every book",
-    body: ({ mobile }) => <>Each row is one prop and each column one sportsbook. A green or red cell is a book offering a noticeably different number from the rest, so you are not hunting for it. The filters above narrow it by player, team, market or book. {mobile ? "Tap" : "Click"} a row to open the player.</>,
-  },
-  "research-player": {
-    chapter: "Player pages", icon: "/research", needsCast: true, where: research, sel: '[data-tour="research-player"]',
-    ifEmpty: "Nobody could be opened automatically, so this is the empty page. Search a name and it fills in.",
-    title: "Opening a player",
-    body: ({ c }) => <>
-      Here is {HIM(c)}{c.fromRoster ? ", off your roster," : ""} opened the same way a search or a click on any row would open him.
-      {c.fromRoster ? "" : c.fromLines ? " He has a line posted this week, which the rest of the page is measured against." : " No lines have been pulled yet, so this is one of last season's leading scorers instead."}
-    </>,
-  },
-  "research-chart": {
-    chapter: "Player pages", icon: "/research", needsCast: true, where: research, sel: '[data-tour="research-chart"]',
-    title: "Every game, against a number",
-    body: ({ c, lens }) => <>
-      Each dot is a game {HIM(c)} has played, and the flat line across it is {lens.mode === "fantasy" ? "a benchmark you can move" : lens.betting ? "this week's line" : "a benchmark you can move"}. Green cleared it, red did not.
-      {" "}Further down: where he ranks at his position, what changes when a teammate sits, {lens.betting ? "where the books disagree, " : ""}and who is hurt.
-    </>,
-  },
-  "matchup-top": {
-    chapter: "Matchups", icon: "/matchups", needsCast: true,
-    where: ({ c }) => (c.gameId ? `/matchups?game=${c.gameId}` : "/matchups"), sel: '[data-tour="matchup-top"]',
-    ifEmpty: "No game could be opened for this week. Pick one from the row of games once a week's schedule is up.",
-    title: ({ c }) => (c.favTeam ? "Your team's game" : "Opening a game"),
-    body: ({ lens }) => <>Pick a game from the slate and it opens like this: the spread, the total and {lens.betting ? "the model's own call" : "the points each side is expected to score"} at the top, then each offense against the defense it is about to face, who gets the ball, and who is banged up.</>,
-  },
-  "matchup-sides": {
-    chapter: "Matchups", icon: "/matchups", needsCast: true,
-    where: ({ c }) => (c.gameId ? `/matchups?game=${c.gameId}` : "/matchups"), sel: '[data-tour="matchup-sides"]',
-    title: "Where two habits collide",
-    body: () => <>Each offense's tendencies set against what the other defense allows, so a team that loves to throw deep meets a secondary that gives it up, or does not.</>,
-  },
-  "games-grid": {
-    chapter: "Game lines", icon: "/games", where: () => "/games", sel: '[data-tour="games-grid"]',
-    ifEmpty: "Nothing pulled for this week yet, so there is nothing to show. Settings fills it in.",
-    title: "Spreads, totals and moneylines",
-    body: () => <>The main game bets across sportsbooks, with the opening number next to the current one so you can see which way a line has moved.</>,
-  },
-  "team-seasons": {
-    chapter: "Teams", icon: "/teams", needsCast: true,
-    where: ({ c }) => (c.team ? `/teams?team=${c.team}` : "/teams"), sel: '[data-tour="team-seasons"]',
-    ifEmpty: "The team tendency table has not been built on this machine yet, so this page has nothing to draw.",
-    title: ({ c }) => (c.favTeam ? "How your team plays" : "How a team actually plays"),
-    body: ({ c }) => <>{c.team ?? "A team"} season by season: pass or run, fast or slow, what they do near the end zone and how the defense holds up, each with its league rank beside it. Leave the team blank for all 32 on one measure.</>,
-  },
-  "coach-profile": {
-    chapter: "Coaches", icon: "/coaches", needsCast: true,
-    where: ({ c }) => (c.coach ? `/coaches?coach=${encodeURIComponent(c.coach)}&role=HC` : "/coaches"), sel: '[data-tour="coach-profile"]',
-    ifEmpty: "No coach could be opened automatically. Pick any name from the list.",
-    title: "The people calling it",
-    body: ({ c }) => <>The same habits followed by coach instead of team. {c.coach ?? "A coach"} here, every season on record and who got the ball each year. Handy when a team hires someone and you want to know what is about to change.</>,
-  },
-  predictions: {
-    chapter: "Predictions", icon: "/predictions", where: () => "/predictions", sel: '[data-tour="predictions-games"]',
-    title: "What the model called",
-    body: () => <>Its pick for each game beside the number the books were offering. Every call is written down before kickoff, so nothing here can be quietly improved after the fact.</>,
-  },
-  results: {
-    chapter: "Results", icon: "/results", where: () => "/results", sel: '[data-tour="results-strip"]',
-    ifEmpty: "Nothing is graded yet this season: a line can only be checked once its game has been played. The page fills in as the weeks go by.",
-    title: "Whether any of it worked",
-    body: ({ mobile }) => <>Old lines and old predictions checked against what actually happened. Each tile opens a section: the matchup angles, the hit-rate trends, the sportsbooks, the model. {mobile ? "Tap" : "Click"} any row to see the games behind the number, misses included, which is rather the point.</>,
-  },
-  settings: {
-    chapter: "Settings", icon: "/settings", where: () => "/settings", sel: '[data-tour="settings-pull"]',
-    title: "Where fresh lines come from",
-    body: () => <>Lines come in here. ESPN is free and needs nothing set up. Your default sportsbook and how far back the history reaches live here too.</>,
-  },
-  tailor: {
-    chapter: "Getting around", sel: ({ mobile }) => (mobile ? '[data-tour="menu"]' : '[data-tour="tailor"]'),
-    title: ({ lens }) => (lens.profile ? "Tailored, or the standard site" : "Tailor it any time"),
-    body: ({ mobile, lens }) => lens.profile
-      ? <>{mobile ? "This menu" : "The Tailor button"} changes your answers, or switches to the standard layout everyone else sees and back again. Your answers are kept either way.{mobile ? " Light and dark live here too." : ""}</>
-      : <>{mobile ? "This menu" : "This button"} starts the questions whenever you like.{mobile ? " Light and dark live here too." : ""}</>,
-  },
-  end: {
-    chapter: "Done", sel: ({ mobile }) => (mobile ? '[data-tour="menu"]' : '[data-tour="help"]'),
-    title: "That's the tour",
-    body: ({ c, mobile, lens }) => <>
-      {mobile
-        // On a phone the tailoring switch lives in this same menu, so it is
-        // said here rather than lighting the same button twice.
-        ? <>This menu brings the tour back under <b>Welcome and tour</b>{lens.profile ? <>, and it is where you change your answers or switch between your tailored layout and the standard one</> : null}.</>
-        : <>The <b>?</b> up here brings this back whenever you want it.</>}
-      {" "}Everything the tour opened is still loaded, so {c.playerName ? `${c.playerName}'s page` : "the player page"} and the rest are a {mobile ? "tap" : "click"} away.
-    </>,
-  },
-};
-
-/** Which steps each kind of visitor gets, in order. Untailored is a sampler of
- *  all three so nobody is shown only half the site before they have said what
- *  they are here for. */
-function recipe(lens: Lens, mobile: boolean): string[] {
-  const p = lens.profile;
-  const open: Record<Mode, string[]> = {
-    fantasy: ["fantasy-table", ...(p?.fantasyFormat === "season" ? ["fantasy-team"] : []), "research-player", "research-chart", "matchup-top"],
-    betting: p?.betStyle === "games"
-      ? ["games-grid", "matchup-top", "matchup-sides", "board-table", "research-chart", "predictions", "results"]
-      : ["board-table", "research-player", "research-chart", ...(p?.betStyle === "both" ? ["games-grid"] : []), "matchup-top", "predictions", "results"],
-    learn: ["research-player", "research-chart", "matchup-top", "matchup-sides", "team-seasons", "coach-profile"],
-    default: ["research-player", "research-chart", "fantasy-table", "board-table", "matchup-top", "team-seasons", "results"],
-  };
-  return ["home", "search", "brief", "nav", ...open[lens.mode], ...(p && !mobile ? ["tailor"] : []), "end"];
-}
 
 interface Box { top: number; left: number; width: number; height: number }
 
@@ -228,11 +52,23 @@ function needsNav(want: string, pathname: string, search: string): boolean {
   return false;
 }
 
-export default function Tour({ onDone }: { onDone: () => void }) {
+export default function Tour({ onDone, startPath }: { onDone: () => void; startPath?: string }) {
   const { meta, settings } = useMeta();
   const lens = useLens();
   const mobile = useMobile();
-  const [i, setI] = useState(0);
+  // Fixed for the length of the tour, so the count does not shift under the
+  // reader if a setting changes halfway through.
+  const [CHAPTERS] = useState(() => chaptersFor(lens, mobile));
+  const [STEPS] = useState(() => CHAPTERS.flatMap((ch, k) => ch.steps.map((step) => ({ ...step, ch: k }))));
+  const [i, setI] = useState(() => {
+    // Opened from a page, the tour starts on that page's chapter.
+    const k = startPath && startPath !== "/" ? CHAPTERS.findIndex((ch) => ch.path === startPath) : -1;
+    return k < 0 ? 0 : STEPS.findIndex((s) => s.ch === k);
+  });
+  // Which way the reader is going, so an optional step that is not there is
+  // skipped in the same direction.
+  const dir = useRef<1 | -1>(1);
+  const [menu, setMenu] = useState(false);
   const [cast, setCast] = useState<Cast | null>(null);
   // The old target holds its place until the new one has been found, so the
   // ring glides across a page instead of blinking out in between.
@@ -242,23 +78,36 @@ export default function Tour({ onDone }: { onDone: () => void }) {
   const cardRef = useRef<HTMLDivElement>(null);
   const nextRef = useRef<HTMLButtonElement>(null);
   const scrolled = useRef(-1);
+  const prepped = useRef(-1);
+  // When this step started and whether its own target has been seen yet, so a
+  // ring left over from the last step is let go of rather than lit under the
+  // new step's words.
+  const started = useRef({ i: -1, t: 0, path: "" });
+  const foundFor = useRef(-1);
   const nav = useNavigate();
   const loc = useLocation();
-  // Steps on a page the profile moved behind "More" are dropped: a fantasy
-  // player does not need the lines board explained. Fixed for the length of
-  // the tour, so the count does not shift under the reader.
-  const [STEPS] = useState(() => recipe(lens, mobile).map((k) => LIB[k]).filter((s) => {
-    const path = s.icon;
-    const tab = TABS.find((t) => t.path === path);
-    return !tab || lens.shows(`tab:${tab.path}`, tab.tags);
-  }));
+  if (started.current.i !== i) started.current = { i, t: Date.now(), path: loc.pathname };
   const step = STEPS[i];
+  const chapter = CHAPTERS[step.ch];
   const last = i === STEPS.length - 1;
   const ctx: Ctx = { c: cast ?? EMPTY_CAST, lens, mobile };
   const sel = step.sel ? (typeof step.sel === "string" ? step.sel : step.sel(ctx)) : null;
 
-  const next = () => (last ? onDone() : setI((n) => Math.min(STEPS.length - 1, n + 1)));
-  const back = () => setI((n) => Math.max(0, n - 1));
+  const go = (n: number, d: 1 | -1) => { dir.current = d; setMenu(false); if (n >= STEPS.length) onDone(); else setI(Math.max(0, n)); };
+  const next = () => go(i + 1, 1);
+  const back = () => go(i - 1, -1);
+  const firstOf = (k: number) => STEPS.findIndex((s) => s.ch === k);
+  const nextPage = step.ch + 1 < CHAPTERS.length - 1 ? firstOf(step.ch + 1) : -1;
+
+  // Some steps switch a page's own tab or view to show it. Those choices are
+  // remembered by the page, so they are put back as they were when the tour
+  // ends: the visitor's Fantasy tab should not open on My team because the
+  // tour went there.
+  useEffect(() => {
+    const keys = ["fantasy.view", "results.tab"];
+    const before = keys.map((k) => [k, readSticky<unknown>(k, undefined)] as const);
+    return () => before.forEach(([k, v]) => (v === undefined ? clearSticky(k) : writeSticky(k, v)));
+  }, []);
 
   // One pass at the start finds a player, game, team and coach worth opening,
   // the visitor's own where they have told us. It runs while the home steps are
@@ -289,8 +138,19 @@ export default function Tour({ onDone }: { onDone: () => void }) {
     // over whatever has taken the old element's place.
     if (want && loc.pathname !== want.split("?")[0]) setLit(false);
     const tick = () => {
+      // A step that needs the page in a particular state (a tab, a view) sets
+      // it first, once its page is up, and measures on the next beat.
+      if (step.prep && prepped.current !== i) {
+        if (want && loc.pathname !== want.split("?")[0]) return;
+        if (step.prep()) prepped.current = i;
+        return;
+      }
       const el = document.querySelector(sel);
-      if (!el) return;
+      if (!el) {
+        if (foundFor.current !== i && Date.now() - started.current.t > 300) setLit(false);
+        return;
+      }
+      foundFor.current = i;
       const r = el.getBoundingClientRect();
       if (!r.width && !r.height) return;
       if (scrolled.current !== i) {
@@ -319,14 +179,24 @@ export default function Tour({ onDone }: { onDone: () => void }) {
   // instead, and failing that the card is simply centred.
   const [gaveUp, setGaveUp] = useState(false);
   const [onTab, setOnTab] = useState(false);
+  // The clock starts once the step's page is on screen: a slow page load is
+  // not a missing panel.
+  const arrived = !held && (!want || loc.pathname === want.split("?")[0]);
   useEffect(() => {
     setGaveUp(false);
     setOnTab(false);
-    const t = window.setTimeout(() => setGaveUp(true), 2500);
+    if (!arrived) return;
+    // An optional panel on a page that was already up gets a short look; one
+    // on a page still loading gets longer.
+    const settled = started.current.path === want?.split("?")[0];
+    const t = window.setTimeout(() => setGaveUp(true), step.optional ? (settled ? 1400 : 3000) : 2500);
     return () => window.clearTimeout(t);
-  }, [i]);
+  }, [i, arrived]);
   useEffect(() => {
     if (!gaveUp || lit) return;
+    // Not on this page for this visitor (under More, or only on a finished
+    // game): move on the way they were going.
+    if (step.optional) { go(i + dir.current, dir.current); return; }
     const path = want?.split("?")[0];
     const tab = path && document.querySelector(`[data-tour="nav:${path}"]`);
     if (!tab) { setOnTab(true); return; }
@@ -338,7 +208,7 @@ export default function Tour({ onDone }: { onDone: () => void }) {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onDone();
+      if (e.key === "Escape") (menu ? setMenu(false) : onDone());
       else if (e.key === "ArrowRight") next();
       else if (e.key === "ArrowLeft") back();
     };
@@ -410,7 +280,7 @@ export default function Tour({ onDone }: { onDone: () => void }) {
 
   const waiting = !!sel && !lit;
   const pad = 6;
-  const Icon = step.icon ? ICONS[step.icon] : null;
+  const Icon = chapter.path ? ICONS[chapter.path] : null;
   const empty = onTab && step.ifEmpty;
   return (
     <div className={`tour ${mobile ? "phone" : ""}`} role="dialog" aria-modal="true" aria-label="Guided tour">
@@ -421,23 +291,53 @@ export default function Tour({ onDone }: { onDone: () => void }) {
       />
       <div ref={cardRef} className={`tour-card ${dock ? `dock-${dock}` : ""}`} style={place} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
         <div className="tour-top">
-          <span className="tour-chapter">{Icon ? <Icon size={15} active /> : <Spark size={14} />}{step.chapter}</span>
+          <button className={`tour-chapter ${menu ? "open" : ""}`} aria-expanded={menu} aria-haspopup="menu" title="Jump to another page" onClick={() => setMenu(!menu)}>
+            {Icon ? <Icon size={15} active /> : <Spark size={14} />}{chapter.label}<IconChevron size={12} />
+          </button>
           <span className="tour-count">{i + 1} / {STEPS.length}</span>
           <button className="tour-x" aria-label="End the tour" onClick={onDone}><IconClose size={16} /></button>
         </div>
-        <div className="tour-progress" aria-hidden="true"><i style={{ transform: `scaleX(${(i + 1) / STEPS.length})` }} /></div>
-        <div key={i} className="tour-body" aria-live="polite">
-          <h2>{text(step.title, ctx)}</h2>
-          <p>{step.body(ctx)}</p>
+        {/* One segment per page, so it reads as where you are in the site as
+            well as how far through the tour. */}
+        <div className="tour-progress" aria-hidden="true">
+          {CHAPTERS.map((ch, k) => {
+            const from = firstOf(k), n = ch.steps.length;
+            const fill = k < step.ch ? 1 : k > step.ch ? 0 : (i - from + 1) / n;
+            return <span key={ch.key} style={{ flex: n }}><i style={{ transform: `scaleX(${fill})` }} /></span>;
+          })}
         </div>
-        {empty && <div className="tour-empty">{step.ifEmpty}</div>}
-        {waiting && !empty && <div className="tour-wait"><span className="spin" /> {held ? "finding a live example" : "opening it"}…</div>}
+        {menu ? (
+          <div className="tour-menu" role="menu">
+            {CHAPTERS.map((ch, k) => {
+              const CI = ch.path ? ICONS[ch.path] : null;
+              return (
+                <button key={ch.key} role="menuitem" className={k === step.ch ? "on" : k < step.ch ? "done" : ""} onClick={() => go(firstOf(k), 1)}>
+                  <span className="tour-menu-icon">{CI ? <CI size={16} active={k === step.ch} /> : <Spark size={14} />}</span>
+                  <span className="tour-menu-label">{ch.label}</span>
+                  <span className="tour-menu-n">{ch.steps.length}</span>
+                </button>
+              );
+            })}
+          </div>
+        ) : <>
+          {/* An optional step says nothing until its panel turns up: if it
+              never does, the tour moves on without having described it. */}
+          {!(step.optional && !lit) && (
+            <div key={i} className="tour-body" aria-live="polite">
+              <h2>{text(step.title, ctx)}</h2>
+              <div className="tour-text">{step.body(ctx)}</div>
+            </div>
+          )}
+          {empty && <div className="tour-empty">{step.ifEmpty}</div>}
+          {waiting && !empty && <div className="tour-wait"><span className="spin" /> {held ? "finding a live example" : step.optional ? "checking this page" : "opening it"}…</div>}
+        </>}
         <div className="tour-actions">
           {i === 0
             ? <button className="btn ghost" onClick={onDone}>Skip tour</button>
             : <button className="btn" onClick={back}>Back</button>}
           <div className="spacer" />
           {!mobile && <span className="tour-keys" aria-hidden="true"><kbd>←</kbd><kbd>→</kbd></span>}
+          {nextPage > i + 1 && <button className="linkish tour-skip" onClick={() => go(nextPage, 1)}>Skip page</button>}
           <button ref={nextRef} className="btn primary" onClick={next}>{last ? "Finish" : i === 0 ? "Show me" : "Next"}</button>
         </div>
       </div>

@@ -94,7 +94,7 @@ export default function Settings() {
           </div>
           <FeedHealth feeds={status?.feeds ?? {}} />
           <TailorPanel />
-          <div className="panel">
+          <div className="panel" data-tour="settings-defaults">
             <div className="panel-head"><h3>Defaults</h3></div>
             <div className="controls">
               <Field label="Load seasons since"><input className="input num" type="number" min={1999} max={meta?.season ?? 2026} value={settings.since} onChange={(e) => setSettings({ since: Number(e.target.value) })} /></Field>
@@ -122,7 +122,7 @@ function TailorPanel() {
   const p = settings.profile;
   const label = (id: string) => id.replace(/^tab:\//, "").replace(/^[a-z]+:/, "").replace(/-/g, " ");
   return (
-    <div className="panel" id="tailor">
+    <div className="panel" id="tailor" data-tour="settings-layout">
       <div className="panel-head"><h3>Your layout</h3>
         <div className="actions">
           <button className="btn sm primary" onClick={() => setEditing(true)}>{p ? "Change answers" : "Tailor it to me"}</button>

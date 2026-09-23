@@ -260,6 +260,9 @@ function Shell() {
   // Tailoring started from the welcome card carries straight on into a tour of
   // the layout it just made; started from anywhere else, it simply closes.
   const [thenTour, setThenTour] = useState(false);
+  // Opened again from the ?, the tour starts on the page it was opened from;
+  // the first time, and straight after tailoring, it starts at the top.
+  const [tourFrom, setTourFrom] = useState("/");
   // Week pickers are sticky and now outlive the browser session, so a week
   // chosen by hand has to be let go of once the league moves past it. Done
   // during render rather than in an effect: the tabs and the page below read
@@ -335,9 +338,9 @@ function Shell() {
         <MenuSheet open={sheet === "menu"} onClose={() => setSheet(null)}
           onTailor={() => { setSheet(null); setStage("tailor"); }} onWelcome={() => { setSheet(null); setStage("welcome"); }} />
       </>}
-      {stage === "welcome" && <Welcome onTour={() => { writeSticky("onboard.seen.v1", true); setStage("tour"); }} onTailor={() => { writeSticky("onboard.seen.v1", true); setThenTour(true); setStage("tailor"); }} onSkip={close} />}
-      {stage === "tailor" && <Tailor onDone={() => (thenTour ? (setThenTour(false), setStage("tour")) : close())} onCancel={close} />}
-      {stage === "tour" && <Tour onDone={close} />}
+      {stage === "welcome" && <Welcome here={readSticky("onboard.seen.v1", false) ? loc.pathname : "/"} onTour={() => { setTourFrom(readSticky("onboard.seen.v1", false) ? loc.pathname : "/"); writeSticky("onboard.seen.v1", true); setStage("tour"); }} onTailor={() => { writeSticky("onboard.seen.v1", true); setThenTour(true); setStage("tailor"); }} onSkip={close} />}
+      {stage === "tailor" && <Tailor onDone={() => (thenTour ? (setThenTour(false), setTourFrom("/"), setStage("tour")) : close())} onCancel={close} />}
+      {stage === "tour" && <Tour onDone={close} startPath={tourFrom} />}
     </div>
   );
 }

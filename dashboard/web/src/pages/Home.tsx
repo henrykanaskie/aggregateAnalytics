@@ -79,7 +79,7 @@ export default function Home() {
            : <Setup onTailor={() => setTailoring(true)} />}
       </section>
 
-      <nav className="home-tiles" data-n={tiles.length} style={{ ["--n" as string]: tiles.length }} aria-label="Places to start">
+      <nav data-tour="home-tiles" className="home-tiles" data-n={tiles.length} style={{ ["--n" as string]: tiles.length }} aria-label="Places to start">
         {tiles.map((t) => {
           const Icon = ICONS[t.to];
           return (
@@ -91,7 +91,7 @@ export default function Home() {
         })}
       </nav>
 
-      <section className="home-cols">
+      <section className="home-cols" data-tour="home-cols">
         <div className="home-col home-main">{main.filter(fits).map((m) => <div key={m}>{render(m)}</div>)}</div>
         <div className="home-col home-side">{side.filter(fits).map((m) => <div key={m}>{render(m)}</div>)}</div>
       </section>

@@ -199,7 +199,7 @@ export default function Research() {
   const slots: Slot[] = !player || !pid ? [] : [
     ...(lens.profile && !isDefPos(player.position) && (log?.available[fantasyStatFor(player.position, lens.fantasyKey)] ?? 0) > 0 ? [{
       id: "research:fantasy", label: "Fantasy snapshot", col: "main" as const, tags: { for: ["fantasy" as const] },
-      node: <div className="panel"><div className="panel-head"><h3>Fantasy snapshot</h3></div><FantasySnapshot rows={rawRows} statKey={fantasyStatFor(player.position, lens.fantasyKey)} scoring={lens.profile.scoring} position={player.position} name={player.name} /></div>,
+      node: <div className="panel" data-tour="research-fantasy"><div className="panel-head"><h3>Fantasy snapshot</h3></div><FantasySnapshot rows={rawRows} statKey={fantasyStatFor(player.position, lens.fantasyKey)} scoring={lens.profile.scoring} position={player.position} name={player.name} /></div>,
     }] : []),
     { id: "research:chart", label: "Game-by-game chart", col: "main", tags: {}, node: (
       <div className="panel" data-tour="research-chart">
@@ -213,18 +213,18 @@ export default function Research() {
         <PropChart rows={filtered} statKey={statKey} stat={stat} line={line} rollingWindow={rollWin} onPick={(id) => setPicked((p) => (p === id ? null : id))} picked={picked} />
       </div>
     ) },
-    { id: "research:tiles", label: "Hit rates and averages", col: "main", tags: {}, node: <div className="panel"><StatTiles rows={filtered} allRows={allRows} statKey={statKey} stat={stat} line={line} /></div> },
-    { id: "research:gamelog", label: "Game log", col: "main", tags: {}, node: <div className="panel"><GameLogTable rows={filtered} columns={columns} setColumns={setColumns} statKey={statKey} line={line} available={log?.available} position={player.position} picked={picked} onPick={(id) => setPicked((p) => (p === id ? null : id))} important={important} /></div> },
+    { id: "research:tiles", label: "Hit rates and averages", col: "main", tags: {}, node: <div className="panel" data-tour="research-tiles"><StatTiles rows={filtered} allRows={allRows} statKey={statKey} stat={stat} line={line} /></div> },
+    { id: "research:gamelog", label: "Game log", col: "main", tags: {}, node: <div className="panel" data-tour="research-gamelog"><GameLogTable rows={filtered} columns={columns} setColumns={setColumns} statKey={statKey} line={line} available={log?.available} position={player.position} picked={picked} onPick={(id) => setPicked((p) => (p === id ? null : id))} important={important} /></div> },
     { id: "research:peers", label: `Among ${player.position}s`, col: "main", tags: {}, node: (
-      <div className="panel">
-        <div className="panel-head" data-tour="research-peers"><h3>Among {player.position}s · {stat?.label ?? statKey} vs the volume behind it</h3><span className="hint">the highlighted face is {player.name}; dashed lines average the position's most-used players, not its whole roster</span></div>
+      <div className="panel" data-tour="research-peers">
+        <div className="panel-head"><h3>Among {player.position}s · {stat?.label ?? statKey} vs the volume behind it</h3><span className="hint">the highlighted face is {player.name}; dashed lines average the position's most-used players, not its whole roster</span></div>
         <Defer minHeight={300} when={core}><PlayerScatter playerId={pid} position={player.position} statKey={statKey} season={meta?.stats_season ?? 2026} name={player.name} /></Defer>
       </div>
     ) },
     ...(player.team ? [{ id: "research:shares", label: `${player.team} target and carry shares`, col: "main" as const, tags: {}, node: <div className="panel" data-tour="research-shares"><Defer minHeight={260} when={core}><TeamSharePies team={player.team} current={meta?.season ?? 2026} highlight={pid} stickyKey="research.shareSeason" /></Defer></div> }] : []),
     { id: "research:mini", label: "Mini charts", col: "main", tags: { deep: true }, node: <div className="panel"><MiniCharts rows={filtered} keys={miniKeys} setKeys={setMiniKeys} available={log?.available} position={player.position} onFocus={chooseStat} /></div> },
     { id: "research:teammates", label: "With / without teammates", col: "main", tags: { deep: true }, node: (
-      <div className="panel">
+      <div className="panel" data-tour="research-teammates">
         <div className="panel-head"><h3>With / without teammates · {stat?.label ?? statKey}{line !== null ? ` vs ${line}` : ""}</h3></div>
         <Defer minHeight={200} when={core}><TeammatesPanel playerId={pid} rows={rawRows} statKey={statKey} stat={stat} line={line} active={gameFilter?.key ?? null} onFilter={(ids, label, key) => setGameFilter(ids && label ? { ids: new Set(ids), label, key: key ?? label } : null)} /></Defer>
       </div>
@@ -237,7 +237,7 @@ export default function Research() {
       </div>
     ) },
     { id: "research:books", label: "Books and line history", col: "side", tags: { for: ["betting"] }, node: (
-      <div className="panel">
+      <div className="panel" data-tour="research-books">
         <div className="panel-head"><h3>Books · {marketRow?.market_label ?? "no market"}</h3></div>
         {marketRow ? <BookLines row={marketRow} selected={lineSource} onSelect={(b: BookLine) => setLineSource(b.book)} /> : <div className="hint">No sportsbook has posted this stat for this game. The line above is yours to set.</div>}
         {marketRow && <div style={{ marginTop: 10 }}><LineHistory history={lines?.history ?? []} market={marketRow.market} /></div>}
@@ -256,13 +256,13 @@ export default function Research() {
       </div>
     ) },
     { id: "research:matchup", label: "Matchup", col: "side", tags: {}, node: (
-      <div className="panel">
+      <div className="panel" data-tour="research-matchup">
         <div className="panel-head"><h3>Matchup · team tendencies</h3></div>
         <Defer minHeight={240} when={core}><MatchupPanel team={player.team} opponent={opp} position={player.position} focus={settings.focus} /></Defer>
       </div>
     ) },
     { id: "research:injuries", label: "Injuries", col: "side", tags: {}, node: (
-      <div className="panel">
+      <div className="panel" data-tour="research-injuries">
         <div className="panel-head"><h3>Injuries</h3></div>
         <Defer minHeight={160} when={core}><InjuryPanel playerId={pid} team={player.team} opponent={opp} /></Defer>
       </div>
@@ -366,7 +366,7 @@ function PredictionSlot({ playerId, market, line, proj, statFmt }: { playerId: s
   }, [meta, playerId]);
   const mine = rows.filter((p) => !market || p.market === market);
   return (
-    <div className="panel">
+    <div className="panel" data-tour="research-prediction">
       <div className="panel-head"><h3>Prediction</h3>{mine.length ? <span className="pill over">{mine.length} logged</span> : <span className="pill">nothing logged</span>}</div>
       {proj && (
         <div className="small" style={{ marginBottom: 8 }}>

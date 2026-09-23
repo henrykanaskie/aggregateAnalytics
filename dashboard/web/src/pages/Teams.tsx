@@ -59,7 +59,7 @@ export default function Teams() {
     <div>
       <div className="page-head"><div><h1>Team tendencies</h1><div className="muted small">Pass rate, pace, red zone, personnel, RB usage and defense, per season with league ranks and per game. Built from play-by-play, so every number is a countable thing.{team ? "" : " Pick a team for its history and game-by-game charts, or stay here to rank all 32 on one metric."}</div></div></div>
       {err && <Banner kind="err">{err}</Banner>}
-      <div className="panel" style={{ marginBottom: 12 }}>
+      <div className="panel" style={{ marginBottom: 12 }} data-tour="team-controls">
         <div className="controls">
           <Field label="Team"><select className="input" value={team} onChange={(e) => setSp({ team: e.target.value })}><option value="">League table only</option>{teams.map((t) => <option key={t.team_abbr} value={t.team_abbr}>{t.team_name}</option>)}</select></Field>
           <Field label="Side"><Seg value={side} options={[{ v: "off", l: "Offense" }, { v: "def", l: "Defense" }]} onChange={(v) => { setSide(v); const first = (meta?.team_metrics ?? []).find((m) => m.side === v); if (first) setMetric(first.key); }} /></Field>
@@ -73,7 +73,7 @@ export default function Teams() {
       {team && !data && <div className="empty"><Spinner /></div>}
       {team && data && (
         <div className="grid" style={{ marginBottom: 14 }}>
-          <div className="panel">
+          <div className="panel" data-tour="team-trend">
             <div className="panel-head">
               <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}><TeamTag abbr={team} name />
                 <span className="muted small">head coach {data.current_coach ? <Link to={`/coaches?role=HC&coach=${encodeURIComponent(data.current_coach)}`}>{data.current_coach}</Link> : "–"}</span>
@@ -157,7 +157,7 @@ export default function Teams() {
           <TeamScatter league={league} highlight={team ? [team] : []} onPick={(t) => setSp({ team: t })} />
         </div>
       )}
-      <div className="panel">
+      <div className="panel" data-tour="team-league">
         <div className="panel-head">
           <h3>League table · {league?.season}{league?.blended ? ` blended with ${league.season - 1}` : ""}</h3>
           <span className="hint">sorted by {mdef?.label ?? active}, high to low{mdef?.good === "low" ? " (low is better here)" : ""} · click any column to sort by it</span>
