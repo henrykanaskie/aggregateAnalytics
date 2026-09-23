@@ -348,12 +348,12 @@ ABSENT = "absent"
 #: The graded outcomes that count toward a record.
 DECIDED = ("hit", "miss")
 #: A player call where he got hurt in the game: under half his usual snap
-#: share, and on the next week's injury report with an injury. It counts
-#: neither way, as a book voids a prop on a player who leaves hurt. Worked out
-#: when the grades are read, because next week's report comes days after the
-#: game is graded; low snaps alone could be a benching or a blowout.
-INJURED = "injured"
-INJURED_SNAP_SHARE = 0.5
+#: share, and on the next week's injury report with an injury. The call still
+#: counts, hit or miss; it carries a note (``hurt``) so the record can be read
+#: knowing it. Worked out when the grades are read, because next week's
+#: report comes days after the game is graded; low snaps alone could be a
+#: benching or a blowout.
+HURT_SNAP_SHARE = 0.5
 
 
 def _with_margin(df: pl.DataFrame) -> pl.DataFrame:
@@ -371,11 +371,10 @@ def _with_margin(df: pl.DataFrame) -> pl.DataFrame:
     for c in ("line_actual", "snap_pct", "usual_snap_pct"):
         if c not in df.columns:
             df = df.with_columns(pl.lit(None, pl.Float64).alias(c))
-    hurt = _left_hurt(df)
-    return df.with_columns(pl.when(v.is_not_null() & hurt).then(pl.lit(INJURED))
-                           .when(v.is_not_null() & (pl.col("premise_snaps") == 0)).then(pl.lit(ABSENT))
+    return df.with_columns(pl.when(v.is_not_null() & (pl.col("premise_snaps") == 0)).then(pl.lit(ABSENT))
                            .otherwise(v).alias("verdict"),
-                           pl.when(hurt).then(None).otherwise(line_verdict_expr()).alias("line_verdict"))
+                           line_verdict_expr().alias("line_verdict"),
+                           _left_hurt(df).alias("hurt"))
 
 
 def _hurt_next_week(seasons: tuple[int, ...]) -> pl.DataFrame:
@@ -394,9 +393,9 @@ def _hurt_next_week(seasons: tuple[int, ...]) -> pl.DataFrame:
 
 
 def _left_hurt(df: pl.DataFrame) -> pl.Expr:
-    """Per row: a player call on someone who got hurt in the game (INJURED)."""
+    """Per row: a player call on someone who got hurt in the game (``hurt``)."""
     low = ((pl.col("kind") == "player") & pl.col("snap_pct").is_not_null() & pl.col("usual_snap_pct").is_not_null()
-           & (pl.col("snap_pct") < INJURED_SNAP_SHARE * pl.col("usual_snap_pct")))
+           & (pl.col("snap_pct") < HURT_SNAP_SHARE * pl.col("usual_snap_pct")))
     cand = df.filter(low)
     if cand.is_empty():
         return pl.lit(False)
@@ -690,7 +689,6 @@ _COUNTS = {"plays_pg": ("ran", "plays"), "fga_pg": ("tried", "field goals")}
 _SPLIT_ANGLE = ("vs the blitz", "man coverage", "zone coverage", "two-high", "under pressure", "stacked boxes", "light boxes")
 
 _VERDICT_WORDS = {"hit": "So the call was right.", "miss": "So the call was wrong.",
-                  INJURED: "He got hurt in the game (under half his usual snaps, then on the injury report), so it counts neither way.",
                   ABSENT: "The box it was about never showed up in this game, so it counts neither way."}
 
 
@@ -887,6 +885,10 @@ def explain(rows: list[dict]) -> list[dict]:
                 if r["kind"] == "player" and any(k in r["title"] for k in _SPLIT_ANGLE)
                 else "Graded on sack rate: pressure is only published after the season, and sacks are the part of it the play-by-play records."
                 if r["measure"] in STAND_IN_LABEL.values() else None)
+        if r.get("hurt"):
+            hurt = (f"He got hurt in the game: {r['snap_pct']:.0%} of the snaps against his usual {r['usual_snap_pct']:.0%}, "
+                    "then on the next week's injury report. The call still counts; read it knowing that.")
+            note = f"{hurt} {note}" if note else hurt
         r |= {"said": _said(r), "happened": _happened(r), "evidence": ev, "note": note, "line_words": _line_words(r),
               "verdict_words": _VERDICT_WORDS.get(r["verdict"] or "", "")}
     return rows
@@ -955,14 +957,15 @@ def track_record(weeks: int = 22, min_n: int = 1) -> dict:
     season = record_season()
     wk = recent_weeks(weeks, season) if season is not None else []
     out: dict = {"season": season, "current": season == CURRENT_SEASON, "weeks": wk, "n": 0, "hits": 0,
-                 "absent": 0, "injured": 0, "line_n": 0, "line_hits": 0, "families": [], "by_kind": [], "best": []}
+                 "absent": 0, "hurt": 0, "line_n": 0, "line_hits": 0, "families": [], "by_kind": [], "best": []}
     if not wk:
         return out
     g = _window(wk)
     dec = g.filter(pl.col("verdict").is_in(DECIDED))
     out["n"], out["hits"] = dec.height, int((dec["verdict"] == "hit").sum())
     out["absent"] = int((g["verdict"] == ABSENT).sum())
-    out["injured"] = int((g["verdict"] == INJURED).sum())
+    # Counted calls on a player who got hurt: in the record, and said so.
+    out["hurt"] = int((g["verdict"].is_in(DECIDED) & g["hurt"].fill_null(False)).sum()) if "hurt" in g.columns else 0
     # Against the closing line, where there was one: its own count, since
     # only some calls had a line and a push on the line is not a push on
     # the average.
@@ -1312,7 +1315,7 @@ def family_record(family: str, kind: str, lean: str, weeks: int = 22) -> dict:
     season = record_season()
     wk = recent_weeks(weeks, season) if season is not None else []
     out: dict = {"family": family, "kind": kind, "lean": lean, "season": season, "weeks": wk, "why": why(family, lean),
-                 "n": 0, "hits": 0, "absent": 0, "injured": 0, "graded_on": None, "prop": None, "premise": None, "rows": []}
+                 "n": 0, "hits": 0, "absent": 0, "hurt": 0, "graded_on": None, "prop": None, "premise": None, "rows": []}
     if not wk:
         return out
     g = _window(wk).filter((pl.col("family") == family) & (pl.col("kind") == kind) & (pl.col("lean") == lean))
@@ -1320,7 +1323,8 @@ def family_record(family: str, kind: str, lean: str, weeks: int = 22) -> dict:
         return out
     dec = g.filter(pl.col("verdict").is_in(DECIDED))
     out["n"], out["hits"] = dec.height, int((dec["verdict"] == "hit").sum())
-    out["absent"], out["injured"] = int((g["verdict"] == ABSENT).sum()), int((g["verdict"] == INJURED).sum())
+    out["absent"] = int((g["verdict"] == ABSENT).sum())
+    out["hurt"] = int((g["verdict"].is_in(DECIDED) & g["hurt"].fill_null(False)).sum()) if "hurt" in g.columns else 0
     first = g.row(0, named=True)
     out["graded_on"] = {"measure": first["measure"], "baseline_label": first["baseline_label"], "direction": first["direction"]}
     # Where a closing line was graded that week (a player's own, or the sum

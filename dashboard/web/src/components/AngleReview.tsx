@@ -36,9 +36,9 @@ export function TrackChip({ rec, season }: { rec?: { n: number; hits: number }; 
   return <span className={`pill ${cls}`} style={{ whiteSpace: "nowrap", flexShrink: 0, textTransform: "none", letterSpacing: 0 }} title={`This kind of angle was right ${rec.hits} of ${rec.n} times in ${season}: the number it was about moved the way it said`}>{rec.hits}-{rec.n - rec.hits} in {season}</span>;
 }
 
-const ORDER = { hit: 0, miss: 1, absent: 2, injured: 3 } as const;
+const ORDER = { hit: 0, miss: 1, absent: 2 } as const;
 export const Mark = ({ v }: { v: GradedAngle["verdict"] }) =>
-  <span className={`pill ${v === "hit" ? "over" : v === "miss" ? "under" : ""}`} style={{ minWidth: 58, textAlign: "center" }}>{v === "hit" ? "✓ called it" : v === "miss" ? "✗ missed" : v === "injured" ? "+ got hurt" : "– didn't happen"}</span>;
+  <span className={`pill ${v === "hit" ? "over" : v === "miss" ? "under" : ""}`} style={{ minWidth: 58, textAlign: "center" }}>{v === "hit" ? "✓ called it" : v === "miss" ? "✗ missed" : "– didn't happen"}</span>;
 
 const MARKET_STAT: Record<string, string> = { player_pass_yds: "passing yards", player_rush_yds: "rushing yards", player_reception_yds: "receiving yards" };
 
@@ -55,7 +55,7 @@ export function Outcome({ a }: { a: GradedAngle }) {
         : a.line !== null && a.line_result && (
           <div className="muted">Prop line was {fmtLine(a.line)} {a.market ? MARKET_STAT[a.market] ?? "" : ""}: {a.line_result}.</div>
         )}
-      {(a.verdict === "absent" || a.verdict === "injured") && <div className="faint">{a.verdict_words}</div>}
+      {a.verdict === "absent" && <div className="faint">{a.verdict_words}</div>}
       {a.note && <div className="faint">{a.note}</div>}
     </div>
   );
@@ -72,7 +72,7 @@ export function AngleReview({ rows, home, away, score }: { rows: GradedAngle[]; 
     <div className="panel" data-tour="matchup-review">
       <div className="panel-head">
         <h3>How the calls did · final {score}</h3>
-        <span className="hint"><b className={hits / Math.max(1, dec.length) >= 0.5 ? "over" : "under"}>{hits} of {dec.length}</b> right ({fmtPct(hits / Math.max(1, dec.length))}){absent ? ` · ${absent} not counted (the box never showed up, or he got hurt)` : ""}</span>
+        <span className="hint"><b className={hits / Math.max(1, dec.length) >= 0.5 ? "over" : "under"}>{hits} of {dec.length}</b> right ({fmtPct(hits / Math.max(1, dec.length))}){absent ? ` · ${absent} where the box never showed up, not counted` : ""}</span>
       </div>
       <div className="hint" style={{ marginBottom: 8 }}>Each call is what the matchup page said before kickoff, using only what was known then. It is right when the number it was about moved the way it said, against that team's or player's usual. A move smaller than 5% of the usual is too close to call and counts neither way.</div>
       <div className="grid grid-2">

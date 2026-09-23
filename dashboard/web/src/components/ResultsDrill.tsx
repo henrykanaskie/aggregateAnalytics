@@ -25,18 +25,18 @@ export function DrillDrawer({ drill, onClose }: { drill: Drill | null; onClose: 
   );
 }
 
-const Record = ({ hits, n, absent = 0, injured = 0, unit = "calls" }: { hits: number; n: number; absent?: number; injured?: number; unit?: string }) => {
+const Record = ({ hits, n, absent = 0, hurt = 0, unit = "calls" }: { hits: number; n: number; absent?: number; hurt?: number; unit?: string }) => {
   const r = n ? hits / n : null;
   const tone = r === null || n < 5 ? "" : r >= 0.55 ? "over" : r <= 0.45 ? "under" : "";
   return (
     <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
       <span className={`mono ${tone}`} style={{ fontSize: 26, fontWeight: 650 }}>{fmtPct(r)}</span>
-      <span className="small"><b>{hits}</b> of <b>{n}</b> {unit} right{absent ? <span className="muted"> · {absent} where it never happened</span> : null}{injured ? <span className="muted"> · {injured} where he got hurt</span> : null}{absent || injured ? <span className="muted">, not counted</span> : null}</span>
+      <span className="small"><b>{hits}</b> of <b>{n}</b> {unit} right{absent ? <span className="muted"> · {absent} where it never happened, not counted</span> : null}{hurt ? <span className="muted"> · {hurt} on a player who got hurt, counted</span> : null}</span>
     </div>
   );
 };
 
-type Verdict = "all" | "hit" | "miss" | "absent" | "injured";
+type Verdict = "all" | "hit" | "miss" | "absent";
 
 /** A graded number in its own format: 6.2%, +0.14, 4.1. */
 const num = (v: number | null, fmt: string, signed = false) => {
@@ -67,7 +67,7 @@ function FamilyBody({ d }: { d: Extract<Drill, { type: "angle" }> }) {
   return (
     <>
       <div className="drawer-sec">
-        <Record hits={data.hits} n={data.n} absent={data.absent} injured={data.injured} />
+        <Record hits={data.hits} n={data.n} absent={data.absent} hurt={data.hurt} />
         <div className="hint" style={{ marginTop: 4 }}>{span}. Right means {g ? <><b>{g.measure}</b> came in <b>{g.direction === "up" ? "higher" : "lower"}</b> than {g.baseline_label}</> : "the number moved the way the angle said"}.</div>
       </div>
 
@@ -97,8 +97,7 @@ function FamilyBody({ d }: { d: Extract<Drill, { type: "angle" }> }) {
           <h4 style={{ margin: 0 }}>Every {d.kind === "player" ? "player" : "team"} it was called on</h4>
           <Seg<Verdict> value={verdict} onChange={setVerdict} options={[
             { v: "all", l: `All ${data.rows.length}` }, { v: "hit", l: `Right ${count("hit")}` }, { v: "miss", l: `Wrong ${count("miss")}` },
-            ...(count("absent") ? [{ v: "absent" as Verdict, l: `Didn't happen ${count("absent")}` }] : []),
-            ...(count("injured") ? [{ v: "injured" as Verdict, l: `Got hurt ${count("injured")}` }] : [])]} />
+            ...(count("absent") ? [{ v: "absent" as Verdict, l: `Didn't happen ${count("absent")}` }] : [])]} />
         </div>
         <div className="tbl-wrap"><table className="tbl compact tight pin-first">
           <thead><tr>
@@ -115,7 +114,7 @@ function FamilyBody({ d }: { d: Extract<Drill, { type: "angle" }> }) {
             return (
               <Fragment key={i}>
                 <tr className="row-link" tabIndex={0} onClick={() => setOpenRow(open ? null : i)} onKeyDown={(e) => { if (e.key === "Enter") setOpenRow(open ? null : i); }}>
-                  <td className="left">{a.player_id ? <Link to={`/research?player=${a.player_id}`} onClick={(e) => e.stopPropagation()}>{a.player}</Link> : <b>{a.offense}</b>}{a.player && <span className="faint tiny"> {a.offense}</span>}</td>
+                  <td className="left">{a.player_id ? <Link to={`/research?player=${a.player_id}`} onClick={(e) => e.stopPropagation()}>{a.player}</Link> : <b>{a.offense}</b>}{a.player && <span className="faint tiny"> {a.offense}</span>}{a.hurt && <span className="pill warn" style={{ marginLeft: 6 }} title={`${Math.round((a.snap_pct ?? 0) * 100)}% of snaps against his usual ${Math.round((a.usual_snap_pct ?? 0) * 100)}%, then on the next injury report. The call still counts.`}>got hurt</span>}</td>
                   <td className="left muted">W{a.week} · <Link to={`/matchups?game=${a.game_id}`} onClick={(e) => e.stopPropagation()}>{a.defense}</Link></td>
                   {hasPremise && <td className={`num ${ig && ig.snaps === 0 ? "faint" : ""}`}>{ig ? `${ig.snaps}/${ig.of}` : "–"}</td>}
                   {hasPremise && <td className="num">{ig ? <>{perSnap(ig.on_sum, ig.on_n)} <span className="faint">/</span> {perSnap(ig.off_sum, ig.off_n)}</> : "–"}</td>}
