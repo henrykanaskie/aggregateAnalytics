@@ -22,4 +22,12 @@ fi
 
 mkdir -p data/odds
 echo "+ $PULL_CMD"
+# The lines exit code is kept for the end, so a failed pull still reports
+# while the projections below get their chance.
+set +e
 $PULL_CMD
+rc=$?
+# ESPN's weekly fantasy projections, the centre of every fantasy number. A
+# feed hiccup keeps last pull's file rather than failing the run.
+python -m dashboard.odds.espn_proj || echo "! ESPN projections pull failed; keeping the last file"
+exit $rc

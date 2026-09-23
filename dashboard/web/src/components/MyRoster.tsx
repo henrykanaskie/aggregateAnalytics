@@ -11,12 +11,16 @@ import type { Scoring } from "../lib/profile";
 // lineup the projections allow; no swap can raise the total.
 
 export interface RosterEntry { player_id: string; name: string; position: string; team: string | null }
-export interface Slots { QB: number; RB: number; WR: number; TE: number; FLEX: number; SFLEX: number }
-export const DEFAULT_SLOTS: Slots = { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, SFLEX: 0 };
+export interface Slots { QB: number; RB: number; WR: number; TE: number; FLEX: number; SFLEX: number; K: number; DST: number }
+export const DEFAULT_SLOTS: Slots = { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, SFLEX: 0, K: 1, DST: 1 };
+/** Slots saved before a slot existed (kickers and defenses came later) get its default. */
+export const withDefaults = (s: Partial<Slots> | null | undefined): Slots => ({ ...DEFAULT_SLOTS, ...(s ?? {}) });
 
 const OUT = ["Out", "Doubtful", "IR"];
 const FLEX_POS = ["RB", "WR", "TE"];
-const SLOT_LABEL: Record<keyof Slots, string> = { QB: "QB", RB: "RB", WR: "WR", TE: "TE", FLEX: "FLEX", SFLEX: "SUPERFLEX" };
+const SLOT_LABEL: Record<keyof Slots, string> = { QB: "QB", RB: "RB", WR: "WR", TE: "TE", FLEX: "FLEX", SFLEX: "SUPERFLEX", K: "K", DST: "D/ST" };
+/** The order slots are shown and edited in. */
+export const SLOT_ORDER: (keyof Slots)[] = ["QB", "RB", "WR", "TE", "FLEX", "SFLEX", "K", "DST"];
 
 export type Row = { entry: RosterEntry; p: FantasyPlayer | null; proj: number | null; why: string | null };
 export type LineupSlot = { slot: keyof Slots; row: Row | null };
@@ -34,7 +38,8 @@ export function rosterRows(roster: RosterEntry[], data: FantasyWeek, scoring: Sc
 }
 
 /** The best lineup the projections allow (see the note at the top). */
-export function bestLineup(rows: Row[], slots: Slots): { lineup: LineupSlot[]; bench: Row[] } {
+export function bestLineup(rows: Row[], saved: Slots): { lineup: LineupSlot[]; bench: Row[] } {
+  const slots = withDefaults(saved);
   const pool = rows.filter((r) => !r.why).sort((a, b) => (b.proj ?? 0) - (a.proj ?? 0));
   const used = new Set<string>();
   const lineup: LineupSlot[] = [];
@@ -46,6 +51,8 @@ export function bestLineup(rows: Row[], slots: Slots): { lineup: LineupSlot[]; b
   for (const s of ["QB", "RB", "WR", "TE"] as const) for (let i = 0; i < slots[s]; i++) take(s, (pos) => pos === s);
   for (let i = 0; i < slots.FLEX; i++) take("FLEX", (pos) => FLEX_POS.includes(pos));
   for (let i = 0; i < slots.SFLEX; i++) take("SFLEX", (pos) => pos === "QB" || FLEX_POS.includes(pos));
+  // Kicker and defense are their own slots and never flex.
+  for (const s of ["K", "DST"] as const) for (let i = 0; i < slots[s]; i++) take(s, (pos) => pos === s);
   const bench = rows.filter((r) => !used.has(r.entry.player_id)).sort((a, b) => (b.proj ?? -1) - (a.proj ?? -1));
   return { lineup, bench };
 }

@@ -29,7 +29,7 @@ const STARTS: (Opt<Start> & { needs?: Purpose })[] = [
 ];
 const POSITIONS: Opt<FocusPos>[] = [
   { v: "QB", label: "Quarterbacks", sub: "" }, { v: "RB", label: "Running backs", sub: "" },
-  { v: "WR", label: "Receivers", sub: "" }, { v: "TE", label: "Tight ends", sub: "" }, { v: "K", label: "Kickers", sub: "" },
+  { v: "WR", label: "Receivers", sub: "" }, { v: "TE", label: "Tight ends", sub: "" }, { v: "K", label: "Kickers", sub: "" }, { v: "DST", label: "Team defenses", sub: "" },
 ];
 const DEFENSE: Opt<Profile["defense"]>[] = [
   { v: "yes", label: "Yes, all of it", sub: "Team defense plus individual defenders: tackles, sacks, who covers whom." },

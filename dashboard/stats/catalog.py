@@ -46,6 +46,16 @@ def _sum(*cols: str) -> pl.Expr:
     return out
 
 
+def kicker_points_expr() -> pl.Expr:
+    """Standard kicker fantasy scoring: 3 for a field goal inside 40 yards, 4
+    from 40 to 49, 5 from 50 on, 1 per PAT, and minus 1 for each missed kick.
+    nflverse leaves kickers' fantasy_points at zero, so this is the only
+    number that scores them. Works on a player's row or a team's summed one."""
+    c = lambda k: pl.col(k).fill_null(0)
+    return (3 * (c("fg_made_0_19") + c("fg_made_20_29") + c("fg_made_30_39")) + 4 * c("fg_made_40_49")
+            + 5 * (c("fg_made_50_59") + c("fg_made_60_")) + c("pat_made") - c("fg_missed") - c("pat_missed"))
+
+
 PASS = ("QB",)
 RUSH = ("RB", "QB", "WR", "FB")
 REC = ("WR", "TE", "RB", "FB")
@@ -206,6 +216,8 @@ STATS: list[Stat] = [
     # only difference between them is one point per reception.
     Stat("fantasy_points_half", "Fantasy pts (half PPR)", "Fantasy", "dec1",
          expr=(pl.col("fantasy_points") + pl.col("fantasy_points_ppr")) / 2),
+    Stat("fantasy_points_k", "Fantasy pts (kicker)", "Fantasy", "dec1", expr=kicker_points_expr(), positions=K,
+         note="3 per field goal inside 40 yards, 4 from 40-49, 5 from 50+, 1 per PAT, minus 1 per miss"),
 ]
 
 BY_KEY: dict[str, Stat] = {s.key: s for s in STATS}
@@ -225,6 +237,8 @@ RAW_STAT_COLUMNS: list[str] = [
     "def_tackles_solo", "def_tackle_assists", "def_tackles_for_loss", "def_sacks",
     "def_qb_hits", "def_interceptions", "def_pass_defended", "def_fumbles_forced",
     "fg_made", "fg_att", "fg_long", "pat_made", "pat_att",
+    "fg_made_0_19", "fg_made_20_29", "fg_made_30_39", "fg_made_40_49", "fg_made_50_59", "fg_made_60_",
+    "fg_missed", "pat_missed",
     "fantasy_points", "fantasy_points_ppr",
 ]
 

@@ -23,6 +23,7 @@ echo "=== $(date -u +%FT%TZ) daily start"
 
 $PY -m dashboard.odds.pull --source auto || echo "! no lines feed answered; continuing"
 $PY -m dashboard.odds.injuries || echo "[injuries] refresh failed; keeping the last file"
+$PY -m dashboard.odds.espn_proj || echo "[espn_proj] pull failed; keeping the last file"
 if grep -q '^ODDS_API_KEY=.\+' .env 2>/dev/null; then
   $PY -m dashboard.odds.pull --source oddsapi --max-credits 60 \
     --markets player_pass_yds player_rush_yds player_reception_yds player_receptions player_anytime_td

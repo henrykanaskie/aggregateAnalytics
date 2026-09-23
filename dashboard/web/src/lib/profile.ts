@@ -6,7 +6,7 @@ import { useMeta } from "../state";
  *  `Lens` built from it, so either side can change without the other. */
 
 export type Purpose = "betting" | "fantasy" | "learn";
-export type FocusPos = "QB" | "RB" | "WR" | "TE" | "K";
+export type FocusPos = "QB" | "RB" | "WR" | "TE" | "K" | "DST";
 export type Scoring = "ppr" | "half" | "std";
 /** What someone usually comes to do first; it decides the home page's lead
  *  and which page each mode puts first. */
@@ -43,6 +43,12 @@ export const SCORING_LABEL: Record<Scoring, string> = { ppr: "PPR", half: "half 
 
 export const DEF_POSITIONS = ["LB", "DE", "DT", "CB", "S", "SS", "FS", "OLB", "ILB", "MLB", "NT", "DB", "EDGE", "SAF"];
 export const isDefPos = (p: string | null | undefined) => DEF_POSITIONS.includes(p ?? "");
+
+/** Where a fantasy row links: a D/ST is a team, not a player. */
+export const fantasyHref = (p: { player_id: string; position: string; team: string | null }, stat?: string) =>
+  p.position === "DST" ? `/teams?team=${p.team}` : `/research?player=${p.player_id}${stat ? `&stat=${stat}` : ""}`;
+/** The fantasy stat a player's page should chart: kickers have their own scoring. */
+export const fantasyStatFor = (position: string, key: string) => (position === "K" ? "fantasy_points_k" : key);
 
 /** Where a panel belongs. An empty tag set is for everyone. */
 export interface Tags {

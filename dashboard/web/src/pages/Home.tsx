@@ -7,7 +7,7 @@ import { bestLineup, DEFAULT_SLOTS, RosterEntry, rosterRows, SLOT_LABEL, Slots }
 import OmniSearch from "../components/OmniSearch";
 import { ICONS } from "../components/Icons";
 import Tailor from "../components/Tailor";
-import { Mode, SCORING_LABEL, useLens } from "../lib/profile";
+import { fantasyHref, Mode, SCORING_LABEL, useLens } from "../lib/profile";
 import { readSticky } from "../lib/sticky";
 import { useQuery } from "../lib/useQuery";
 import { useMeta } from "../state";
@@ -148,7 +148,7 @@ function Briefing({ fw, games, board, onTailor }: { fw: FantasyWeek | null; game
       const total = starters.reduce((a, r) => a + (r.proj ?? 0), 0);
       const empty = lineup.length - starters.length;
       lines.push({ key: "total", node: <>Your lineup projects <b>{total.toFixed(1)}</b> {SCORING_LABEL[scoring]} points{empty ? <>, with <b>{empty}</b> slot{empty === 1 ? "" : "s"} still open</> : null}.</> });
-      const best = starters.filter((r) => r.p?.matchup_rank).sort((a, b) => a.p!.matchup_rank! - b.p!.matchup_rank!)[0];
+      const best = starters.filter((r) => r.p?.matchup_rank && ["QB", "RB", "WR", "TE"].includes(r.p.position)).sort((a, b) => a.p!.matchup_rank! - b.p!.matchup_rank!)[0];
       if (best?.p) lines.push({ key: "matchup", tone: "up", node: <><b>{best.entry.name}</b> has your best matchup: {nick(best.p.opponent)} give up the {ordinal(best.p.matchup_rank!)} most to {best.p.position}s.</> });
       const hurt = rows.filter((r) => r.p?.status).slice(0, 2);
       hurt.forEach((r) => lines.push({ key: `inj-${r.entry.player_id}`, tone: "warn", node: <><b>{r.entry.name}</b> is listed {r.p!.status}{OUT.includes(r.p!.status!) ? ", so he's out of your lineup" : ""}.</> }));
@@ -252,7 +252,7 @@ function MyTeam({ fw }: { fw: FantasyWeek | null }) {
           {res.lineup.filter((l) => l.row).map((l, i) => (
             <div key={i} className="home-lineup-row">
               <span className="slot">{SLOT_LABEL[l.slot]}</span>
-              <span className="who"><Link to={`/research?player=${l.row!.entry.player_id}`}>{l.row!.entry.name}</Link>
+              <span className="who"><Link to={fantasyHref(l.row!.entry)}>{l.row!.entry.name}</Link>
                 {l.row!.p?.status && <span className={`pill ${OUT.includes(l.row!.p.status) ? "under" : "warn"}`}>{l.row!.p.status}</span>}</span>
               <span className="opp">{l.row!.p ? `${l.row!.p.home ? "vs" : "@"} ${l.row!.p.opponent}` : ""}</span>
               <b className="num">{l.row!.proj?.toFixed(1)}</b>
@@ -292,7 +292,7 @@ function TopPlays({ fw }: { fw: FantasyWeek | null }) {
           {byPos.map(([pos, rows]) => (
             <div key={pos}>
               <div className="home-sub">{pos}</div>
-              {rows.map((p) => <div key={p.player_id} className="home-row"><Link to={`/research?player=${p.player_id}`}>{p.name}</Link><span className="muted small">{p.home ? "vs" : "@"} {p.opponent}</span><b className="num">{score(p).toFixed(1)}</b></div>)}
+              {rows.map((p) => <div key={p.player_id} className="home-row"><Link to={fantasyHref(p)}>{p.name}</Link><span className="muted small">{p.home ? "vs" : "@"} {p.opponent}</span><b className="num">{score(p).toFixed(1)}</b></div>)}
             </div>
           ))}
         </div>
@@ -307,7 +307,7 @@ function Movers({ fw }: { fw: FantasyWeek | null }) {
   return (
     <Card title="Roles growing" to="/fantasy" link="more">
       {up.length === 0 ? <div className="hint">No big jumps in role this week.</div> : up.map(({ p }) => (
-        <div key={p.player_id} className="home-row"><Link to={`/research?player=${p.player_id}`}>{p.name}</Link><span className="muted small">{p.position} {p.team}</span><span className="num over">{p.role!.before.toFixed(1)} → {p.role!.last3.toFixed(1)}</span></div>
+        <div key={p.player_id} className="home-row"><Link to={fantasyHref(p)}>{p.name}</Link><span className="muted small">{p.position} {p.team}</span><span className="num over">{p.role!.before.toFixed(1)} → {p.role!.last3.toFixed(1)}</span></div>
       ))}
       <div className="hint" style={{ marginTop: 6 }}>Targets plus carries a game, last three against before. Usage leads points.</div>
     </Card>

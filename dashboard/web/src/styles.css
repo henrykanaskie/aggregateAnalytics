@@ -52,13 +52,20 @@ a { color: var(--accent); text-decoration: none; }
    that mode's accent: teal for fantasy, violet for betting, blue for following
    along. --mode-1/--mode-2 feed the gradients (the hero glow, the lead card's
    edge, the Tailor button). The over/under greens and reds never change. */
-:root { --mode-1: var(--cat-1); --mode-2: var(--cat-2); --mode-glow: rgba(90,156,245,0.10); }
-:root[data-mode="fantasy"] { --accent: #3fb6c4; --accent-2: #23909d; --mode-1: #3fb6c4; --mode-2: #5a9cf5; --mode-glow: rgba(63,182,196,0.13); }
-:root[data-mode="betting"] { --accent: #a982f0; --accent-2: #8a5fe0; --mode-1: #a982f0; --mode-2: #e07ab8; --mode-glow: rgba(169,130,240,0.13); }
-:root[data-mode="learn"] { --accent: #5a9cf5; --accent-2: #3d7fe0; --mode-1: #5a9cf5; --mode-2: #a982f0; --mode-glow: rgba(90,156,245,0.12); }
-:root[data-theme="light"][data-mode="fantasy"] { --accent: #13818e; --accent-2: #0f6c77; --mode-1: #1e8f9c; --mode-2: #2b6fd4; --mode-glow: rgba(30,143,156,0.10); }
-:root[data-theme="light"][data-mode="betting"] { --accent: #6f42c1; --accent-2: #5b33a6; --mode-1: #6f42c1; --mode-2: #c2408f; --mode-glow: rgba(111,66,193,0.09); }
-:root[data-theme="light"][data-mode="learn"] { --accent: #2b6fd4; --accent-2: #2460ba; --mode-1: #2b6fd4; --mode-2: #6f42c1; --mode-glow: rgba(43,111,212,0.09); }
+:root { --mode-1: var(--cat-1); --mode-2: var(--cat-2); --mode-glow: rgba(90,156,245,0.06); --mode-line: var(--border); }
+:root[data-mode="fantasy"] { --accent: #5aa8b1; --accent-2: #458f98; --mode-1: #5aa8b1; --mode-2: #6f95c4; --mode-glow: rgba(90,168,177,0.07); }
+:root[data-mode="betting"] { --accent: #9c89d4; --accent-2: #8572bf; --mode-1: #9c89d4; --mode-2: #b88fb0; --mode-glow: rgba(156,137,212,0.07); }
+:root[data-mode="learn"] { --accent: #6a9be0; --accent-2: #5585cc; --mode-1: #6a9be0; --mode-2: #9589cf; --mode-glow: rgba(106,155,224,0.06); }
+:root[data-theme="light"][data-mode="fantasy"] { --accent: #2a7f89; --accent-2: #226a73; --mode-1: #2a7f89; --mode-2: #3d6aa8; --mode-glow: rgba(42,127,137,0.06); }
+:root[data-theme="light"][data-mode="betting"] { --accent: #6b52b0; --accent-2: #5a4499; --mode-1: #6b52b0; --mode-2: #9a5a86; --mode-glow: rgba(107,82,176,0.05); }
+:root[data-theme="light"][data-mode="learn"] { --accent: #2f6cc4; --accent-2: #285eab; --mode-1: #2f6cc4; --mode-2: #5f4fae; --mode-glow: rgba(47,108,196,0.05); }
+/* The one signature a tailored site wears everywhere: a faint tint of its
+   mode in the outlines. Every panel on every page, the top bar's lower edge,
+   and the active tab; nothing louder. */
+:root[data-mode] { --mode-line: color-mix(in srgb, var(--mode-1) 22%, var(--border)); }
+:root[data-mode] .panel { border-color: var(--mode-line); }
+:root[data-mode] .topbar { border-bottom-color: var(--mode-line); box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--mode-1) 14%, transparent); }
+:root[data-mode] .topbar .nav a.active { box-shadow: inset 0 -2px 0 var(--mode-1); }
 
 a:hover { text-decoration: underline; }
 button, input, select { font: inherit; color: inherit; }
@@ -802,11 +809,11 @@ a.home-row:hover { text-decoration: none; color: var(--accent); }
 }
 .mode-word { font-style: normal; background: linear-gradient(90deg, var(--mode-1), var(--mode-2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
 
-.home-brief { position: relative; display: flex; flex-direction: column; gap: 10px; padding: 16px 18px; border-radius: 14px; border: 1px solid transparent;
-  background: linear-gradient(var(--panel), var(--panel)) padding-box, linear-gradient(140deg, var(--mode-1), transparent 45%, transparent 60%, var(--mode-2)) border-box;
-  box-shadow: 0 18px 40px -18px var(--mode-glow), 0 10px 28px rgba(0,0,0,0.22); }
+.home-brief { position: relative; display: flex; flex-direction: column; gap: 10px; padding: 16px 18px; border-radius: 14px;
+  background: var(--panel); border: 1px solid color-mix(in srgb, var(--mode-1) 35%, var(--border));
+  box-shadow: 0 10px 26px -16px rgba(0,0,0,0.45); }
 .home-brief-head { display: flex; align-items: center; gap: 8px; font-size: 11.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
-.home-brief-head span { background: linear-gradient(90deg, var(--mode-1), var(--mode-2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.home-brief-head span { color: var(--mode-1); }
 .home-brief-lines { list-style: none; margin: 0; padding: 0; display: grid; gap: 9px; font-size: 13.5px; line-height: 1.45; }
 .home-brief-lines li { position: relative; padding-left: 16px; animation: tailor-in 0.45s ease-out both; }
 .home-brief-lines li::before { content: ""; position: absolute; left: 0; top: 0.55em; width: 6px; height: 6px; border-radius: 50%; background: var(--mode-1); }
@@ -816,14 +823,12 @@ a.home-row:hover { text-decoration: none; color: var(--accent); }
 .home-brief-foot { display: flex; justify-content: space-between; gap: 10px; padding-top: 10px; border-top: 1px solid var(--border); font-size: 12px; color: var(--faint); }
 
 /* Depth: tailored cards sit a little above the page. */
-:root[data-mode] .panel { border-radius: 14px; box-shadow: 0 1px 0 rgba(255,255,255,0.025) inset, 0 10px 26px -14px rgba(0,0,0,0.45); }
-:root[data-theme="light"][data-mode] .panel { box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 10px 26px -16px rgba(0,0,0,0.18); }
+:root[data-mode] .panel { border-radius: 12px; box-shadow: 0 6px 18px -14px rgba(0,0,0,0.5); }
+:root[data-theme="light"][data-mode] .panel { box-shadow: 0 1px 2px rgba(0,0,0,0.03), 0 6px 18px -14px rgba(0,0,0,0.16); }
 /* The lead module wears the mode's edge. */
-:root[data-mode] .home-main > div:first-child .home-card { border-color: transparent;
-  background: linear-gradient(var(--panel), var(--panel)) padding-box, linear-gradient(120deg, var(--mode-1), var(--border) 35%, var(--border) 70%, var(--mode-2)) border-box; }
+:root[data-mode] .home-main > div:first-child .home-card { border-color: color-mix(in srgb, var(--mode-1) 38%, var(--border)); }
 :root[data-mode] .home-card .panel-head h3 { color: var(--text); }
-:root[data-mode] .home-big .num { background: linear-gradient(90deg, var(--text), var(--mode-1)); -webkit-background-clip: text; background-clip: text; color: transparent; }
-:root[data-mode] .home-tile-icon { background: color-mix(in srgb, var(--mode-1) 16%, transparent); color: var(--mode-1); }
+:root[data-mode] .home-tile-icon { background: color-mix(in srgb, var(--mode-1) 12%, transparent); color: var(--mode-1); }
 :root[data-mode] .tailor-btn::before { background: conic-gradient(from var(--tailor-ang), var(--mode-1), var(--mode-2), var(--mode-1)); }
 
 /* The page settles in: cards rise in order, main column first. */

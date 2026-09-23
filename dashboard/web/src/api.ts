@@ -221,18 +221,25 @@ export interface GradedAngle { season: number; week: number; game_id: string; of
   said?: string; happened?: string; evidence?: string | null; note?: string | null; verdict_words?: string; }
 export interface AngleFamily { family: string; kind: "team" | "player"; n: number; hits: number; rate: number; lean: string; }
 export interface AngleTrackRecord { season: number | null; current: boolean; weeks: [number, number][]; n: number; hits: number; pushes: number; families: AngleFamily[]; by_kind: { kind: string; n: number; hits: number; rate: number }[]; best: GradedAngle[]; }
-export interface FantasyProj { value: number; low: number; high: number; base: number; last3: number }
+/** value: ESPN's projection when it has one ("espn"), the site's baseline otherwise.
+ *  low / high: a bad week and a good week (20th and 80th percentile) simulated
+ *  from the player's own games around that value. base: the site's baseline. */
+export interface FantasyProj { value: number; low: number; high: number; base: number | null; last3: number | null; source?: "espn" | "baseline" }
 export interface FantasyPlayer {
-  player_id: string; name: string; position: "QB" | "RB" | "WR" | "TE"; team: string; depth_rank: number | null; headshot: string | null;
+  player_id: string; name: string; position: "QB" | "RB" | "WR" | "TE" | "K" | "DST"; team: string; depth_rank: number | null; headshot: string | null;
   new_to_team: boolean; stats_team: string | null; target_share: number | null; carry_share: number | null;
   status: string | null; injury: string | null; opponent: string; home: boolean; game_id: string; gameday: string | null; implied: number | null;
   games: number; factor: number; matchup_rank: number | null; matchup_n: number | null;
+  /** Kickers and D/STs say what their matchup is in words; skill players use rank and position. */
+  matchup_text?: string | null;
+  /** D/ST only: the points its opponent is expected to score. */
+  opp_implied?: number | null;
   proj: Record<"ppr" | "half" | "std", FantasyProj | null>; role: { last3: number; before: number } | null;
 }
 export interface FantasyWeek {
   season: number; week: number; byes: string[]; injury_week: number | null; players: FantasyPlayer[];
   games: { game_id: string; home_team: string; away_team: string; gameday: string | null; gametime: string | null; total: number | null; home_implied: number | null; away_implied: number | null }[];
-  method: { n_games: number; min_games: number };
+  method: { n_games: number; min_games: number; espn?: number; floor_q?: number; ceiling_q?: number };
 }
 export const apiFantasy = {
   fantasyWeek: ep<FantasyWeek>()((season: number, week: number) => `/api/fantasy/week${qs({ season, week })}`),

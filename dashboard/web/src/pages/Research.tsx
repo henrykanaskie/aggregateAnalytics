@@ -30,7 +30,7 @@ import TeamSharePies from "../components/TeamSharePies";
 import { api5, DvpFactors } from "../api";
 import FantasySnapshot from "../components/FantasySnapshot";
 import More from "../components/More";
-import { arrange, isDefPos, Tags, useLens } from "../lib/profile";
+import { arrange, fantasyStatFor, isDefPos, Tags, useLens } from "../lib/profile";
 import { RESEARCH_GUIDE, researchLayout } from "../lib/layouts";
 import LayoutGrid from "../components/LayoutGrid";
 import Spark from "../components/Spark";
@@ -107,8 +107,9 @@ export default function Research() {
         // Without betting in the profile there is no line to open on: fantasy
         // points for a fantasy player who scores them, else the position's
         // usual stat.
-        const fp = lens.fantasy && !isDefPos(player.position) && (log.available[lens.fantasyKey] ?? 0) > 0;
-        next.set("stat", fp ? lens.fantasyKey : marketByKey.get(fallback)?.stat ?? preset[0] ?? "receiving_yards");
+        const fkey = fantasyStatFor(player.position, lens.fantasyKey);
+        const fp = lens.fantasy && !isDefPos(player.position) && (log.available[fkey] ?? 0) > 0;
+        next.set("stat", fp ? fkey : marketByKey.get(fallback)?.stat ?? preset[0] ?? "receiving_yards");
       }
       setSp(next, { replace: true });
     }
@@ -196,9 +197,9 @@ export default function Research() {
   type Slot = { id: string; label: string; col: "main" | "side"; tags: Tags; node: React.ReactNode };
   const opp = player && lines?.game ? (lines.game.home_team === player.team ? lines.game.away_team : lines.game.home_team) : null;
   const slots: Slot[] = !player || !pid ? [] : [
-    ...(lens.profile && !isDefPos(player.position) && (log?.available[lens.fantasyKey] ?? 0) > 0 ? [{
+    ...(lens.profile && !isDefPos(player.position) && (log?.available[fantasyStatFor(player.position, lens.fantasyKey)] ?? 0) > 0 ? [{
       id: "research:fantasy", label: "Fantasy snapshot", col: "main" as const, tags: { for: ["fantasy" as const] },
-      node: <div className="panel"><div className="panel-head"><h3>Fantasy snapshot</h3></div><FantasySnapshot rows={rawRows} statKey={lens.fantasyKey} scoring={lens.profile.scoring} position={player.position} name={player.name} /></div>,
+      node: <div className="panel"><div className="panel-head"><h3>Fantasy snapshot</h3></div><FantasySnapshot rows={rawRows} statKey={fantasyStatFor(player.position, lens.fantasyKey)} scoring={lens.profile.scoring} position={player.position} name={player.name} /></div>,
     }] : []),
     { id: "research:chart", label: "Game-by-game chart", col: "main", tags: {}, node: (
       <div className="panel" data-tour="research-chart">

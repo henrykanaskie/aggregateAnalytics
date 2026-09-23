@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { IconBolt, IconDown, IconPlus, IconShield, IconSwap, IconTrash, IconWarn } from "./Icons";
 import type { FantasyPlayer, FantasyWeek, PlayerLite } from "../api";
-import { FANTASY_KEY, Scoring, SCORING_LABEL } from "../lib/profile";
+import { FANTASY_KEY, fantasyHref, fantasyStatFor, Scoring, SCORING_LABEL } from "../lib/profile";
 import { DEFAULT_SLOTS, RosterEntry, Slots, toEntry } from "./MyRoster";
 import { useSticky } from "../lib/sticky";
 import { marksFor } from "./FantasySnapshot";
@@ -18,12 +18,13 @@ import PlayerSearch from "./PlayerSearch";
 // against the players it would replace on the three things that decide a
 // start: the projection, the floor (a quiet week) and the ceiling (a big one).
 
-type Pos = "QB" | "RB" | "WR" | "TE";
+type Pos = "QB" | "RB" | "WR" | "TE" | "K" | "DST";
 type Slot = keyof Slots;
 
-const POSITIONS: Pos[] = ["QB", "RB", "WR", "TE"];
-const SLOT_ORDER: Slot[] = ["QB", "RB", "WR", "TE", "FLEX", "SFLEX"];
-const SHORT: Record<Slot, string> = { QB: "QB", RB: "RB", WR: "WR", TE: "TE", FLEX: "FLEX", SFLEX: "SFLX" };
+const POSITIONS: Pos[] = ["QB", "RB", "WR", "TE", "K", "DST"];
+// Kicker and defense come last and never flex (fits() below only matches them to their own slot).
+const SLOT_ORDER: Slot[] = ["QB", "RB", "WR", "TE", "FLEX", "SFLEX", "K", "DST"];
+const SHORT: Record<Slot, string> = { QB: "QB", RB: "RB", WR: "WR", TE: "TE", FLEX: "FLEX", SFLEX: "SFLX", K: "K", DST: "D/ST" };
 const FLEXIBLE = ["RB", "WR", "TE"];
 const OUT = ["Out", "Doubtful", "IR"];
 const MAX_ROSTER = 20;
@@ -37,12 +38,13 @@ function phi(z: number): number {
   return z >= 0 ? (1 + y) / 2 : (1 - y) / 2;
 }
 
-/** Chance of a boom week and a bust week, reading the projection's middle-half
- *  band as a normal distribution: the same reading start / sit simulates. */
+/** Chance of a boom week and a bust week, reading the projection's floor and
+ *  ceiling (its 20th and 80th percentiles, ±0.8416 sd) as a normal
+ *  distribution: the same reading start / sit simulates. */
 export function boomBust(p: FantasyPlayer, scoring: Scoring): { boom: number; bust: number; marks: [number, number] } | null {
   const pr = p.proj[scoring];
   if (!pr) return null;
-  const sd = Math.max((pr.high - pr.low) / 1.349, 1);
+  const sd = Math.max((pr.high - pr.low) / 1.683, 1);
   const marks = marksFor(p.position, scoring);
   return { boom: 1 - phi((marks[0] - pr.value) / sd), bust: phi((marks[1] - pr.value) / sd), marks };
 }
@@ -103,8 +105,8 @@ export default function MyTeam({ data, scoring, loading, roster, setRoster, slot
   const gain = top - cur;
 
   const setStarters = (list: string[]) => setLineup(list);
-  const add = (p: PlayerLite) => {
-    if (!POSITIONS.includes(p.position as Pos)) { setNote(`${p.name} is a ${p.position}; only QB, RB, WR and TE are projected here.`); return; }
+  const add = (p: PlayerLite | FantasyPlayer) => {
+    if (!POSITIONS.includes(p.position as Pos)) { setNote(`${p.name} is a ${p.position}; only QB, RB, WR, TE, kickers and team defenses are projected here.`); return; }
     if (ids.includes(p.player_id)) { setNote(`${p.name} is already on your team.`); return; }
     if (ids.length >= MAX_ROSTER) { setNote(`${MAX_ROSTER} players is the limit.`); return; }
     setNote(null);
@@ -198,6 +200,10 @@ export default function MyTeam({ data, scoring, loading, roster, setRoster, slot
         <h2>Build your team</h2>
         <p className="muted">Add everyone on your fantasy roster, bench included. It stays in this browser. You get your best lineup for the week, who on the bench beats a starter on floor or ceiling, and each player's chance of a boom or a bust week.</p>
         <PlayerSearch onSelect={add} placeholder="Add a player…" />
+        <div style={{ marginTop: 8 }}><select className="input mt-dst" value="" aria-label="Add a team defense" onChange={(e) => { const d = byId.get(e.target.value); if (d) add(d); }}>
+            <option value="">Add a D/ST…</option>
+            {(data?.players ?? []).filter((x) => x.position === "DST").sort((a, b) => a.name.localeCompare(b.name)).map((d) => <option key={d.player_id} value={d.player_id}>{d.name}</option>)}
+          </select></div>
         {note && <div className="hint" style={{ marginTop: 8, color: "var(--push)" }}>{note}</div>}
       </div>
     );
@@ -219,9 +225,9 @@ export default function MyTeam({ data, scoring, loading, roster, setRoster, slot
         <span className={`mt-slot ${slot === "BN" ? "bn" : ""}`}>{slot === "BN" ? "BN" : SHORT[slot]}</span>
         <Headshot src={p?.headshot ?? null} size={38} />
         <div className="mt-who">
-          <Link to={`/research?player=${id}&stat=${key}`} onClick={(e) => pick && e.preventDefault()} className="mt-name">{r.name}</Link>
+          <Link to={fantasyHref(r, fantasyStatFor(r.position, key))} onClick={(e) => pick && e.preventDefault()} className="mt-name">{r.name}</Link>
           <div className="mt-sub">
-            {r.position} · {p?.team ?? r.team ?? "FA"}{p ? <> {p.home ? "vs" : "@"} {p.opponent}</> : null}
+            {r.position === "DST" ? "D/ST" : r.position} · {p?.team ?? r.team ?? "FA"}{p ? <> {p.home ? "vs" : "@"} {p.opponent}</> : null}
             {w ? <span className="pill under">{w}</span> : p?.status ? <span className="pill warn">{p.status}</span> : null}
           </div>
           {b && (
@@ -302,6 +308,10 @@ export default function MyTeam({ data, scoring, loading, roster, setRoster, slot
         {bench.length === 0 && <div className="hint">Nobody on the bench yet.</div>}
         <div className="mt-add">
           <PlayerSearch onSelect={add} placeholder="Add a player…" />
+          <select className="input mt-dst" value="" aria-label="Add a team defense" onChange={(e) => { const d = byId.get(e.target.value); if (d) add(d); }}>
+            <option value="">Add a D/ST…</option>
+            {(data?.players ?? []).filter((x) => x.position === "DST").sort((a, b) => a.name.localeCompare(b.name)).map((d) => <option key={d.player_id} value={d.player_id}>{d.name}</option>)}
+          </select>
           {note && <div className="hint" style={{ marginTop: 6, color: "var(--push)" }}>{note}</div>}
         </div>
         {editing && (
@@ -320,7 +330,7 @@ export default function MyTeam({ data, scoring, loading, roster, setRoster, slot
         )}
       </div>
       </div>
-      <div className="hint mt-foot">Boom and bust use the same lines as the rest of the fantasy pages (roughly a top-12 week, and a week that loses a matchup on its own), read from the spread around each projection. Kickers and defenses are not projected here.</div>
+      <div className="hint mt-foot">Boom and bust use the same lines as the rest of the fantasy pages (roughly a top-12 week, and a week that loses a matchup on its own), read from each player's floor and ceiling, which come from simulating the week out of his own games around ESPN's projection.</div>
     </div>
   );
 }

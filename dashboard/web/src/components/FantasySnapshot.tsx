@@ -14,6 +14,7 @@ const MARKS: Record<string, Record<Scoring, [number, number]>> = {
   WR: { ppr: [20, 8], half: [17, 6], std: [14, 5] },
   TE: { ppr: [15, 6], half: [13, 5], std: [11, 4] },
   K: { ppr: [12, 5], half: [12, 5], std: [12, 5] },
+  DST: { ppr: [12, 3], half: [12, 3], std: [12, 3] },
 };
 export const marksFor = (pos: string, s: Scoring) => (MARKS[pos === "FB" ? "RB" : pos] ?? MARKS.WR)[s];
 
@@ -65,7 +66,7 @@ export default function FantasySnapshot({ rows, statKey, scoring, position, name
         <Tile k="Ceiling" v={f1(pct(pts, 0.8))} s="a good week, last 16" />
         <Tile k={`Boom ≥ ${boom}`} v={pc(pts.length ? pts.filter((x) => x >= boom).length / pts.length : null)} s={`of the last ${pts.length} games`} tone="over" />
         <Tile k={`Bust < ${bust}`} v={pc(pts.length ? pts.filter((x) => x < bust).length / pts.length : null)} s={`of the last ${pts.length} games`} tone="under" />
-        <Tile k="From touchdowns" v={pc(totPts > 0 ? tdPts / totPts : null)} s="share of points, last 16" />
+        {position !== "K" && <Tile k="From touchdowns" v={pc(totPts > 0 ? tdPts / totPts : null)} s="share of points, last 16" />}
       </div>
       {usage.length > 0 && (
         <div className="tbl-wrap" style={{ marginTop: 10 }}>

@@ -22,6 +22,8 @@ SGO_USAGE_PATH = ODDS_DIR / "sgo_usage.json"
 #: What each source did on its last scheduled attempt, for the status panel.
 FEED_STATUS_PATH = ODDS_DIR / "feed_status.json"
 ESPN_CACHE = ODDS_DIR / "espn_athletes.json"
+#: ESPN's weekly fantasy projections, one file per week (odds/espn_proj.py).
+PROJ_DIR = ODDS_DIR / "projections"
 #: This season's injury reports, refreshed with every lines pull. It lives
 #: under data/odds because that directory is what a stateless host syncs
 #: from git between deploys; the weekly cache only sees injuries on Tuesdays.

@@ -114,3 +114,36 @@ def test_half_ppr_is_the_midpoint_of_standard_and_ppr():
     df = pl.DataFrame({"fantasy_points": [10.0, 3.5], "fantasy_points_ppr": [16.0, 5.5]})
     half = df.select(catalog.BY_KEY["fantasy_points_half"].expr.alias("h"))["h"].to_list()
     assert half == [13.0, 4.5]
+
+
+def test_kicker_scoring_by_distance_with_misses():
+    row = pl.DataFrame({"fg_made_0_19": [0], "fg_made_20_29": [1], "fg_made_30_39": [1], "fg_made_40_49": [1],
+                        "fg_made_50_59": [1], "fg_made_60_": [0], "fg_missed": [1], "pat_made": [3], "pat_missed": [1]})
+    # 3 + 3 + 4 + 5 for the field goals, 3 PATs, minus a missed field goal and a missed PAT.
+    assert row.select(catalog.kicker_points_expr().alias("k"))["k"].item() == 3 + 3 + 4 + 5 + 3 - 1 - 1
+
+
+def test_dst_points_allowed_tiers_and_their_expectation():
+    from dashboard.stats.fantasy import expected_pa_points, pa_points
+    assert [pa_points(x) for x in (0, 3, 10, 17, 24, 31, 40)] == [10, 7, 4, 1, 0, -1, -4]
+    # Facing a weaker offense is worth more, and the expectation stays inside the tiers.
+    low, mid, high = expected_pa_points(14), expected_pa_points(22), expected_pa_points(32)
+    assert 10 > low > mid > high > -4
+
+
+def test_floor_and_ceiling_come_from_the_players_own_games_around_the_projection():
+    from dashboard.stats.fantasy import finish, simulate
+    steady = [14.0, 15.0, 13.0, 14.0, 16.0, 14.0, 15.0, 13.0]
+    boomy = [4.0, 5.0, 30.0, 6.0, 28.0, 5.0, 4.0, 31.0]
+    s_lo, s_hi = simulate(steady, 14.0, 2.0)
+    b_lo, b_hi = simulate(boomy, 14.0, 2.0)
+    assert s_lo < 14.0 < s_hi and b_lo < 14.0 < b_hi
+    assert (b_hi - b_lo) > 2 * (s_hi - s_lo)       # a boom-or-bust player gets the wider range
+    assert simulate([], 10.0, 2.0)[0] >= 0          # too few games: a normal range, never below zero
+    # ESPN's number is the centre when it has one, in every format.
+    espn = {"p1": {"ppr": 18.0, "rec": 6.0}}
+    out = finish("p1", espn, {"ppr": steady, "half": steady, "std": steady}, {"ppr": 12.0, "half": 11.0, "std": 10.0}, 2.0)
+    assert [out[k]["value"] for k in ("ppr", "half", "std")] == [18.0, 15.0, 12.0]
+    assert out["ppr"]["source"] == "espn" and out["ppr"]["base"] == 12.0
+    fallback = finish("p2", espn, {"ppr": steady}, {"ppr": 12.0, "half": None, "std": None}, 2.0)
+    assert fallback["ppr"]["source"] == "baseline" and fallback["ppr"]["value"] == 12.0 and fallback["half"] is None
