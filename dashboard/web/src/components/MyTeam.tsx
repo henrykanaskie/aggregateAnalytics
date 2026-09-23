@@ -297,7 +297,7 @@ export default function MyTeam({ data, scoring, loading, roster, setRoster, slot
           <h3>Starters</h3>
           <div className="actions">
             {pick && <span className="hint">tap who to swap with</span>}
-            <button className={`chip ${pastDots ? "on" : ""}`} title="Each player's last 8 games as dots on his range bar" onClick={() => setPastDots(!pastDots)}>past weeks</button>
+            <button className={`chip ${pastDots ? "on" : ""}`} title="Each player's games this season as dots on his range bar" onClick={() => setPastDots(!pastDots)}>past weeks</button>
             {!auto && !pick && <button className="btn sm ghost" onClick={() => setLineup(null)}>auto</button>}
           </div>
         </div>

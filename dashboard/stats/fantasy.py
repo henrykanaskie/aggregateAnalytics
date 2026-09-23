@@ -138,16 +138,17 @@ def finish(player_id: str, espn: dict[str, dict], series: dict[str, list[float]]
     return out
 
 
-#: How many past games ride along with each player, for the range bar's dots.
-RECENT_N = 8
-
-
-def _recent(games: list[dict], pts: dict[str, str] | None = None, same: str | None = None) -> list[dict]:
-    """The last few games as {season, week, opp, pts: {ppr, half, std}}.
-    ``pts`` maps each format to a column; ``same`` is one column that scores
-    every format alike (kickers, defenses)."""
+def _recent(games: list[dict], season: int, pts: dict[str, str] | None = None, same: str | None = None) -> list[dict]:
+    """This season's games so far as {season, week, opp, pts: {ppr, half, std}},
+    for the range bar's dots. Last season's games still feed the floor and
+    ceiling, where the sample size matters; the dots are what he has done
+    this year, so a week 2 player shows one dot, not eight from a different
+    team or role. ``pts`` maps each format to a column; ``same`` is one column
+    that scores every format alike (kickers, defenses)."""
     out = []
-    for g in games[-RECENT_N:]:
+    for g in games:
+        if g["season"] != season:
+            continue
         vals = {sc: g.get(same if same else pts[sc]) for sc in SCORINGS}
         out.append({"season": g["season"], "week": g["week"], "opp": g.get("opponent_team"),
                     "pts": {sc: None if v is None else round(float(v), 1) for sc, v in vals.items()}})
@@ -292,7 +293,7 @@ def special_teams(season: int, week: int, opp_of: dict[str, dict], listed: dict[
                         "matchup_text": (f"{teams.get(team, team)} are expected to score {o['implied']:.1f}, the {_ord(implied_rank[team])} most this week"
                                          if o["implied"] and team in implied_rank else None),
                         "status": inj["status"] if inj else None, "injury": inj["injury"] if inj else None,
-                        "proj": proj, "recent": _recent(weeks, same="kick_pts")})
+                        "proj": proj, "recent": _recent(weeks, season, same="kick_pts")})
 
         # D/ST: its own sacks and takeaways, scaled by how much this opponent
         # gives away, plus the points-allowed tiers at the opponent's implied total.
@@ -313,7 +314,7 @@ def special_teams(season: int, week: int, opp_of: dict[str, dict], listed: dict[
                         "matchup_rank": give_rank.get(opp), "matchup_n": len(give_rank) or None,
                         "matchup_text": (f"{teams.get(opp, opp)} give up {og:.1f} sacks and turnovers a game, the {_ord(give_rank[opp])} most, "
                                          f"and are expected to score {opp_pts:.1f}") if og is not None and opp in give_rank else None,
-                        "proj": proj, "recent": _recent(weeks, same="dst_pts")})
+                        "proj": proj, "recent": _recent(weeks, season, same="dst_pts")})
     return out
 
 
@@ -447,7 +448,7 @@ def week_rankings(season: int, week: int) -> dict:
         base = {s: (_proj(gl, k, factor) or {}).get("value") for s, k in SCORINGS.items()}
         r["proj"] = finish(r["player_id"], espn, {s: [float(g[k]) for g in gl if g.get(k) is not None] for s, k in SCORINGS.items()}, base, 2.0)
         r["role"] = _role(gl, r["position"])
-        r["recent"] = _recent(gl, SCORINGS)
+        r["recent"] = _recent(gl, season, SCORINGS)
 
     roster.extend(special_teams(season, week, opp_of, listed_by_team, espn))
 

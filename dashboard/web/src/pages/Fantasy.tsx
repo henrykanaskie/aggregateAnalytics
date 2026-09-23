@@ -258,8 +258,8 @@ export default function Fantasy() {
                 <th className="left">Game</th>
                 {th("matchup", "Matchup", "How much this defense gives up to the position, this season blended with last. Green is generous.")}
                 {th("implied", "Team pts", "Points the team is expected to score, from the betting spread and total")}
-                {!mobile && <>{th("proj", "Proj")}{th("low", "Floor", "A bad week: the 20th percentile of weeks simulated from his own games")}{th("high", "Ceiling", "A good week: the 80th percentile of weeks simulated from his own games")}<th className="range-col" title="This week's floor to ceiling, with the projection as the white tick and each of his last 8 games as a dot (newest largest)">
-                  <span>Range{pastDots ? " · last 8" : ""}</span> <button className={`chip tiny-chip ${pastDots ? "on" : ""}`} onClick={() => setPastDots(!pastDots)}>past weeks</button></th></>}
+                {!mobile && <>{th("proj", "Proj")}{th("low", "Floor", "A bad week: the 20th percentile of weeks simulated from his own games")}{th("high", "Ceiling", "A good week: the 80th percentile of weeks simulated from his own games")}<th className="range-col" title="This week's floor to ceiling, with the projection as the white tick and each of his games this season as a dot (newest largest)">
+                  <span>Range{pastDots ? " · this season" : ""}</span> <button className={`chip tiny-chip ${pastDots ? "on" : ""}`} onClick={() => setPastDots(!pastDots)}>past weeks</button></th></>}
                 {th("last3", "Last 3", "Average over the last three games")}
                 <th title="Targets plus carries (QB: attempts plus carries) a game, the last three against the dozen before">Role</th>
                 <th title="Share of the team's targets / carries">Tgt / car</th>
