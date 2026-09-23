@@ -758,6 +758,13 @@ def game_matchup(game_id: str, include_sample: bool = False):
     for p in props:
         l = listed.get(p.get("team") or "", {}).get(p.get("player_id") or "")
         p["status"] = l["status"] if l else None
+    # Each angle next to the line it can be bet against, and the usual number
+    # beside the line: whether the book already expects what the angle does.
+    if props:
+        for s in sides:
+            for key in ("angles", "player_angles"):
+                s[key] = [a | ({"line": lc} if (lc := ag_mod.line_context(a, s["offense"], props, season, week)) else {})
+                          for a in s[key]]
     return {
         "game": game, "season_used": use, "blend": blend_mod.blend_info(rows.get(home)), "sides": sides, "metrics": team_mod.metric_json(),
         "dvp_labels": ctx_mod.DVP_LABELS, "history": mu_mod.head_to_head(away, home),

@@ -25,18 +25,18 @@ export function DrillDrawer({ drill, onClose }: { drill: Drill | null; onClose: 
   );
 }
 
-const Record = ({ hits, n, pushes = 0, absent = 0, unit = "calls" }: { hits: number; n: number; pushes?: number; absent?: number; unit?: string }) => {
+const Record = ({ hits, n, absent = 0, injured = 0, unit = "calls" }: { hits: number; n: number; absent?: number; injured?: number; unit?: string }) => {
   const r = n ? hits / n : null;
   const tone = r === null || n < 5 ? "" : r >= 0.55 ? "over" : r <= 0.45 ? "under" : "";
   return (
     <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
       <span className={`mono ${tone}`} style={{ fontSize: 26, fontWeight: 650 }}>{fmtPct(r)}</span>
-      <span className="small"><b>{hits}</b> of <b>{n}</b> {unit} right{pushes ? <span className="muted"> · {pushes} push{pushes > 1 ? "es" : ""}</span> : null}{absent ? <span className="muted"> · {absent} where it never happened</span> : null}{pushes || absent ? <span className="muted">, not counted</span> : null}</span>
+      <span className="small"><b>{hits}</b> of <b>{n}</b> {unit} right{absent ? <span className="muted"> · {absent} where it never happened</span> : null}{injured ? <span className="muted"> · {injured} where he got hurt</span> : null}{absent || injured ? <span className="muted">, not counted</span> : null}</span>
     </div>
   );
 };
 
-type Verdict = "all" | "hit" | "miss" | "push" | "absent";
+type Verdict = "all" | "hit" | "miss" | "absent" | "injured";
 
 /** A graded number in its own format: 6.2%, +0.14, 4.1. */
 const num = (v: number | null, fmt: string, signed = false) => {
@@ -67,9 +67,16 @@ function FamilyBody({ d }: { d: Extract<Drill, { type: "angle" }> }) {
   return (
     <>
       <div className="drawer-sec">
-        <Record hits={data.hits} n={data.n} pushes={data.pushes} absent={data.absent} />
+        <Record hits={data.hits} n={data.n} absent={data.absent} injured={data.injured} />
         <div className="hint" style={{ marginTop: 4 }}>{span}. Right means {g ? <><b>{g.measure}</b> came in <b>{g.direction === "up" ? "higher" : "lower"}</b> than {g.baseline_label}</> : "the number moved the way the angle said"}.</div>
       </div>
+
+      {data.prop && (
+        <div className="drawer-sec">
+          <h4>Against the closing line</h4>
+          <div className="small">Landed on the side of the closing line the angle leaned in <b>{data.prop.agreed} of {data.prop.n}</b> ({fmtPct(data.prop.agreed / data.prop.n)}) of the games that had one{d.kind === "team" ? " (for a position, the sum of its players' lines)" : ""}. That is the betting question: was the line set too high or too low, the way the angle said. The record above is against {g?.baseline_label ?? "the usual number"}, so the two can disagree when the line already priced the matchup in.</div>
+        </div>
+      )}
 
       {p && (
         <div className="drawer-sec">
@@ -90,8 +97,8 @@ function FamilyBody({ d }: { d: Extract<Drill, { type: "angle" }> }) {
           <h4 style={{ margin: 0 }}>Every {d.kind === "player" ? "player" : "team"} it was called on</h4>
           <Seg<Verdict> value={verdict} onChange={setVerdict} options={[
             { v: "all", l: `All ${data.rows.length}` }, { v: "hit", l: `Right ${count("hit")}` }, { v: "miss", l: `Wrong ${count("miss")}` },
-            ...(count("push") ? [{ v: "push" as Verdict, l: `Push ${count("push")}` }] : []),
-            ...(count("absent") ? [{ v: "absent" as Verdict, l: `Didn't happen ${count("absent")}` }] : [])]} />
+            ...(count("absent") ? [{ v: "absent" as Verdict, l: `Didn't happen ${count("absent")}` }] : []),
+            ...(count("injured") ? [{ v: "injured" as Verdict, l: `Got hurt ${count("injured")}` }] : [])]} />
         </div>
         <div className="tbl-wrap"><table className="tbl compact tight pin-first">
           <thead><tr>
@@ -114,7 +121,7 @@ function FamilyBody({ d }: { d: Extract<Drill, { type: "angle" }> }) {
                   {hasPremise && <td className="num">{ig ? <>{perSnap(ig.on_sum, ig.on_n)} <span className="faint">/</span> {perSnap(ig.off_sum, ig.off_n)}</> : "–"}</td>}
                   <td className={`num ${a.verdict === "hit" ? "over" : a.verdict === "miss" ? "under" : ""}`}>{num(a.actual, f, signed)}</td>
                   <td className="num muted">{num(a.baseline, f, signed)}</td>
-                  {hasProp && <td className="num">{a.line_result ? <span className={a.line_result === d.lean ? "over" : a.line_result === "push" ? "" : "under"}>{a.line_result}</span> : <span className="faint">–</span>}</td>}
+                  {hasProp && <td className="num">{a.line_result ? <span className={a.line_verdict === "hit" ? "over" : a.line_verdict === "miss" ? "under" : ""} title={a.line !== null ? `line ${a.line}${a.line_actual != null ? `, had ${a.line_actual}` : ""}` : undefined}>{a.line_result}</span> : <span className="faint">–</span>}</td>}
                   <td><Mark v={a.verdict} /></td>
                 </tr>
                 {open && (
@@ -142,12 +149,6 @@ function FamilyBody({ d }: { d: Extract<Drill, { type: "angle" }> }) {
         </div>
       )}
 
-      {data.prop && (
-        <div className="drawer-sec">
-          <h4>Against the prop line</h4>
-          <div className="small">Went <b className={d.lean}>{d.lean}</b> the closing line in <b>{data.prop.agreed} of {data.prop.n}</b> ({fmtPct(data.prop.agreed / data.prop.n)}) of the games that had one. The angle is graded on {g?.measure ?? "its own number"}, not the line, so the two can disagree.</div>
-        </div>
-      )}
     </>
   );
 }
