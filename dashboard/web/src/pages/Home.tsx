@@ -69,11 +69,11 @@ export default function Home() {
   return (
     <div className={`home home-${lens.mode}`}>
       <section className="home-hero">
-        <div className="home-hero-main">
+        <div className="home-hero-main" data-tour="home-hero">
           <div className="home-kicker">{meta ? `${meta.season} season · week ${meta.week}` : "\u00a0"}</div>
           <h1>{greeting}</h1>
           <p className="home-lede">{sub}</p>
-          <OmniSearch autoFocus={lens.mode === "learn" || lens.mode === "default"} />
+          <div data-tour="home-search"><OmniSearch autoFocus={lens.mode === "learn" || lens.mode === "default"} /></div>
         </div>
         {p ? <Briefing fw={fw ?? null} games={sched ?? []} board={board ?? null} onTailor={() => setTailoring(true)} />
            : <Setup onTailor={() => setTailoring(true)} />}
@@ -188,7 +188,7 @@ function Briefing({ fw, games, board, onTailor }: { fw: FantasyWeek | null; game
 
   const MODE = { fantasy: "fantasy", betting: "betting", learn: "following the game", default: "everything" }[lens.mode];
   return (
-    <div className="home-brief">
+    <div className="home-brief" data-tour="home-brief">
       <div className="home-brief-head"><Spark size={16} /><span>Your week</span></div>
       {lines.length === 0 ? <div className="home-brief-line muted">Pulling your week together…</div> : (
         <ul className="home-brief-lines">
@@ -204,7 +204,7 @@ function Briefing({ fw, games, board, onTailor }: { fw: FantasyWeek | null; game
  *  tailored visitor gets their briefing there instead. */
 function Setup({ onTailor }: { onTailor: () => void }) {
   return (
-    <button className="home-setup invite" onClick={onTailor}>
+    <button className="home-setup invite" data-tour="home-brief" onClick={onTailor}>
       <span className="home-setup-top"><Spark size={18} /><b>Tailor it to you</b></span>
       <span className="muted">A few quick questions, and every page rearranges around what you actually check: fantasy, betting, or following the game.</span>
       <span className="home-setup-cta">Start →</span>

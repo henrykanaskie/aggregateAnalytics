@@ -189,7 +189,7 @@ function MobileHeader({ onSearch, onMenu, pinned }: { onSearch: () => void; onMe
       </Link>
       <div className="spacer" />
       <button className="icon-btn" aria-label="Search players" data-tour="search" onClick={onSearch}><IconSearch /></button>
-      <button className="icon-btn" aria-label="Menu" onClick={onMenu}><IconMenu /></button>
+      <button className="icon-btn" aria-label="Menu" data-tour="menu" onClick={onMenu}><IconMenu /></button>
     </header>
   );
 }
@@ -256,7 +256,10 @@ function Shell() {
   const nav = useNavigate();
   // Shown once, then never again unless the ? in the header asks for it.
   const [stage, setStage] = useState<Stage>(() => (readSticky("onboard.seen.v1", false) ? null : "welcome"));
-  const close = () => { writeSticky("onboard.seen.v1", true); setStage(null); };
+  const close = () => { writeSticky("onboard.seen.v1", true); setStage(null); setThenTour(false); };
+  // Tailoring started from the welcome card carries straight on into a tour of
+  // the layout it just made; started from anywhere else, it simply closes.
+  const [thenTour, setThenTour] = useState(false);
   // Week pickers are sticky and now outlive the browser session, so a week
   // chosen by hand has to be let go of once the league moves past it. Done
   // during render rather than in an effect: the tabs and the page below read
@@ -300,8 +303,8 @@ function Shell() {
           <Tabs />
           <div className="spacer" />
           <div data-tour="search"><PlayerSearch onSelect={(p) => nav(`/research?player=${p.player_id}`)} placeholder="Jump to player…" /></div>
-          <TailorMenu onTailor={() => setStage("tailor")} />
-          <button className="theme-btn" title="Welcome notes and guided tour" onClick={() => setStage("welcome")}>?</button>
+          <div data-tour="tailor"><TailorMenu onTailor={() => setStage("tailor")} /></div>
+          <button className="theme-btn" title="Welcome notes and guided tour" data-tour="help" onClick={() => setStage("welcome")}>?</button>
           <button className="theme-btn" title="toggle light / dark" onClick={() => setSettings({ theme: settings.theme === "dark" ? "light" : "dark" })}>{settings.theme === "dark" ? "Light" : "Dark"}</button>
         </header>
       )}
@@ -332,8 +335,8 @@ function Shell() {
         <MenuSheet open={sheet === "menu"} onClose={() => setSheet(null)}
           onTailor={() => { setSheet(null); setStage("tailor"); }} onWelcome={() => { setSheet(null); setStage("welcome"); }} />
       </>}
-      {stage === "welcome" && <Welcome onTour={() => { writeSticky("onboard.seen.v1", true); setStage("tour"); }} onTailor={() => { writeSticky("onboard.seen.v1", true); setStage("tailor"); }} onSkip={close} />}
-      {stage === "tailor" && <Tailor onDone={close} onCancel={close} />}
+      {stage === "welcome" && <Welcome onTour={() => { writeSticky("onboard.seen.v1", true); setStage("tour"); }} onTailor={() => { writeSticky("onboard.seen.v1", true); setThenTour(true); setStage("tailor"); }} onSkip={close} />}
+      {stage === "tailor" && <Tailor onDone={() => (thenTour ? (setThenTour(false), setStage("tour")) : close())} onCancel={close} />}
       {stage === "tour" && <Tour onDone={close} />}
     </div>
   );

@@ -17,16 +17,24 @@ export interface Cast {
   coach: string | null;
   /** False when no lines have been pulled: the copy softens rather than lies. */
   fromLines: boolean;
+  /** The player came off the visitor's own fantasy roster. */
+  fromRoster: boolean;
+  /** The team is the visitor's favorite, so the copy can say so. */
+  favTeam: boolean;
 }
 
-const EMPTY: Cast = { playerId: null, playerName: null, market: null, gameId: null, team: null, coach: null, fromLines: false };
+/** What the visitor has already told the site, so the tour can open their own
+ *  player and their own team instead of a stranger's. */
+export interface Prefer { team: string | null; roster: { player_id: string; name: string; position: string; team: string | null }[] }
+
+export const EMPTY_CAST: Cast = { playerId: null, playerName: null, market: null, gameId: null, team: null, coach: null, fromLines: false, fromRoster: false, favTeam: false };
 const SKILL = ["QB", "RB", "WR", "TE"];
 // Whichever prop has the most books on it is not always one a newcomer would
 // recognise, so the plain ones are preferred where they exist.
 const PLAIN = ["player_pass_yds", "player_rush_yds", "player_reception_yds", "player_receptions", "player_rush_attempts"];
 
-export async function buildCast(meta: Meta, settings: Settings): Promise<Cast> {
-  const cast: Cast = { ...EMPTY };
+export async function buildCast(meta: Meta, settings: Settings, prefer: Prefer = { team: null, roster: [] }): Promise<Cast> {
+  const cast: Cast = { ...EMPTY_CAST };
 
   // Same URL the board page builds, so this is a cache hit rather than a scan.
   const boardUrl = api.board.url({
@@ -42,7 +50,19 @@ export async function buildCast(meta: Meta, settings: Settings): Promise<Cast> {
   const pick = (board?.rows ?? [])
     .filter((r) => r.player_id && r.kind === "ou" && SKILL.includes(r.position ?? ""))
     .sort((a, b) => rank(b) - rank(a) || b.n_books - a.n_books)[0];
-  if (pick) {
+  // Someone who has entered a roster would rather see one of their own. The
+  // board row still supplies a game and a line when that player has one.
+  const mine = prefer.roster.find((r) => SKILL.includes(r.position));
+  if (mine) {
+    const row = (board?.rows ?? []).filter((r) => r.player_id === mine.player_id && r.kind === "ou").sort((a, b) => rank(b) - rank(a))[0];
+    cast.playerId = mine.player_id;
+    cast.playerName = mine.name;
+    cast.market = row?.market ?? null;
+    cast.team = mine.team ?? row?.team ?? null;
+    cast.gameId = row?.game_id ?? null;
+    cast.fromLines = !!row;
+    cast.fromRoster = true;
+  } else if (pick) {
     cast.playerId = pick.player_id;
     cast.playerName = pick.player_name;
     cast.market = pick.market;
@@ -52,6 +72,9 @@ export async function buildCast(meta: Meta, settings: Settings): Promise<Cast> {
   }
 
   const schedule = await api.schedule(meta.season, meta.week).catch(() => [] as ScheduleGame[]);
+  // A favorite team's own game is the one worth opening, bye weeks aside.
+  const favGame = prefer.team ? schedule.find((g) => g.home_team === prefer.team || g.away_team === prefer.team) : null;
+  if (favGame) cast.gameId = favGame.game_id;
   if (!cast.gameId && schedule.length) {
     // The player's own game when the board row did not carry an id, otherwise
     // just the first one on the slate.
@@ -69,6 +92,8 @@ export async function buildCast(meta: Meta, settings: Settings): Promise<Cast> {
     if (top) { cast.playerId = top.player_id; cast.playerName = top.name; }
   }
 
+  // Teams and Coaches open on the favorite when there is one.
+  if (prefer.team) { cast.team = prefer.team; cast.favTeam = true; }
   const coaches = meta.current_coaches ?? {};
   cast.coach = (cast.team ? coaches[cast.team] : null) ?? Object.values(coaches)[0] ?? null;
   return cast;

@@ -156,7 +156,7 @@ export default function Fantasy() {
         <div><h1>Fantasy{shown ? ` · week ${shown}` : ""}</h1><div className="muted small">Every starter on a team that plays this week, ranked by {lens.ceiling ? "ceiling (the big week your format pays for)" : "projected"} {SCORING_LABEL[scoring]} points, next to the matchup and the role behind the number.</div></div>
       </div>
 
-      {setsLineups && <div className="view-switch" role="tablist">
+      {setsLineups && <div className="view-switch" role="tablist" data-tour="fantasy-views">
         <button role="tab" aria-selected={!teamView} className={!teamView ? "on" : ""} onClick={() => setView("week")}>This week</button>
         <button role="tab" aria-selected={teamView} className={teamView ? "on" : ""} onClick={() => setView("team")}>My team{roster.length ? <span className="count">{roster.length}</span> : null}</button>
       </div>}
