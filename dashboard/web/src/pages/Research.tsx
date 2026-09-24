@@ -33,6 +33,7 @@ import More from "../components/More";
 import { activeProfile, arrange, fantasyStatFor, isDefPos, Tags, useLens } from "../lib/profile";
 import { RESEARCH_GUIDE, researchLayout } from "../lib/layouts";
 import LayoutGrid from "../components/LayoutGrid";
+import Balanced from "../components/Balanced";
 import Spark from "../components/Spark";
 import { useSticky } from "../lib/sticky";
 
@@ -236,13 +237,15 @@ export default function Research() {
         <Defer minHeight={160} when={core}><CorrelationsPanel playerId={pid} statKey={statKey} statLabel={stat?.label ?? statKey} /></Defer>
       </div>
     ) },
-    { id: "research:books", label: "Books and line history", col: "side", tags: { for: ["betting"] }, node: (
+    // Only when a book has posted this stat: a panel saying there is nothing
+    // to show was a block of empty space (the controls above already say it).
+    ...(marketRow ? [{ id: "research:books", label: "Books and line history", col: "side", tags: { for: ["betting"] }, node: (
       <div className="panel" data-tour="research-books">
-        <div className="panel-head"><h3>Books · {marketRow?.market_label ?? "no market"}</h3></div>
-        {marketRow ? <BookLines row={marketRow} selected={lineSource} onSelect={(b: BookLine) => setLineSource(b.book)} /> : <div className="hint">No sportsbook has posted this stat for this game. The line above is yours to set.</div>}
-        {marketRow && <div style={{ marginTop: 10 }}><LineHistory history={lines?.history ?? []} market={marketRow.market} /></div>}
+        <div className="panel-head"><h3>Books · {marketRow.market_label}</h3></div>
+        <BookLines row={marketRow} selected={lineSource} onSelect={(b: BookLine) => setLineSource(b.book)} />
+        <div style={{ marginTop: 10 }}><LineHistory history={lines?.history ?? []} market={marketRow.market} /></div>
       </div>
-    ) },
+    ) } satisfies Slot] : []),
     { id: "research:distribution", label: "Distribution", col: "side", tags: { deep: true }, node: (
       <div className="panel">
         <div className="panel-head"><h3>Distribution · filtered games</h3></div>
@@ -341,10 +344,7 @@ export default function Research() {
           </div>
 
           {layout ? <LayoutGrid rows={layout} panels={shown} /> : (
-            <div className="grid grid-main">
-              <div className="grid" style={{ gap: 14 }}>{shown.filter((x) => x.col === "main").map((x) => <Fragment key={x.id}>{x.node}</Fragment>)}</div>
-              <div className="grid" style={{ gap: 14, alignContent: "start" }}>{shown.filter((x) => x.col === "side").map((x) => <Fragment key={x.id}>{x.node}</Fragment>)}</div>
-            </div>
+            <Balanced left={shown.filter((x) => x.col === "main")} right={shown.filter((x) => x.col === "side")} leftWidth="minmax(0, 1fr)" rightWidth="390px" />
           )}
           <More items={tucked} />
         </div>
@@ -365,6 +365,9 @@ function PredictionSlot({ playerId, market, line, proj, statFmt }: { playerId: s
     return () => { alive = false; };
   }, [meta, playerId]);
   const mine = rows.filter((p) => !market || p.market === market);
+  // Nothing logged and no baseline: no panel, rather than one explaining the
+  // file a prediction would come from.
+  if (!mine.length && !proj) return null;
   return (
     <div className="panel" data-tour="research-prediction">
       <div className="panel-head"><h3>Prediction</h3>{mine.length ? <span className="pill over">{mine.length} logged</span> : <span className="pill">nothing logged</span>}</div>
@@ -376,7 +379,6 @@ function PredictionSlot({ playerId, market, line, proj, statFmt }: { playerId: s
           <div className="hint">Recency-weighted mean of the last {proj.n} games ({proj.base}){proj.factor !== 1 && proj.factor_ctx ? <> × {proj.factor} for the opponent ({proj.factor_ctx.blended ? `this season blended with last, ` : ""}allows {proj.factor_ctx.allowed.toFixed(1)} vs league {proj.factor_ctx.league.toFixed(1)}, {proj.factor_ctx.rank ? `${shownRank(proj.factor_ctx.rank, proj.factor_ctx.n_teams ?? 32, "low")} of ${proj.factor_ctx.n_teams ?? 32} stingiest` : "unranked"})</> : null}. A reference, not a model.</div>
         </div>
       )}
-      {mine.length === 0 && !proj && <div className="hint">When the model logs a row to <code>data/derived/prop_predictions.parquet</code> for this player and market, it shows here next to the line. See the Predictions page for the schema.</div>}
       {mine.length === 0 && proj && <div className="hint">No model prediction logged; the baseline above is what the grader scores as <code>baseline-v1</code>.</div>}
       {mine.map((p) => (
         <div key={p.model_version + p.market} className="small" style={{ marginBottom: 6 }}>
