@@ -1156,3 +1156,13 @@ th.range-col { white-space: nowrap; }
 
 /* An angle's prop line on the matchup page (Matchups.tsx, LineRead) */
 .angle-line { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--border-2); font-size: 12px; display: grid; gap: 2px; }
+
+/* Balanced columns (components/Balanced.tsx). Placed: 1px rows, each panel
+   given the rows its measured height covers, so the two columns stack
+   independently in one grid. Stacked (narrow): one column, plain gaps. */
+.balanced { display: grid; gap: 14px; }
+.balanced.placed { grid-auto-rows: 1px; row-gap: 0; column-gap: 14px; margin-bottom: 14px; }
+.balanced > .balanced-item { min-width: 0; align-self: start; }
+/* Inside a tailored layout the rows already have a gap; the balanced panels'
+   own bottom margin would double it. */
+.lay > .balanced.placed { margin-bottom: 0; }
