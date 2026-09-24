@@ -324,9 +324,16 @@ pre { font-family: var(--mono); font-size: 12px; background: var(--bg-2); paddin
 /* The ring's outsized shadow is what dims the page, so the cutout stays a plain
    rectangle and the content underneath is still readable. */
 .tour-veil { position: fixed; inset: 0; z-index: 100; }
-.tour-veil.solid { background: rgba(0,0,0,0.62); }
-.tour-ring { position: fixed; z-index: 101; border-radius: 9px; pointer-events: none; box-shadow: 0 0 0 9999px rgba(0,0,0,0.62), inset 0 0 0 2px var(--accent); }
-.tour-card { position: fixed; z-index: 102; background: var(--panel); border: 1px solid var(--border-2); border-radius: 14px; padding: 12px 16px 14px; box-shadow: 0 18px 44px rgba(0,0,0,0.5); outline: none; }
+/* The ring is moved frame by frame from Tour.tsx; the stylesheet only draws
+   it. Its outsized shadow is what dims the page, and the accent outline sits on
+   its own layer so it can fade without the dimming fading with it. */
+.tour-ring { position: fixed; top: 0; left: 0; z-index: 101; border-radius: 10px; pointer-events: none; box-shadow: 0 0 0 9999px rgba(0,0,0,0.62); will-change: transform, width, height; }
+.tour-ring::after { content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 2px var(--accent), 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent); opacity: 1; transition: opacity 0.4s ease; }
+.tour-ring.off::after { opacity: 0; }
+.tour-card { position: fixed; top: 0; left: 0; z-index: 102; overflow: hidden; will-change: transform; background: var(--panel); border: 1px solid var(--border-2); border-radius: 14px; box-shadow: 0 18px 44px rgba(0,0,0,0.5); outline: none; }
+.tour-inner { padding: 12px 16px 14px; }
+/* Reports the notch and home-indicator insets to Tour.tsx, which places the card. */
+.tour-safe { position: fixed; top: 0; left: 0; width: 0; height: 0; visibility: hidden; pointer-events: none; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
 .tour-top { display: flex; align-items: center; gap: 8px; }
 .tour-chapter { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--accent);
   border: 0; background: none; padding: 4px 6px; margin: -4px -6px; border-radius: 7px; }
@@ -338,7 +345,7 @@ pre { font-family: var(--mono); font-size: 12px; background: var(--bg-2); paddin
 .tour-x:hover { background: var(--panel-2); color: var(--text); }
 .tour-progress { display: flex; gap: 3px; height: 3px; margin: 9px 0 10px; }
 .tour-progress > span { min-width: 4px; border-radius: 2px; background: var(--border); overflow: hidden; }
-.tour-progress i { display: block; height: 100%; background: linear-gradient(90deg, var(--mode-1), var(--mode-2)); transform-origin: left; transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1); }
+.tour-progress i { display: block; height: 100%; background: linear-gradient(90deg, var(--mode-1), var(--mode-2)); transform-origin: left; transition: transform 0.6s cubic-bezier(0.45, 0, 0.55, 1); }
 .tour-text { font-size: 13px; line-height: 1.5; color: var(--muted); }
 .tour-text b { color: var(--text); }
 .tour-list { margin: 6px 0; padding-left: 18px; }
@@ -364,18 +371,14 @@ pre { font-family: var(--mono); font-size: 12px; background: var(--bg-2); paddin
 
 /* Onboarding motion: one animated property per element, so the ring and the
    card travel to the next step instead of blinking there. */
-.tour-veil { transition: background 0.25s ease; }
-.tour-ring { opacity: 1; transition: top 0.3s cubic-bezier(0.32, 0.72, 0, 1), left 0.3s cubic-bezier(0.32, 0.72, 0, 1), width 0.3s cubic-bezier(0.32, 0.72, 0, 1), height 0.3s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.22s ease; }
-.tour-ring.off { opacity: 0; }
-.tour-card { transition: top 0.3s cubic-bezier(0.32, 0.72, 0, 1), left 0.3s cubic-bezier(0.32, 0.72, 0, 1); max-width: calc(100vw - 24px); }
-.tour-body { animation: tour-in 0.24s ease both; }
-@keyframes tour-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
-@keyframes tour-dock-up { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
-@keyframes tour-dock-down { from { transform: translateY(-24px); opacity: 0; } to { transform: none; opacity: 1; } }
+/* The card grows and shrinks with its words instead of snapping. */
+.tour-card { transition: height 0.4s cubic-bezier(0.45, 0, 0.55, 1); max-width: calc(100vw - 24px); }
+.tour-body { animation: tour-in 0.45s cubic-bezier(0.45, 0, 0.55, 1) both; }
+@keyframes tour-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
 .topbar > [data-tour="tailor"] { display: flex; }
 @media (prefers-reduced-motion: reduce) {
-  .tour-ring, .tour-card, .tour-progress i { transition: none; }
-  .tour-body, .tour.phone .tour-card { animation: none !important; }
+  .tour-ring::after, .tour-card, .tour-progress i { transition: none; }
+  .tour-body { animation: none !important; }
 }
 .tour-wait { display: flex; align-items: center; gap: 7px; margin-top: 10px; font-size: 12px; color: var(--faint); }
 .tour-empty { margin-top: 10px; padding: 8px 10px; border-radius: 8px; font-size: 12px; background: rgba(230,170,60,0.10); border: 1px solid rgba(230,170,60,0.45); color: var(--push); }
@@ -580,9 +583,8 @@ button, a, .clickable, .chip, summary { -webkit-tap-highlight-color: transparent
   .tailor-opt:active { transform: scale(0.98); }
   /* The tour card is a sheet at the bottom, clear of the home indicator, or
      at the top when what it points at is down by the tab bar. */
-  .tour.phone .tour-card { left: 10px; right: 10px; width: auto; border-radius: 18px; padding: 12px 16px 14px; box-shadow: 0 -6px 30px rgba(0,0,0,0.35), 0 18px 44px rgba(0,0,0,0.4); }
-  .tour.phone .tour-card.dock-bottom { top: auto; bottom: calc(10px + env(safe-area-inset-bottom)); animation: tour-dock-up 0.32s cubic-bezier(0.2, 0.9, 0.25, 1) both; }
-  .tour.phone .tour-card.dock-top { top: calc(10px + env(safe-area-inset-top)); bottom: auto; animation: tour-dock-down 0.32s cubic-bezier(0.2, 0.9, 0.25, 1) both; }
+  .tour.phone .tour-card { left: 10px; right: 10px; width: auto; border-radius: 18px; box-shadow: 0 -6px 30px rgba(0,0,0,0.35), 0 18px 44px rgba(0,0,0,0.4); }
+  .tour.phone .tour-card { top: 0; }
   .tour.phone .tour-card h2 { font-size: 17px; }
   .tour.phone .tour-text { font-size: 14px; max-height: 34vh; overflow: auto; overscroll-behavior: contain; }
   .tour.phone .tour-menu button { padding: 11px 8px; font-size: 15px; }
