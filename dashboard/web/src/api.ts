@@ -228,7 +228,10 @@ export interface GradedAngle { season: number; week: number; game_id: string; of
   said?: string; happened?: string; evidence?: string | null; note?: string | null; verdict_words?: string;
   /** Box and blitz angles: whether the thing the angle was about happened in
    *  that game, from FTN's charting, and how the snaps it was about went. */
-  in_game?: InGame | null; }
+  in_game?: InGame | null;
+  /** A team call's players, each with his own closing line (angle_grades.player_lines). */
+  lines?: PlayerLine[]; }
+export interface PlayerLine { player_id: string; player: string; position: string | null; team: string; market: string; line: number; actual: number; result: "over" | "under" | "push"; agreed: boolean; }
 export interface InGame { snaps: number; of: number; label: string; unit: string; premise: string; split: string; on_n: number; on_sum: number; off_n: number; off_sum: number; }
 export interface AngleFamily { family: string; kind: "team" | "player"; n: number; hits: number; rate: number; lean: string;
   /** Against the closing line, only the calls that had one. */

@@ -225,35 +225,68 @@ def test_line_verdict_is_the_line_going_the_way_the_angle_leaned():
     assert ag.line_verdict(None, "up") is None
 
 
-def test_track_record_counts_the_line_apart_from_the_average(monkeypatch):
-    """A call can beat the team's usual and still lose to the line: the
-    record keeps both, and only calls that had a line count toward the line."""
+def _fake_lines(monkeypatch, by_game):
+    """Closing lines per game, as _game_lines returns them."""
+    monkeypatch.setattr(ag, "_game_lines", lambda season, week, gid: tuple(
+        {"player_id": f"{gid}{i}", "player_name": n, "team": t, "position": pos, "market": mk, "line": ln, "actual": act}
+        for i, (n, t, pos, mk, ln, act) in enumerate(by_game.get(gid, []))))
+
+
+def test_track_record_counts_each_player_line_as_a_call(monkeypatch):
+    """A team angle is read as its players' lines one by one, not the
+    position's lines added up: two backs, one under and one over, are one
+    right and one wrong, whatever their total did."""
     import polars as pl
     base = {k: None for k in ag.SCHEMA} | {"season": 2026, "week": 1, "kind": "team", "family": "{def} has clamped RBs",
-                                           "lean": "under", "strength": 1, "tags": [], "direction": "down",
-                                           "fmt": "dec1", "baseline_label": "CIN's usual", "measure": "RB rushing yards"}
+                                           "lean": "under", "strength": 1, "tags": ["RB"], "direction": "down", "offense": "CIN",
+                                           "defense": "CLE", "fmt": "dec1", "baseline_label": "CIN's usual", "measure": "RB rushing yards"}
     df = ag._with_margin(pl.DataFrame([
-        base | {"game_id": "2026_01_A_B", "actual": 60.0, "baseline": 90.0, "line": 72.0, "line_result": "under"},   # hit, hit
-        base | {"game_id": "2026_01_C_D", "actual": 80.0, "baseline": 90.0, "line": 72.0, "line_result": "over"},    # hit, miss
-        base | {"game_id": "2026_01_E_F", "actual": 99.0, "baseline": 90.0},                                        # miss, no line
+        base | {"game_id": "A", "actual": 60.0, "baseline": 90.0},     # hit on the average
+        base | {"game_id": "B", "actual": 80.0, "baseline": 90.0},     # hit
+        base | {"game_id": "C", "actual": 99.0, "baseline": 90.0},     # miss, no lines
     ], schema=ag.SCHEMA))
+    _fake_lines(monkeypatch, {
+        "A": [("Back One", "CIN", "RB", "player_rush_yds", 55.5, 40.0), ("Back Two", "CIN", "RB", "player_rush_yds", 20.5, 20.0),
+              ("A Receiver", "CIN", "WR", "player_reception_yds", 50.5, 10.0),      # not a rushing line: not this angle's
+              ("Their Back", "CLE", "RB", "player_rush_yds", 60.5, 10.0)],          # the other side: not this angle's
+        "B": [("Back One", "CIN", "RB", "player_rush_yds", 55.5, 70.0)],
+    })
     monkeypatch.setattr(ag, "_fresh", lambda: df)
     monkeypatch.setattr(ag, "CURRENT_SEASON", 2026)
     t = ag.track_record()
-    assert (t["n"], t["hits"]) == (3, 2) and (t["line_n"], t["line_hits"]) == (2, 1)
+    assert (t["n"], t["hits"]) == (3, 2) and (t["line_n"], t["line_hits"]) == (3, 2)
     fam = t["families"][0]
-    assert (fam["line_n"], fam["line_hits"]) == (2, 1)
+    assert (fam["line_n"], fam["line_hits"]) == (3, 2)
+    r = ag.family_record("{def} has clamped RBs", "team", "under")
+    assert [ln["player"] for ln in r["rows"][-1]["lines"]] == ["Back One", "Back Two"]
+    assert r["prop"] == {"n": 3, "agreed": 2}
 
 
-def test_a_position_angle_reads_against_the_offenses_own_usual():
-    r = {k: None for k in ag.SCHEMA} | {"kind": "team", "offense": "ATL", "defense": "CAR", "team": "ATL", "direction": "up",
+def test_a_team_angle_points_at_the_right_lines():
+    assert ag.line_targets("Heavy boxes vs the run", ["rushing"]) == ("off", [("player_rush_yds", ("RB",))])
+    assert ag.line_targets("{def} has clamped WRs", ["WR"]) == ("off", [("player_reception_yds", ("WR",))])
+    assert ag.line_targets("{def} takes tight ends away", ["receptions", "TE", "matchup"]) == ("off", [("player_receptions", ("TE",))])
+    assert ag.line_targets("Mobile QB vs a run defense that leaks", ["rushing", "QB"]) == ("off", [("player_rush_yds", ("QB",))])
+    assert ag.line_targets("{off} rarely goes down: {def}'s sack rate should dip", ["sacks", "defense"])[0] == "def"
+    assert ag.line_targets("Wind", ["passing", "kicking", "total"]) == \
+        ("off", [("player_field_goals", ("K",)), ("player_kicking_points", ("K",)), ("player_pass_yds", ("QB",))])
+    assert ag.line_targets("Kicker volume", ["kicking"]) == ("off", [("player_field_goals", ("K",)), ("player_kicking_points", ("K",))])
+    assert ag.line_targets("Red zone favours touchdowns", ["touchdowns"]) is None
+
+
+def test_a_position_angle_reads_against_the_offenses_own_usual(monkeypatch):
+    r = {k: None for k in ag.SCHEMA} | {"kind": "team", "season": 2026, "week": 1, "game_id": "G", "offense": "ATL",
+                                       "defense": "CAR", "team": "ATL", "direction": "up", "lean": "over",
+                                       "family": "{def} has been generous to RBs", "tags": ["RB"],
                                        "measure": "RB rushing yards", "fmt": "dec1", "actual": 123.0, "baseline": 118.7,
-                                       "baseline_label": "ATL's usual", "line": 106.0, "line_actual": 123.0,
-                                       "market": "player_rush_yds", "line_result": "over"}
+                                       "baseline_label": "ATL's usual"}
     assert "than they usually do" in ag._said(r) and "league" not in ag._said(r)
     assert "their usual 118.7" in ag._happened(r)
-    assert ag._line_words(r).startswith("Closing line 106.0 rushing yards for ATL's RBs") and "the way the angle leaned" in ag._line_words(r)
-
+    _fake_lines(monkeypatch, {"G": [("Bijan Robinson", "ATL", "RB", "player_rush_yds", 85.5, 101.0),
+                                    ("Tyler Allgeier", "ATL", "RB", "player_rush_yds", 30.5, 22.0)]})
+    w = ag._line_words(r)
+    assert "Bijan Robinson 85.5 rushing yards, had 101 (over)" in w and "Tyler Allgeier 30.5" in w
+    assert "1 of 2 went over" in w
 
 def test_a_player_who_got_hurt_still_counts_with_a_note(monkeypatch):
     """Under half his usual snaps and on the next week's report: the call
