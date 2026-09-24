@@ -25,8 +25,9 @@ number it is about:
                   prop line when one was graded that week.
 
 Where closing prop lines exist the angle is also graded against them
-(``line_verdict``): a player angle on his line, a position angle on the sum
-of the lines of that offense's players at the position. That is the question
+(``line_verdict``): a player angle on his line. A team angle is read as the
+lines of the players it points at, each its own call (:func:`player_lines`):
+"heavy boxes" is every back's rushing-yards line, not the backfield's total. That is the question
 a bettor asks -- was the line too high or too low, the way the angle said --
 and it is kept apart from ``verdict`` because the line already prices in part
 of what the angle knows.
@@ -429,6 +430,120 @@ def _lines(season: int, week: int) -> pl.DataFrame:
         return pl.DataFrame()
     df = pl.read_parquet(f).filter(pl.col("kind") == "ou")
     return df.group_by(["player_id", "market"]).agg(pl.col("line").median(), pl.col("actual").first())
+
+
+# --- a team angle, read as its players' lines ----------------------------------
+#
+# "Heavy boxes vs the run" is graded on the offense's rushing EPA, but what it
+# says to a reader is "the backs go under". So each team angle is also read
+# as the closing lines of the players it points at: which markets, from the
+# angle's tags (the same tags the matchup page files it under), on which side
+# of the ball, and for which positions.
+
+_ALL_SKILL = ("RB", "WR", "TE")
+#: tag -> (market, positions it applies to when the angle names none)
+_TAG_MARKETS: dict[str, list[tuple[str, tuple[str, ...]]]] = {
+    "rushing": [("player_rush_yds", ("RB",))],
+    "carries": [("player_rush_attempts", ("RB",))],
+    "passing": [("player_pass_yds", ("QB",))],
+    "pass attempts": [("player_pass_attempts", ("QB",))],
+    "receiving": [("player_reception_yds", _ALL_SKILL)],
+    "receptions": [("player_receptions", _ALL_SKILL)],
+    "longest": [("player_reception_longest", _ALL_SKILL)],
+    "interceptions": [("player_pass_interceptions", ("QB",))],
+    "volume": [("player_pass_attempts", ("QB",)), ("player_rush_attempts", ("RB",)), ("player_receptions", _ALL_SKILL)],
+}
+
+
+def line_targets(family: str, tags: list[str] | None) -> tuple[str, list[tuple[str, tuple[str, ...] | None]]] | None:
+    """(side, [(market, positions or None for anyone)]) a team angle's lean
+    applies to, or ``None`` when it has no player line to read (weather
+    totals, touchdowns, coverage notes)."""
+    tags = list(tags or [])
+    m = _DVP.search(family)
+    if m:
+        pos = m.group(1) or m.group(2)
+        return "off", [(_MARKET[_DVP_STAT[pos]], (pos,))]
+    if "sacks" in tags:
+        return "def", [("player_sacks", None)]
+    named = tuple(t for t in tags if t in ("QB", "RB", "WR", "TE"))
+    out: list[tuple[str, tuple[str, ...] | None]] = []
+    # Kicking leans the kicker's way; with "touchdowns" it is the red-zone
+    # call whose lean is about the touchdowns, not the field goals.
+    if "kicking" in tags and "touchdowns" not in tags:
+        out += [("player_field_goals", ("K",)), ("player_kicking_points", ("K",))]
+    for t in tags:
+        for mk, default in _TAG_MARKETS.get(t, []):
+            # A named position narrows the angle ("receptions", "RB": backs'
+            # catches); a QB tag on a run angle is the quarterback's legs.
+            pos = tuple(p for p in named if p in default or (mk == "player_rush_yds" and p == "QB")) or default
+            if named and not set(named) & set(pos):
+                continue
+            if (mk, pos) not in out:
+                out.append((mk, pos))
+    return ("off", out) if out else None
+
+
+@lru_cache(maxsize=64)
+def _game_lines(season: int, week: int, game_id: str) -> tuple[dict, ...]:
+    """Every closing over/under in one game, one row per player and market
+    (the median across books), with the player's position from the box."""
+    f = GRADED_DIR / f"lines_{season}_{week:02d}.parquet"
+    if not f.exists():
+        return ()
+    df = (pl.read_parquet(f).filter((pl.col("kind") == "ou") & (pl.col("game_id") == game_id))
+          .group_by("player_id", "market").agg(pl.col("player_name").first(), pl.col("team").first(),
+                                                pl.col("line").median(), pl.col("actual").first()))
+    try:
+        pos = _week_box(season, week).select("player_id", "position").unique("player_id")
+        df = df.join(pos, on="player_id", how="left")
+    except FileNotFoundError:
+        df = df.with_columns(pl.lit(None, pl.String).alias("position"))
+    return tuple(df.to_dicts())
+
+
+def player_lines(r: dict) -> list[dict]:
+    """The closing lines a team angle's lean was about, each with where the
+    player finished and whether that was the way the angle leaned."""
+    if r.get("kind") != "team" or r.get("lean") not in ("over", "under"):
+        return []
+    tgt = line_targets(r.get("family") or r.get("title") or "", r.get("tags"))
+    if not tgt:
+        return []
+    side, markets = tgt
+    team = r["offense"] if side == "off" else r["defense"]
+    out = []
+    for ln in _game_lines(int(r["season"]), int(r["week"]), r["game_id"]):
+        if ln["team"] != team or ln["actual"] is None or ln["line"] is None:
+            continue
+        for mk, pos in markets:
+            # Without a box score there is no position; the market alone
+            # still says whose line it is closely enough to keep.
+            if ln["market"] == mk and (pos is None or ln["position"] is None or ln["position"] in pos):
+                res = "over" if ln["actual"] > ln["line"] else "under" if ln["actual"] < ln["line"] else "push"
+                out.append({"player_id": ln["player_id"], "player": ln["player_name"], "position": ln["position"],
+                            "team": team, "market": mk, "line": ln["line"], "actual": ln["actual"], "result": res,
+                            # Landing exactly on the line is a miss, as in line_verdict.
+                            "agreed": res == r["lean"]})
+    return sorted(out, key=lambda x: (x["market"], -(x["line"] or 0)))
+
+
+def line_calls(rows: list[dict]) -> list[dict]:
+    """Every closing line a set of calls was about, one per player: a player
+    angle's own line (``line_verdict``), and for a team angle each of its
+    players' lines (:func:`player_lines`), each its own call. Only calls in
+    the record: a box call whose box never showed up is out."""
+    out = []
+    for r in rows:
+        if r.get("verdict") not in DECIDED:
+            continue
+        key = {"family": r["family"], "kind": r["kind"], "lean": r["lean"]}
+        if r["kind"] == "player":
+            if r.get("line_verdict") in DECIDED:
+                out.append(key | {"hit": r["line_verdict"] == "hit"})
+        else:
+            out += [key | {"hit": ln["agreed"]} for ln in (r["lines"] if "lines" in r else player_lines(r))]
+    return out
 
 
 # --- grading -----------------------------------------------------------------
@@ -839,12 +954,29 @@ def _happened(r: dict) -> str:
     return f"{r['team']}'s {noun} was {a}, against {usual} {b}."
 
 
-_MARKET_WORDS = {"player_pass_yds": "passing yards", "player_rush_yds": "rushing yards", "player_reception_yds": "receiving yards"}
+_MARKET_WORDS = {"player_pass_yds": "passing yards", "player_rush_yds": "rushing yards", "player_reception_yds": "receiving yards",
+                 "player_receptions": "catches", "player_rush_attempts": "carries", "player_pass_attempts": "pass attempts",
+                 "player_pass_interceptions": "interceptions", "player_sacks": "sacks", "player_field_goals": "field goals",
+                 "player_kicking_points": "kicking points", "player_reception_longest": "yards on his longest catch"}
+
+
+def _team_line_words(r: dict) -> str | None:
+    """A team call against its players' closing lines, one by one."""
+    lines = r["lines"] if "lines" in r else player_lines(r)
+    if not lines:
+        return None
+    each = "; ".join(f"{ln['player']} {ln['line']:g} {_MARKET_WORDS.get(ln['market'], ln['market'].removeprefix('player_').replace('_', ' '))}, "
+                     f"had {_num(ln['actual'], 'int')} ({ln['result']})" for ln in lines)
+    k = sum(ln["agreed"] for ln in lines)
+    return f"Closing lines: {each}. {k} of {len(lines)} went {r['lean']}, the way the angle leaned."
 
 
 def _line_words(r: dict) -> str | None:
     """Against the closing line, in words: what the book set, what came in,
-    and whether that was the way the angle leaned."""
+    and whether that was the way the angle leaned. A team call lists each of
+    its players' lines instead of adding them up."""
+    if r.get("kind") == "team":
+        return _team_line_words(r)
     if r.get("line") is None or not r.get("line_result"):
         return None
     what = _MARKET_WORDS.get(r.get("market") or "", "yards")
@@ -889,6 +1021,10 @@ def explain(rows: list[dict]) -> list[dict]:
             hurt = (f"He got hurt in the game: {r['snap_pct']:.0%} of the snaps against his usual {r['usual_snap_pct']:.0%}, "
                     "then on the next week's injury report. The call still counts; read it knowing that.")
             note = f"{hurt} {note}" if note else hurt
+        if r["kind"] == "team":
+            # The stored line on a position call is its players' lines added
+            # up; the lines are read one player at a time instead.
+            r["line_verdict"] = None
         r |= {"said": _said(r), "happened": _happened(r), "evidence": ev, "note": note, "line_words": _line_words(r),
               "verdict_words": _VERDICT_WORDS.get(r["verdict"] or "", "")}
     return rows
@@ -966,20 +1102,26 @@ def track_record(weeks: int = 22, min_n: int = 1) -> dict:
     out["absent"] = int((g["verdict"] == ABSENT).sum())
     # Counted calls on a player who got hurt: in the record, and said so.
     out["hurt"] = int((g["verdict"].is_in(DECIDED) & g["hurt"].fill_null(False)).sum()) if "hurt" in g.columns else 0
-    # Against the closing line, where there was one: its own count, since
-    # only some calls had a line and a push on the line is not a push on
-    # the average.
-    ld = g.filter(pl.col("line_verdict").is_in(DECIDED))
-    out["line_n"], out["line_hits"] = ld.height, int((ld["line_verdict"] == "hit").sum())
-    line_agg = [pl.col("line_verdict").is_in(DECIDED).sum().alias("line_n"), (pl.col("line_verdict") == "hit").sum().alias("line_hits")]
+    # Against the closing lines, one call per player line: a team angle
+    # ("heavy boxes, backs go under") is as many calls as it had backs with a
+    # line, not one call on the backfield's total.
+    lc = pl.DataFrame(line_calls(dec.to_dicts()), schema={"family": pl.String, "kind": pl.String, "lean": pl.String, "hit": pl.Boolean})
+    out["line_n"], out["line_hits"] = lc.height, int(lc["hit"].sum() or 0)
+    line_agg = [pl.len().alias("line_n"), pl.col("hit").sum().alias("line_hits")]
+    fam_lines = lc.group_by("family", "kind", "lean").agg(*line_agg)
+    kind_lines = lc.group_by("kind").agg(*line_agg)
     # Keyed by lean too: "vs man coverage" leaning over and leaning under are
     # opposite calls that share a title.
-    fam = (dec.group_by("family", "kind", "lean").agg(pl.len().alias("n"), (pl.col("verdict") == "hit").sum().alias("hits"), *line_agg)
+    fam = (dec.group_by("family", "kind", "lean").agg(pl.len().alias("n"), (pl.col("verdict") == "hit").sum().alias("hits"))
            .filter(pl.col("n") >= min_n).with_columns((pl.col("hits") / pl.col("n")).alias("rate"))
+           .join(fam_lines, on=["family", "kind", "lean"], how="left")
+           .with_columns(pl.col("line_n").fill_null(0), pl.col("line_hits").fill_null(0))
            .sort(["n", "rate"], descending=True))
     out["families"] = fam.to_dicts()
-    out["by_kind"] = (dec.group_by("kind").agg(pl.len().alias("n"), (pl.col("verdict") == "hit").sum().alias("hits"), *line_agg)
-                      .with_columns((pl.col("hits") / pl.col("n")).alias("rate")).sort("kind").to_dicts())
+    out["by_kind"] = (dec.group_by("kind").agg(pl.len().alias("n"), (pl.col("verdict") == "hit").sum().alias("hits"))
+                      .with_columns((pl.col("hits") / pl.col("n")).alias("rate"))
+                      .join(kind_lines, on="kind", how="left")
+                      .with_columns(pl.col("line_n").fill_null(0), pl.col("line_hits").fill_null(0)).sort("kind").to_dicts())
     # The clearest wins: hits where the number moved furthest, relative to
     # where it started, on the strongest angles.
     hits = dec.filter((pl.col("verdict") == "hit") & pl.col("baseline").is_not_null() & (pl.col("baseline").abs() > 1e-6))
@@ -1327,13 +1469,10 @@ def family_record(family: str, kind: str, lean: str, weeks: int = 22) -> dict:
     out["hurt"] = int((g["verdict"].is_in(DECIDED) & g["hurt"].fill_null(False)).sum()) if "hurt" in g.columns else 0
     first = g.row(0, named=True)
     out["graded_on"] = {"measure": first["measure"], "baseline_label": first["baseline_label"], "direction": first["direction"]}
-    # Where a closing line was graded that week (a player's own, or the sum
-    # of a position's): the angle against the number a bettor actually faced.
-    props = g.filter(pl.col("line_verdict").is_in(DECIDED) & (pl.col("verdict") != ABSENT))
-    if not props.is_empty():
-        out["prop"] = {"n": props.height, "agreed": int((props["line_verdict"] == "hit").sum())}
     rows = explain(g.sort(["season", "week", "game_id"], descending=True).to_dicts())
     for r in rows:
+        # A team call's players, each with his own closing line.
+        r["lines"] = player_lines(r) if r["kind"] == "team" else []
         try:
             r["in_game"] = in_game(r)
             if r["in_game"]:
@@ -1342,6 +1481,11 @@ def family_record(family: str, kind: str, lean: str, weeks: int = 22) -> dict:
             r["in_game"] = None
     out["rows"] = rows
     out["premise"] = _premise_total(rows)
+    # The angle against the numbers a bettor actually faced: one call per
+    # player line, a player angle's own or each of a team angle's players'.
+    lc = line_calls(rows)
+    if lc:
+        out["prop"] = {"n": len(lc), "agreed": sum(x["hit"] for x in lc)}
     return _json(out)
 
 

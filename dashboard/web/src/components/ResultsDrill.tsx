@@ -51,6 +51,7 @@ function FamilyBody({ d }: { d: Extract<Drill, { type: "angle" }> }) {
   const { data, error } = useQuery<AngleFamilyRecord>(api5.angleFamily.url(d.family, d.kind, d.lean, d.weeks));
   const [verdict, setVerdict] = useState<Verdict>("all");
   const [openRow, setOpenRow] = useState<number | null>(null);
+  const { meta } = useMeta();
   if (error) return <div className="hint">Could not load this angle: {error}</div>;
   if (!data) return <div className="empty"><Spinner /></div>;
   if (!data.rows.length) return <div className="hint">No graded games for this angle in the window.</div>;
@@ -59,7 +60,8 @@ function FamilyBody({ d }: { d: Extract<Drill, { type: "angle" }> }) {
   const g = data.graded_on;
   const p = data.premise;
   const hasPremise = data.rows.some((r) => r.in_game);
-  const hasProp = data.rows.some((r) => r.line_result);
+  const hasProp = data.rows.some((r) => r.line_result || r.lines?.length);
+  const mkLabel = (m: string) => meta?.markets.find((x) => x.key === m)?.label ?? m;
   const signed = (g?.measure ?? "").includes("EPA");
   const span = data.weeks.length ? `${data.season} weeks ${data.weeks[0][1]} to ${data.weeks[data.weeks.length - 1][1]}` : "";
   const who = d.kind === "player" ? "Player" : "Offense";
@@ -68,13 +70,13 @@ function FamilyBody({ d }: { d: Extract<Drill, { type: "angle" }> }) {
     <>
       <div className="drawer-sec">
         <Record hits={data.hits} n={data.n} absent={data.absent} hurt={data.hurt} />
-        <div className="hint" style={{ marginTop: 4 }}>{span}. Right means {g ? <><b>{g.measure}</b> came in <b>{g.direction === "up" ? "higher" : "lower"}</b> than {g.baseline_label}</> : "the number moved the way the angle said"}.</div>
+        <div className="hint" style={{ marginTop: 4 }}>{span}. Right means {g ? <><b>{g.measure}</b> came in <b>{g.direction === "up" ? "higher" : "lower"}</b> than {g.baseline_label.replace(/^[A-Z]{2,3}'s usual$/, "the team's usual")}</> : "the number moved the way the angle said"}.</div>
       </div>
 
       {data.prop && (
         <div className="drawer-sec">
           <h4>Against the closing line</h4>
-          <div className="small">Landed on the side of the closing line the angle leaned in <b>{data.prop.agreed} of {data.prop.n}</b> ({fmtPct(data.prop.agreed / data.prop.n)}) of the games that had one{d.kind === "team" ? " (for a position, the sum of its players' lines)" : ""}. That is the betting question: was the line set too high or too low, the way the angle said. The record above is against {g?.baseline_label ?? "the usual number"}, so the two can disagree when the line already priced the matchup in.</div>
+          <div className="small">Landed on the side of the closing line the angle leaned in <b>{data.prop.agreed} of {data.prop.n}</b> ({fmtPct(data.prop.agreed / data.prop.n)}) {d.kind === "team" ? " player lines, each player's line its own call" : " games that had one"}. That is the betting question: was the line set too high or too low, the way the angle said. The record above is against {g?.baseline_label.replace(/^[A-Z]{2,3}'s usual$/, "the team's usual") ?? "the usual number"}, so the two can disagree when the line already priced the matchup in.</div>
         </div>
       )}
 
@@ -92,9 +94,11 @@ function FamilyBody({ d }: { d: Extract<Drill, { type: "angle" }> }) {
         </div>
       )}
 
+      {d.kind === "team" && <PlayerLinesTable rows={data.rows} lean={d.lean} label={mkLabel} />}
+
       <div className="drawer-sec">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-          <h4 style={{ margin: 0 }}>Every {d.kind === "player" ? "player" : "team"} it was called on</h4>
+          <h4 style={{ margin: 0 }}>{d.kind === "player" ? "Every player it was called on" : "The team number it is graded on"}</h4>
           <Seg<Verdict> value={verdict} onChange={setVerdict} options={[
             { v: "all", l: `All ${data.rows.length}` }, { v: "hit", l: `Right ${count("hit")}` }, { v: "miss", l: `Wrong ${count("miss")}` },
             ...(count("absent") ? [{ v: "absent" as Verdict, l: `Didn't happen ${count("absent")}` }] : [])]} />
@@ -103,7 +107,7 @@ function FamilyBody({ d }: { d: Extract<Drill, { type: "angle" }> }) {
           <thead><tr>
             <th className="left">{who}</th><th className="left">Wk · vs</th>
             {hasPremise && <th>{p?.label ?? "Premise"}</th>}{hasPremise && <th>{p?.label === "blitzed" ? "EPA there / rest" : "YPC there / rest"}</th>}
-            <th>{g?.measure ?? "Number"}</th><th>Usual</th>{hasProp && <th>Prop</th>}<th></th>
+            <th>{g?.measure ?? "Number"}</th><th>Usual</th>{hasProp && <th>{d.kind === "team" ? "Player lines" : "Prop"}</th>}<th></th>
           </tr></thead>
           <tbody>{rows.map((a, i) => {
             const ig = a.in_game;
@@ -120,7 +124,8 @@ function FamilyBody({ d }: { d: Extract<Drill, { type: "angle" }> }) {
                   {hasPremise && <td className="num">{ig ? <>{perSnap(ig.on_sum, ig.on_n)} <span className="faint">/</span> {perSnap(ig.off_sum, ig.off_n)}</> : "–"}</td>}
                   <td className={`num ${a.verdict === "hit" ? "over" : a.verdict === "miss" ? "under" : ""}`}>{num(a.actual, f, signed)}</td>
                   <td className="num muted">{num(a.baseline, f, signed)}</td>
-                  {hasProp && <td className="num">{a.line_result ? <span className={a.line_verdict === "hit" ? "over" : a.line_verdict === "miss" ? "under" : ""} title={a.line !== null ? `line ${a.line}${a.line_actual != null ? `, had ${a.line_actual}` : ""}` : undefined}>{a.line_result}</span> : <span className="faint">–</span>}</td>}
+                  {hasProp && d.kind === "team" && <td className="num">{a.lines?.length ? <span className={a.lines.filter((l) => l.agreed).length * 2 >= a.lines.length ? "over" : "under"}>{a.lines.filter((l) => l.agreed).length}/{a.lines.length} {d.lean}</span> : <span className="faint">–</span>}</td>}
+                  {hasProp && d.kind !== "team" && <td className="num">{a.line_result ? <span className={a.line_verdict === "hit" ? "over" : a.line_verdict === "miss" ? "under" : ""} title={a.line !== null ? `line ${a.line}${a.line_actual != null ? `, had ${a.line_actual}` : ""}` : undefined}>{a.line_result}</span> : <span className="faint">–</span>}</td>}
                   <td><Mark v={a.verdict} /></td>
                 </tr>
                 {open && (
@@ -137,7 +142,8 @@ function FamilyBody({ d }: { d: Extract<Drill, { type: "angle" }> }) {
         <div className="hint" style={{ marginTop: 6 }}>
           Click a row for what the page said before kickoff and the box score.
           {hasPremise && <> The {p?.label ?? "premise"} column is how many of his {p?.label === "blitzed" ? "dropbacks" : "carries"} it actually happened on; a faint 0 means it never did.</>}
-          {hasProp && <> Prop is where he finished against the closing line, green when it was the way the angle leaned.</>}
+          {hasProp && d.kind !== "team" && <> Prop is where he finished against the closing line, green when it was the way the angle leaned.</>}
+          {hasProp && d.kind === "team" && <> Player lines is how many of the offense's players with a line went {d.lean} it; each one is listed in the table above.</>}
         </div>
       </div>
 
@@ -149,6 +155,42 @@ function FamilyBody({ d }: { d: Extract<Drill, { type: "angle" }> }) {
       )}
 
     </>
+  );
+}
+
+/** A team angle read the way a bettor reads it: every player it pointed at,
+ *  his closing line, and whether he went the way the angle leaned. Only the
+ *  calls in the record (not a box that never showed up). */
+function PlayerLinesTable({ rows, lean, label }: { rows: AngleFamilyRecord["rows"]; lean: string; label: (m: string) => string }) {
+  const [show, setShow] = useState<"all" | "right" | "wrong">("all");
+  const all = rows.filter((r) => r.verdict === "hit" || r.verdict === "miss")
+    .flatMap((r) => (r.lines ?? []).map((l) => ({ ...l, week: r.week, game_id: r.game_id, opp: l.team === r.defense ? r.offense : r.defense })));
+  if (!all.length) return (
+    <div className="drawer-sec"><h4>Player lines</h4><div className="hint">No closing player lines for this angle's markets in these games.</div></div>
+  );
+  const right = all.filter((l) => l.agreed).length;
+  const list = all.filter((l) => show === "all" || l.agreed === (show === "right"));
+  return (
+    <div className="drawer-sec">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+        <h4 style={{ margin: 0 }}>Every player line · {right} of {all.length} went {lean} ({fmtPct(right / all.length)})</h4>
+        <Seg value={show} onChange={setShow} options={[{ v: "all", l: `All ${all.length}` }, { v: "right", l: `Went ${lean} ${right}` }, { v: "wrong", l: `Didn't ${all.length - right}` }]} />
+      </div>
+      <div className="tbl-wrap"><table className="tbl compact tight pin-first">
+        <thead><tr><th className="left">Player</th><th className="left">Wk · vs</th><th className="left">Market</th><th>Line</th><th>Had</th><th></th></tr></thead>
+        <tbody>{list.map((l, i) => (
+          <tr key={i}>
+            <td className="left"><Link to={`/research?player=${l.player_id}`}>{l.player}</Link> <span className="faint tiny">{l.position ?? ""} {l.team}</span></td>
+            <td className="left muted">W{l.week} · <Link to={`/matchups?game=${l.game_id}`}>{l.opp}</Link></td>
+            <td className="left small">{label(l.market)}</td>
+            <td className="num">{fmtLine(l.line)}</td>
+            <td className={`num ${l.agreed ? "over" : "under"}`}>{l.actual}</td>
+            <td><span className={`pill ${l.agreed ? "over" : "under"}`}>{l.agreed ? "✓" : "✗"} {l.result}</span></td>
+          </tr>
+        ))}</tbody>
+      </table></div>
+      <div className="hint" style={{ marginTop: 6 }}>Each player's closing line is its own call. Landing exactly on the line counts as not going {lean}.</div>
+    </div>
   );
 }
 
