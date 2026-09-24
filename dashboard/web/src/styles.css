@@ -192,6 +192,9 @@ table.tbl { border-collapse: collapse; width: 100%; font-size: 13px; white-space
 .tbl th, .tbl td { padding: 7px 9px; border-bottom: 1px solid var(--border); text-align: right; }
 .tbl th:first-child, .tbl td:first-child { text-align: left; }
 .tbl th { color: var(--muted); font-weight: 600; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.05em; position: sticky; top: 0; background: var(--panel); cursor: pointer; user-select: none; }
+/* The sticky header sits above anything positioned in the body (range bars,
+   pinned first columns) as the rows scroll under it. */
+.tbl thead th { z-index: 2; }
 .tbl th.left, .tbl td.left { text-align: left; }
 /* Narrow-column tables: smaller type, tighter cells, first column may wrap. */
 /* Wide metric tables: headers wrap so more columns fit before scrolling. */
@@ -1083,6 +1086,7 @@ a.home-row:hover { text-decoration: none; color: var(--accent); }
 .chip-btn { cursor: pointer; font: inherit; font-size: 12px; }
 /* A wide table in a narrow sheet scrolls sideways; the name stays put. */
 .tbl.pin-first th:first-child, .tbl.pin-first tbody tr.row-link td:first-child { position: sticky; left: 0; z-index: 1; background: var(--panel); }
+.tbl.pin-first thead th:first-child { z-index: 3; }   /* the corner: above the pinned column and the header row */
 
 /* The Tailor menu in the top bar */
 .tailor-menu { position: relative; flex: none; }
@@ -1097,7 +1101,9 @@ a.home-row:hover { text-decoration: none; color: var(--accent); }
 
 /* The range bar (components/RangeBar.tsx): this week's floor-to-ceiling band,
    the projection tick, and the last few games as dots on the same scale. */
-.range-bar { position: relative; height: 5px; margin: 7px 0 4px; border-radius: 3px; background: var(--border); }
+/* isolation: the tick and dots stack against each other inside the bar only,
+   so a scrolling table's sticky header can never end up underneath them. */
+.range-bar { position: relative; isolation: isolate; height: 5px; margin: 7px 0 4px; border-radius: 3px; background: var(--border); }
 .range-bar.with-dots { margin: 9px 0 7px; }
 .range-bar .band { position: absolute; top: 0; bottom: 0; border-radius: 3px; background: linear-gradient(90deg, var(--under), var(--push) 35%, var(--over)); opacity: 0.8; }
 .range-bar .tick { position: absolute; top: -3px; width: 3px; height: 11px; margin-left: -1.5px; border-radius: 2px; background: var(--text); z-index: 2; }
@@ -1149,3 +1155,16 @@ th.range-col { white-space: nowrap; }
 .mt-presets, .mt-steppers { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
 .mt-presets { gap: 6px; }
 @media (max-width: 760px) { .mt-lineup-sum { display: none; } }
+
+/* An angle's prop line on the matchup page (Matchups.tsx, LineRead) */
+.angle-line { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--border-2); font-size: 12px; display: grid; gap: 2px; }
+
+/* Balanced columns (components/Balanced.tsx). Placed: 1px rows, each panel
+   given the rows its measured height covers, so the two columns stack
+   independently in one grid. Stacked (narrow): one column, plain gaps. */
+.balanced { display: grid; gap: 14px; }
+.balanced.placed { grid-auto-rows: 1px; row-gap: 0; column-gap: 14px; margin-bottom: 14px; }
+.balanced > .balanced-item { min-width: 0; align-self: start; }
+/* Inside a tailored layout the rows already have a gap; the balanced panels'
+   own bottom margin would double it. */
+.lay > .balanced.placed { margin-bottom: 0; }

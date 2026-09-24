@@ -192,6 +192,27 @@ function implied(g: ScheduleGame, homeSpread: number | null, total: number | nul
   const home = (total - homeSpread) / 2, away = total - home;
   return `${g.home_team} ${home.toFixed(1)} · ${g.away_team} ${away.toFixed(1)}`;
 }
+/** The angle read against its prop line: the line, the usual beside it, and
+ *  whether the line already expects what the angle says. A gap under 5% of
+ *  the usual is "about his usual": the book and the average agree. */
+function LineRead({ a }: { a: Angle }) {
+  const l = a.line!;
+  const who = l.players && l.players.length > 1 ? "their" : "his";
+  if (l.usual === null) return <div className="angle-line"><b>Line {l.line} {l.what}</b>{l.players && l.players.length > 1 ? <span className="faint"> · {l.players.join(" + ")}</span> : null}</div>;
+  const gap = l.line - l.usual, near = Math.abs(gap) < 0.05 * Math.max(l.usual, 1);
+  const where = near ? `about ${who} usual ${l.usual.toFixed(1)}` : `${Math.abs(gap).toFixed(1)} ${gap < 0 ? "below" : "above"} ${who} usual ${l.usual.toFixed(1)}`;
+  // Room: the line sits on the side that leaves the angle's direction open.
+  const read = a.lean === "neutral" || near ? null
+    : (a.lean === "over") === (gap < 0) ? { cls: "over", t: `room for the ${a.lean}: the line has not priced the angle in` }
+    : { cls: "under", t: `the line already expects ${a.lean === "over" ? "a big game" : "a quiet game"}, so the angle is mostly priced in` };
+  return (
+    <div className="angle-line">
+      <div><b>Line {l.line} {l.what}</b>{l.players && l.players.length > 1 ? <span className="faint"> ({l.players.join(" + ")})</span> : null} · <span className="muted">{where}</span></div>
+      {read && <div className={`tiny ${read.cls}`}>{read.t}</div>}
+    </div>
+  );
+}
+
 function AngleGrid({ title, angles, empty, track, season, offense, defense }: { title: string; angles: Angle[]; empty: string; track: TrackIndex | null; season: number | null; offense: string; defense: string }) {
   // "Lean over" is a bet; without betting in the profile it is just a direction.
   const { betting } = useLens();
@@ -207,6 +228,7 @@ function AngleGrid({ title, angles, empty, track, season, offense, defense }: { 
               <div className="k" style={{ display: "flex", justifyContent: "space-between", gap: 6 }}><span><span className={leanClass(a.lean)}>{leanText(a.lean)}</span> · {a.tags.join(", ")}{a.strength >= 2 ? " · strong" : ""}</span>{track && <TrackChip rec={track.get(trackKey(a, offense, defense))} season={season} />}</div>
               <div style={{ fontWeight: 600, marginTop: 2 }}>{a.player_id ? <Link to={`/research?player=${a.player_id}`}>{a.title}</Link> : a.title}</div>
               <div className="small muted" style={{ marginTop: 2 }}>{a.detail}</div>
+              {a.line && <LineRead a={a} />}
             </div>
           ))}
         </div>

@@ -188,7 +188,10 @@ export const api3 = {
 };
 
 // --- game matchups -------------------------------------------------------------
-export interface Angle { title: string; detail: string; lean: "over" | "under" | "neutral"; tags: string[]; strength: number; offense?: string; defense: string; player_id?: string; player?: string; position?: string; }
+/** The prop line an angle can be read against (dashboard/stats/angle_grades.py, line_context): a
+ *  player's consensus line, or the sum of a position's, next to the same players' usual. */
+export interface AngleLine { market: string; what: string; line: number; books: number | null; usual: number | null; usual_label: string; players?: string[]; }
+export interface Angle { title: string; detail: string; lean: "over" | "under" | "neutral"; tags: string[]; strength: number; offense?: string; defense: string; player_id?: string; player?: string; position?: string; line?: AngleLine; }
 export interface DefPlayer { status?: string | null; injury?: string | null; stats_team?: string | null; new_to_team?: boolean; player_id: string | null; name: string; position: string; group: string; games: number; snap_pct: number; headshot: string | null; targets: number; targets_pg: number | null; catch_rate: number | null; yards_allowed: number; yards_per_target: number | null; td_allowed: number | null; ints: number | null; adot_faced: number | null; pressures: number | null; sacks: number | null; tackles: number | null; missed_tackle_pct: number | null; }
 export interface MatchupSideFull { offense: string; defense: string; usage_season?: number; usage_label?: string; offense_block: MatchupSide; defense_block: MatchupSide; dvp: Record<string, { season_row: DvpRow | null; last4: Record<string, number> | null; stats: string[] }>; angles: Angle[]; player_angles: Angle[]; offense_personnel: (UsageRow & { headshot?: string | null; status?: string | null; injury?: string | null })[]; defense_personnel: DefPlayer[]; }
 export interface H2H { game_id: string; season: number; week: number; game_type: string; gameday: string; home_team: string; away_team: string; roof: string | null; a: string; b: string; a_home: boolean; a_pts: number; b_pts: number; margin: number; total: number; a_spread: number | null; total_line: number | null; a_cover: boolean | null; over: boolean | null; a_coach: string | null; b_coach: string | null; a_qb: string | null; b_qb: string | null; stars: { team: string; player_id: string; name: string; position: string; line: string; ppr: number }[]; }
@@ -216,23 +219,29 @@ export interface GradeSummary { n: number; weeks: [number, number][]; by_book: {
 // A matchup angle rebuilt as of kickoff and checked against the game: the
 // number it was about (measure), where that number usually sits (baseline) and
 // where it landed (actual). dashboard/stats/angle_grades.py.
-export interface GradedAngle { season: number; week: number; game_id: string; offense: string; defense: string; kind: "team" | "player"; family: string; title: string; detail: string; lean: "over" | "under" | "neutral"; strength: number; tags: string[]; player_id: string | null; player: string | null; position: string | null; team: string | null; measure: string; direction: "up" | "down"; baseline: number | null; baseline_label: string; actual: number | null; fmt: string; verdict: "hit" | "miss" | "push" | "absent"; line: number | null; line_result: "over" | "under" | "push" | null; market: string | null;
+export interface GradedAngle { season: number; week: number; game_id: string; offense: string; defense: string; kind: "team" | "player"; family: string; title: string; detail: string; lean: "over" | "under" | "neutral"; strength: number; tags: string[]; player_id: string | null; player: string | null; position: string | null; team: string | null; measure: string; direction: "up" | "down"; baseline: number | null; baseline_label: string; actual: number | null; fmt: string; verdict: "hit" | "miss" | "absent"; line: number | null; line_result: "over" | "under" | "push" | null; market: string | null;
+  /** What the players with a line actually did, and whether that beat the line the way the angle leaned. */
+  line_actual?: number | null; line_verdict?: "hit" | "miss" | null; line_words?: string | null;
+  /** He got hurt in the game (under half his usual snaps, then on the next report). The call still counts. */
+  hurt?: boolean | null; snap_pct?: number | null; usual_snap_pct?: number | null;
   /** Plain-sentence versions, built by the server when the grades are read. */
   said?: string; happened?: string; evidence?: string | null; note?: string | null; verdict_words?: string;
   /** Box and blitz angles: whether the thing the angle was about happened in
    *  that game, from FTN's charting, and how the snaps it was about went. */
   in_game?: InGame | null; }
 export interface InGame { snaps: number; of: number; label: string; unit: string; premise: string; split: string; on_n: number; on_sum: number; off_n: number; off_sum: number; }
-export interface AngleFamily { family: string; kind: "team" | "player"; n: number; hits: number; rate: number; lean: string; }
+export interface AngleFamily { family: string; kind: "team" | "player"; n: number; hits: number; rate: number; lean: string;
+  /** Against the closing line, only the calls that had one. */
+  line_n?: number; line_hits?: number; }
 export interface GradeSignal { id: string; signal: string; n: number; hit_rate: number }
 /** One signal opened up: every graded line it fired on (dashboard/odds/grading.py). */
 export interface SignalLines { id: string; signal: string; why: string; n: number; hits: number;
   rows: { season: number; week: number; game_id: string; book: string; market: string; player_id: string; player_name: string; team: string | null; line: number; open_line: number | null; moved: number | null; actual: number; result: "over" | "under"; l5_rate: number | null; l10_rate: number | null; form_n: number; hit: boolean }[]; }
 /** One row of the track record opened up: every graded call behind it. */
-export interface AngleFamilyRecord { family: string; kind: "team" | "player"; lean: string; season: number | null; weeks: [number, number][]; why: string | null; n: number; hits: number; pushes: number; absent: number;
+export interface AngleFamilyRecord { family: string; kind: "team" | "player"; lean: string; season: number | null; weeks: [number, number][]; why: string | null; n: number; hits: number; absent: number; hurt?: number;
   graded_on: { measure: string; baseline_label: string; direction: "up" | "down" } | null; prop: { n: number; agreed: number } | null;
   premise: { label: string; unit: string; games: number; snaps: number; of: number; on: number | null; off: number | null; never: number } | null; rows: GradedAngle[]; }
-export interface AngleTrackRecord { season: number | null; current: boolean; weeks: [number, number][]; n: number; hits: number; pushes: number; absent?: number; families: AngleFamily[]; by_kind: { kind: string; n: number; hits: number; rate: number }[]; best: GradedAngle[]; }
+export interface AngleTrackRecord { season: number | null; current: boolean; weeks: [number, number][]; n: number; hits: number; absent?: number; hurt?: number; line_n?: number; line_hits?: number; families: AngleFamily[]; by_kind: { kind: string; n: number; hits: number; rate: number; line_n?: number; line_hits?: number }[]; best: GradedAngle[]; }
 /** value: ESPN's projection when it has one ("espn"), the site's baseline otherwise.
  *  low / high: a bad week and a good week (20th and 80th percentile) simulated
  *  from the player's own games around that value. base: the site's baseline. */

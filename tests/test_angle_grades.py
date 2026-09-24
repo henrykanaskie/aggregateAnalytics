@@ -41,20 +41,19 @@ def test_family_strips_names_but_not_words_containing_them():
 def test_verdict_follows_the_direction():
     assert ag._verdict(3.1, 4.4, "down", "dec1") == "hit"
     assert ag._verdict(5.0, 4.4, "down", "dec1") == "miss"
-    assert ag._verdict(4.4, 4.4, "up") == "push"
+    assert ag._verdict(4.4, 4.4, "up") == "miss"      # a tie did not move the way it said
     assert ag._verdict(None, 4.4, "up") is None
 
 
-def test_tiny_moves_are_pushes():
-    # sack rate 7.1% vs 7.0%: inside the half-point floor
-    assert ag._verdict(0.071, 0.070, "up", "pct") == "push"
-    assert ag._verdict(0.085, 0.070, "up", "pct") == "hit"
-    # EPA near zero still needs 0.02 of movement
-    assert ag._verdict(0.01, 0.00, "up", "dec2") == "push"
-    assert ag._verdict(0.15, 0.18, "down", "dec2") == "hit"
-    # plays: 5% of 60 is 3
-    assert ag._verdict(62.0, 60.0, "up", "dec1") == "push"
-    assert ag._verdict(64.0, 60.0, "up", "dec1") == "hit"
+def test_every_call_is_a_hit_or_a_miss():
+    """No margin: a small move the way the angle said is a hit, a small move
+    the other way a miss. Nothing drops out of the record for being close."""
+    assert ag._verdict(0.071, 0.070, "up", "pct") == "hit"
+    assert ag._verdict(0.069, 0.070, "up", "pct") == "miss"
+    assert ag._verdict(62.0, 60.0, "up", "dec1") == "hit"
+    assert ag._verdict(59.9, 60.0, "up", "dec1") == "miss"
+    # Exactly on a whole-number line is a miss: neither side came in.
+    assert ag.line_verdict("push", "up") == "miss" and ag.line_verdict("push", "down") == "miss"
 
 
 def test_thresholds_have_no_margin():
@@ -164,16 +163,15 @@ def test_a_family_opens_to_the_games_behind_its_record(monkeypatch):
     df = pl.DataFrame([
         base | {"week": 1, "game_id": "2026_01_NE_SEA", "player": "A", "player_id": "a", "title": "A vs stacked boxes", "verdict": "hit", "line_result": "under"},
         base | {"week": 2, "game_id": "2026_02_NE_SEA", "player": "A", "player_id": "a", "title": "A vs stacked boxes", "verdict": "miss", "line_result": "over"},
-        base | {"week": 2, "game_id": "2026_02_NE_SEA", "player": "B", "player_id": "b", "title": "B vs stacked boxes", "verdict": "push"},
         # Same title leaning the other way is a different call.
         base | {"week": 2, "game_id": "2026_02_NE_SEA", "player": "C", "player_id": "c", "title": "C vs stacked boxes", "verdict": "hit", "lean": "over"},
     ], schema=ag.SCHEMA)
     monkeypatch.setattr(ag, "_fresh", lambda: df)
     monkeypatch.setattr(ag, "CURRENT_SEASON", 2026)
     r = ag.family_record("{player} vs stacked boxes", "player", "under")
-    assert (r["n"], r["hits"], r["pushes"]) == (2, 1, 1)
+    assert (r["n"], r["hits"]) == (2, 1) and "pushes" not in r
     assert r["prop"] == {"n": 2, "agreed": 1}
-    assert [x["week"] for x in r["rows"]] == [2, 2, 1]          # newest first
+    assert [x["week"] for x in r["rows"]] == [2, 1]             # newest first
     assert all(x["said"] for x in r["rows"]) and r["why"]
     assert r["graded_on"]["measure"] == "yards / carry"
 
@@ -186,7 +184,6 @@ def test_the_premise_adds_up_across_games():
     rows = [{"verdict": "hit", "in_game": ig(0, 0.0, 13, 33.0)},
             {"verdict": "hit", "in_game": ig(4, 6.0, 16, 80.0)},
             {"verdict": "miss", "in_game": ig(2, 10.0, 10, 50.0)},
-            {"verdict": "push", "in_game": ig(5, 5.0, 5, 5.0)},       # pushes are out, as in the record
             {"verdict": "hit", "in_game": None}]
     p = ag._premise_total(rows)
     assert (p["snaps"], p["of"], p["games"], p["never"]) == (6, 45, 3, 1)
@@ -214,9 +211,74 @@ def test_box_angles_only_count_games_where_the_box_showed_up(monkeypatch):
     monkeypatch.setattr(ag, "_fresh", lambda: df)
     monkeypatch.setattr(ag, "CURRENT_SEASON", 2026)
     t = ag.track_record()
-    assert (t["n"], t["hits"], t["absent"], t["pushes"]) == (2, 2, 1, 0)
+    assert (t["n"], t["hits"], t["absent"]) == (2, 2, 1)
 
 
 def test_only_box_angles_store_a_premise():
     assert ag._premise_cols({"family": "{player} vs the blitz"}) == {"premise_snaps": None, "premise_of": None}
     assert ag._premise_cols({"family": "Pass-heavy offense into a stingy pass defense"})["premise_snaps"] is None
+
+
+def test_line_verdict_is_the_line_going_the_way_the_angle_leaned():
+    assert ag.line_verdict("over", "up") == "hit" and ag.line_verdict("under", "down") == "hit"
+    assert ag.line_verdict("over", "down") == "miss" and ag.line_verdict("push", "up") == "miss"
+    assert ag.line_verdict(None, "up") is None
+
+
+def test_track_record_counts_the_line_apart_from_the_average(monkeypatch):
+    """A call can beat the team's usual and still lose to the line: the
+    record keeps both, and only calls that had a line count toward the line."""
+    import polars as pl
+    base = {k: None for k in ag.SCHEMA} | {"season": 2026, "week": 1, "kind": "team", "family": "{def} has clamped RBs",
+                                           "lean": "under", "strength": 1, "tags": [], "direction": "down",
+                                           "fmt": "dec1", "baseline_label": "CIN's usual", "measure": "RB rushing yards"}
+    df = ag._with_margin(pl.DataFrame([
+        base | {"game_id": "2026_01_A_B", "actual": 60.0, "baseline": 90.0, "line": 72.0, "line_result": "under"},   # hit, hit
+        base | {"game_id": "2026_01_C_D", "actual": 80.0, "baseline": 90.0, "line": 72.0, "line_result": "over"},    # hit, miss
+        base | {"game_id": "2026_01_E_F", "actual": 99.0, "baseline": 90.0},                                        # miss, no line
+    ], schema=ag.SCHEMA))
+    monkeypatch.setattr(ag, "_fresh", lambda: df)
+    monkeypatch.setattr(ag, "CURRENT_SEASON", 2026)
+    t = ag.track_record()
+    assert (t["n"], t["hits"]) == (3, 2) and (t["line_n"], t["line_hits"]) == (2, 1)
+    fam = t["families"][0]
+    assert (fam["line_n"], fam["line_hits"]) == (2, 1)
+
+
+def test_a_position_angle_reads_against_the_offenses_own_usual():
+    r = {k: None for k in ag.SCHEMA} | {"kind": "team", "offense": "ATL", "defense": "CAR", "team": "ATL", "direction": "up",
+                                       "measure": "RB rushing yards", "fmt": "dec1", "actual": 123.0, "baseline": 118.7,
+                                       "baseline_label": "ATL's usual", "line": 106.0, "line_actual": 123.0,
+                                       "market": "player_rush_yds", "line_result": "over"}
+    assert "than they usually do" in ag._said(r) and "league" not in ag._said(r)
+    assert "their usual 118.7" in ag._happened(r)
+    assert ag._line_words(r).startswith("Closing line 106.0 rushing yards for ATL's RBs") and "the way the angle leaned" in ag._line_words(r)
+
+
+def test_a_player_who_got_hurt_still_counts_with_a_note(monkeypatch):
+    """Under half his usual snaps and on the next week's report: the call
+    counts as usual and carries a note. Low snaps alone (a benched backup) or
+    a listing alone (a knock he played through) carry none."""
+    import polars as pl
+    base = {k: None for k in ag.SCHEMA} | {"season": 2026, "week": 1, "kind": "player", "family": "{player} vs man coverage",
+                                           "lean": "under", "strength": 1, "tags": [], "direction": "down", "fmt": "dec1",
+                                           "baseline_label": "his previous 16 games", "baseline": 60.0, "actual": 20.0,
+                                           "line_result": "under", "usual_snap_pct": 0.8, "title": "A vs man coverage",
+                                           "offense": "NE", "defense": "SEA", "measure": "receiving yards", "player": "A"}
+    rows = [base | {"game_id": "g", "player_id": "hurt", "snap_pct": 0.2},       # low snaps, then listed: noted
+            base | {"game_id": "g", "player_id": "benched", "snap_pct": 0.2},    # low snaps, not listed
+            base | {"game_id": "g", "player_id": "knock", "snap_pct": 0.75}]     # listed, played his snaps
+    listed = pl.DataFrame({"season": [2026, 2026], "week": [1, 1], "player_id": ["hurt", "knock"]},
+                          schema={"season": pl.Int32, "week": pl.Int32, "player_id": pl.String})
+    monkeypatch.setattr(ag, "_hurt_next_week", lambda seasons: listed)
+    df = ag._with_margin(pl.DataFrame(rows, schema=ag.SCHEMA))
+    assert df["verdict"].to_list() == ["hit", "hit", "hit"] and df["line_verdict"].to_list() == ["hit", "hit", "hit"]
+    assert df["hurt"].to_list() == [True, False, False]
+    monkeypatch.setattr(ag, "_box", lambda ids: pl.DataFrame(schema={"game_id": pl.String, "player_id": pl.String, "team": pl.String}))
+    notes = [r["note"] for r in ag.explain(df.to_dicts())]
+    assert notes[0].startswith("He got hurt in the game: 20% of the snaps against his usual 80%")
+    assert "got hurt" not in notes[1] and "got hurt" not in notes[2]
+    monkeypatch.setattr(ag, "_fresh", lambda: df)
+    monkeypatch.setattr(ag, "CURRENT_SEASON", 2026)
+    t = ag.track_record()
+    assert (t["n"], t["hits"], t["hurt"]) == (3, 3, 1)

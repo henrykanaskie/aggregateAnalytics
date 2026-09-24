@@ -36,25 +36,26 @@ export function TrackChip({ rec, season }: { rec?: { n: number; hits: number }; 
   return <span className={`pill ${cls}`} style={{ whiteSpace: "nowrap", flexShrink: 0, textTransform: "none", letterSpacing: 0 }} title={`This kind of angle was right ${rec.hits} of ${rec.n} times in ${season}: the number it was about moved the way it said`}>{rec.hits}-{rec.n - rec.hits} in {season}</span>;
 }
 
-const ORDER = { hit: 0, miss: 1, push: 2, absent: 3 } as const;
+const ORDER = { hit: 0, miss: 1, absent: 2 } as const;
 export const Mark = ({ v }: { v: GradedAngle["verdict"] }) =>
-  <span className={`pill ${v === "hit" ? "over" : v === "miss" ? "under" : ""}`} style={{ minWidth: 58, textAlign: "center" }}>{v === "hit" ? "✓ called it" : v === "miss" ? "✗ missed" : v === "absent" ? "– didn't happen" : "≈ push"}</span>;
+  <span className={`pill ${v === "hit" ? "over" : v === "miss" ? "under" : ""}`} style={{ minWidth: 58, textAlign: "center" }}>{v === "hit" ? "✓ called it" : v === "miss" ? "✗ missed" : "– didn't happen"}</span>;
 
 const MARKET_STAT: Record<string, string> = { player_pass_yds: "passing yards", player_rush_yds: "rushing yards", player_reception_yds: "receiving yards" };
 
 /** What the angle said, what happened, and the box score behind it. */
 export function Outcome({ a }: { a: GradedAngle }) {
   const tone = a.verdict === "hit" ? "over" : a.verdict === "miss" ? "under" : "";
-  const lineAgreed = a.line_result === (a.lean === "over" ? "over" : "under");
   return (
     <div className="small" style={{ display: "grid", gap: 2 }}>
       <div className="muted">{a.said}</div>
       <div><b className={tone}>{a.happened}</b></div>
       {a.evidence && <div className="muted">{a.evidence}.</div>}
-      {a.line !== null && a.line_result && (
-        <div className="muted">Prop line was {fmtLine(a.line)} {a.market ? MARKET_STAT[a.market] ?? "" : ""}: he went <b className={a.line_result === "push" ? "" : lineAgreed ? "over" : "under"}>{a.line_result}</b>{a.line_result === "push" ? "" : lineAgreed ? ", the way the angle leaned" : ", against the angle"}.</div>
-      )}
-      {(a.verdict === "push" || a.verdict === "absent") && <div className="faint">{a.verdict_words}</div>}
+      {a.line_words
+        ? <div><b className={a.line_verdict === "hit" ? "over" : a.line_verdict === "miss" ? "under" : ""}>{a.line_words}</b></div>
+        : a.line !== null && a.line_result && (
+          <div className="muted">Prop line was {fmtLine(a.line)} {a.market ? MARKET_STAT[a.market] ?? "" : ""}: {a.line_result}.</div>
+        )}
+      {a.verdict === "absent" && <div className="faint">{a.verdict_words}</div>}
       {a.note && <div className="faint">{a.note}</div>}
     </div>
   );
@@ -65,13 +66,13 @@ export function Outcome({ a }: { a: GradedAngle }) {
 export function AngleReview({ rows, home, away, score }: { rows: GradedAngle[]; home: string; away: string; score: string }) {
   const dec = rows.filter((r) => r.verdict === "hit" || r.verdict === "miss");
   const hits = dec.filter((r) => r.verdict === "hit").length;
-  const pushes = rows.length - dec.length;
+  const absent = rows.length - dec.length;
   const sides = [away, home].map((off) => ({ off, rows: rows.filter((r) => r.offense === off) }));
   return (
     <div className="panel" data-tour="matchup-review">
       <div className="panel-head">
         <h3>How the calls did · final {score}</h3>
-        <span className="hint"><b className={hits / Math.max(1, dec.length) >= 0.5 ? "over" : "under"}>{hits} of {dec.length}</b> right ({fmtPct(hits / Math.max(1, dec.length))}){pushes ? ` · ${pushes} not counted` : ""}</span>
+        <span className="hint"><b className={hits / Math.max(1, dec.length) >= 0.5 ? "over" : "under"}>{hits} of {dec.length}</b> right ({fmtPct(hits / Math.max(1, dec.length))}){absent ? ` · ${absent} where the box never showed up, not counted` : ""}</span>
       </div>
       <div className="hint" style={{ marginBottom: 8 }}>Each call is what the matchup page said before kickoff, using only what was known then. It is right when the number it was about moved the way it said, against that team's or player's usual. A move smaller than 5% of the usual is too close to call and counts neither way.</div>
       <div className="grid grid-2">
