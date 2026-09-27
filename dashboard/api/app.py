@@ -77,8 +77,9 @@ app.include_router(leagues_router)
 # worth more than the milliseconds spent compressing. 500 bytes is the floor
 # because below it the gzip header is most of what you sent.
 app.add_middleware(GZipMiddleware, minimum_size=500)
-# On a stateless host, new odds snapshots arrive from git, not from disk.
-sync_odds.install(app)
+# On a stateless host, new odds snapshots arrive from git, not from disk. Each
+# one retires the built responses, so they are rebuilt as it lands.
+sync_odds.install(app, on_new=lambda: _warm_responses())
 
 
 def _warm() -> None:
@@ -91,14 +92,23 @@ def _warm() -> None:
     waiting on it. Each step is independent; a failure (no cache on disk,
     say) is logged and the app serves anyway.
     """
-    import time
-    steps = (
+    _run_steps((
         ("player index", players_mod.player_index),
         ("teams", players_mod.teams),
         ("team metrics", team_mod.metric_json),
         ("current coaches", coaches_mod.current_coaches),
         ("coordinators", coaches_mod.coordinators),
         ("odds status", store.status),
+    ))
+    _warm_responses()
+
+
+def _warm_responses() -> None:
+    """The built responses (board, fantasy week, matchups). Keyed on the data
+    stamp, so a new lines snapshot retires them all; this runs after boot and
+    again after every sync that brought one, so the next visitor finds them
+    built instead of paying for all of them at once on a fraction of a CPU."""
+    _run_steps((
         # The landing route is the board, so this is the request the first
         # visitor after a wake is actually waiting on. Warming it also fills
         # the DvP tables and the recent-form scan every other page reads.
@@ -107,12 +117,18 @@ def _warm() -> None:
         # other one would leave the first visitor building it anyway.
         ("odds board", lambda: _board_bytes(CURRENT_SEASON, None, None, None, True, 1.0, True)),
         ("odds board (real only)", lambda: _board_bytes(CURRENT_SEASON, None, None, None, False, 1.0, True)),
+        # Every starter this week, projected: the fantasy page's one read.
+        ("fantasy week", lambda: _fantasy_bytes(CURRENT_SEASON, None)),
         # Last, and after the board: the browser warms every game on the slate
         # in the background as soon as it loads, which was sixteen full builds
         # per visitor. Built here they are handed out from memory instead. This
         # is the slowest step and nobody is waiting on it.
         ("this week's matchups", _warm_matchups),
-    )
+    ))
+
+
+def _run_steps(steps) -> None:
+    import time
     for name, fn in steps:
         t0 = time.perf_counter()
         try:
@@ -656,10 +672,13 @@ def _deep_clean(v: Any) -> Any:
 
 @app.get("/api/fantasy/week")
 def fantasy_week_route(request: Request, season: int = CURRENT_SEASON, week: int | None = None):
+    return _cached_json(request, _fantasy_bytes(season, week))
+
+
+def _fantasy_bytes(season: int, week: int | None) -> tuple[bytes, bytes]:
     week = _week_default(season, week)
-    entry = _FANTASY_CACHE.get((_data_stamp(), season, week),
-                               lambda: _deep_clean(fantasy_mod.week_rankings(season, week)))
-    return _cached_json(request, entry)
+    return _FANTASY_CACHE.get((_data_stamp(), season, week),
+                              lambda: _deep_clean(fantasy_mod.week_rankings(season, week)))
 
 
 @app.get("/api/matchups/{game_id}")

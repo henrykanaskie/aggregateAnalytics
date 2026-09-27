@@ -187,8 +187,12 @@ def sync(
     return got
 
 
-def install(app, *, interval: int = 1800) -> None:
-    """Sync at startup, then every ``interval`` seconds, in the event loop."""
+def install(app, *, interval: int = 1800, on_new=None) -> None:
+    """Sync at startup, then every ``interval`` seconds, in the event loop.
+
+    ``on_new`` runs on a worker thread after a sync that fetched anything: a
+    new snapshot retires every built response, and this rebuilds them before
+    a visitor has to."""
 
     async def _loop() -> None:
         while True:
@@ -196,6 +200,8 @@ def install(app, *, interval: int = 1800) -> None:
                 n = await asyncio.to_thread(sync)
                 if n:
                     print(f"[sync_odds] fetched {n} new file(s)")
+                    if on_new is not None:
+                        await asyncio.to_thread(on_new)
             except Exception as e:  # noqa: BLE001 -- keep the app up, report on /healthz
                 STATE["last_error"] = f"{type(e).__name__}: {e}"
                 print(f"[sync_odds] {STATE['last_error']}")

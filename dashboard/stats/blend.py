@@ -121,12 +121,14 @@ def _reg() -> pl.DataFrame:
     return team_games().filter(pl.col("season_type") == "REG")
 
 
+@lru_cache(maxsize=256)
 def through_week(season: int, before_week: int | None = None) -> int:
     """The last week of ``season`` the numbers include: everything played
     before ``before_week``, capped at what the table actually has.
 
     Two requests that would read the same games get the same answer, which is
-    what lets the precomputed angle table key on it.
+    what lets the precomputed angle table key on it. Cached like the tables
+    it keys: a week of fantasy projections asks it once per player.
     """
     s = _reg().filter(pl.col("season") == season)
     if before_week is not None:
@@ -376,5 +378,6 @@ def dvp_blended(season: int, position: str, before_week: int | None = None) -> p
 
 
 def clear() -> None:
+    through_week.cache_clear()
     _blended.cache_clear()
     _dvp_blend.cache_clear()

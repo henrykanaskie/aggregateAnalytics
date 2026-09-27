@@ -54,8 +54,33 @@ function toPasswordBox(): never {
   throw new Error("password required");
 }
 
+// The reads the server builds once and keeps (board, fantasy week, a game):
+// asking again joins the build already running or gets the finished bytes, so
+// they are safe to retry. A first visit after a wake could otherwise sit on a
+// connection the host had dropped (a restart mid-build) with nothing ever
+// arriving, and only a reload got past it. So those give up on an answer after
+// RETRY_AFTER and ask once more, which is what the reload was doing by hand.
+// Other reads are built per request, where a second ask would double the work.
+const RETRYABLE = /^\/api\/(odds\/board|fantasy\/week|matchups\/)/;
+const RETRY_AFTER = 45_000;
+
+async function fetchWithRetry(url: string): Promise<Response> {
+  if (!RETRYABLE.test(url)) return fetch(url);
+  const ctl = new AbortController();
+  const timer = window.setTimeout(() => ctl.abort(), RETRY_AFTER);
+  try {
+    return await fetch(url, { signal: ctl.signal });
+  } catch (e) {
+    if (!ctl.signal.aborted) throw e;
+    // The second ask has no limit: a build that is merely slow still lands.
+    return fetch(url);
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
 async function fetchJson<T>(url: string): Promise<T> {
-  const r = await fetch(url);
+  const r = await fetchWithRetry(url);
   if (r.status === 401) toPasswordBox();
   if (!r.ok) throw new Error(`${r.status} ${r.statusText}: ${await r.text()}`);
   return r.json();
