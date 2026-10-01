@@ -23,6 +23,7 @@ export const ICONS: Record<string, (p: IconProps) => JSX.Element> = {
   "/coaches": make("ClipboardText"),
   "/predictions": make("ChartLineUp"),
   "/results": make("SealCheck"),
+  "/bets": make("Star"),
   "/settings": make("GearSix"),
 };
 

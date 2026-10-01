@@ -13,6 +13,8 @@ import { arrange, TABS, useLens } from "./lib/profile";
 import { gameWeek, warmAll } from "./lib/prefetch";
 import { clearSticky, readSticky, useSticky, writeSticky } from "./lib/sticky";
 import { MetaProvider, useMeta } from "./state";
+import { SlipProvider } from "./lib/slip";
+import SlipDrawer from "./components/SlipDrawer";
 import type { Meta } from "./api";
 import { Spinner } from "./components/common";
 
@@ -23,11 +25,11 @@ const PAGES = {
   Board: () => import("./pages/Board"), Games: () => import("./pages/Games"), Predictions: () => import("./pages/Predictions"),
   Research: () => import("./pages/Research"), Settings: () => import("./pages/Settings"), Teams: () => import("./pages/Teams"),
   Matchups: () => import("./pages/Matchups"), Results: () => import("./pages/Results"), Coaches: () => import("./pages/Coaches"),
-  Fantasy: () => import("./pages/Fantasy"), Home: () => import("./pages/Home"),
+  Fantasy: () => import("./pages/Fantasy"), Home: () => import("./pages/Home"), Bets: () => import("./pages/Bets"),
 };
 const Board = lazy(PAGES.Board), Games = lazy(PAGES.Games), Predictions = lazy(PAGES.Predictions), Research = lazy(PAGES.Research),
   Settings = lazy(PAGES.Settings), Teams = lazy(PAGES.Teams), Matchups = lazy(PAGES.Matchups), Results = lazy(PAGES.Results),
-  Coaches = lazy(PAGES.Coaches), Fantasy = lazy(PAGES.Fantasy), Home = lazy(PAGES.Home);
+  Coaches = lazy(PAGES.Coaches), Fantasy = lazy(PAGES.Fantasy), Home = lazy(PAGES.Home), Bets = lazy(PAGES.Bets);
 
 // Which player, coach, team or game a page is showing lives in the query
 // string, and a plain link to "/coaches" would throw it away. Each tab points
@@ -328,12 +330,14 @@ function Shell() {
             <Route path="/coaches" element={<Coaches />} />
             <Route path="/predictions" element={<Predictions />} />
             <Route path="/results" element={<Results />} />
+            <Route path="/bets" element={<Bets />} />
             <Route path="/settings" element={<Settings />} />
           </Routes>
           </Suspense>
           </ErrorBoundary>
         </div>
       </main>
+      <SlipDrawer />
       {mobile && <>
         <BottomNav onMore={() => setSheet(sheet === "more" ? null : "more")} moreOpen={sheet === "more"} />
         <MoreSheet open={sheet === "more"} onClose={() => setSheet(null)} />
@@ -347,4 +351,4 @@ function Shell() {
     </div>
   );
 }
-export default function App() { return <MetaProvider><Shell /></MetaProvider>; }
+export default function App() { return <MetaProvider><SlipProvider><Shell /></SlipProvider></MetaProvider>; }
