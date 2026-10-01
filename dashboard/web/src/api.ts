@@ -337,3 +337,16 @@ export interface TeamShares extends Partial<BoxShares> {
 export const api7 = {
   teamShares: ep<TeamShares>()((team: string, season?: number, week?: number) => `/api/teams/${team}/shares${qs({ season, week })}`),
 };
+
+// --- slip ------------------------------------------------------------------------
+/** A saved pick's result at the line it was taken (dashboard/odds/slip.py). */
+export interface LegResult { id: string; status: "hit" | "miss" | "push" | "void" | "pending" | "unknown"; actual: number | null; }
+export const apiSlip = {
+  /** Not cached: the answer changes as box scores land, and the body is the key. */
+  grade: async (legs: { id: string; season: number; week: number; game_id: string; player_id: string; market: string; side: string; line: number | null }[]) => {
+    const r = await fetch("/api/slip/grade", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ legs }) });
+    if (r.status === 401) toPasswordBox();
+    if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+    return ((await r.json()) as { legs: LegResult[] }).legs;
+  },
+};

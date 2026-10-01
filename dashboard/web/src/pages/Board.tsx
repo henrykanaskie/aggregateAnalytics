@@ -9,6 +9,7 @@ import { fmtDate, fmtDelta, fmtLine, fmtOdds, fmtPct } from "../lib/format";
 import { useMeta } from "../state";
 import { useLens } from "../lib/profile";
 import { useMobile } from "../lib/useMobile";
+import SlipAdd from "../components/SlipAdd";
 
 type SortKey = "spread" | "consensus" | "l5" | "l10" | "season" | "avg" | "player" | "moved" | "edge" | "pover";
 
@@ -215,12 +216,12 @@ export default function Board() {
             ? <>None of the {scaledRows.length} props this week match the filters. <button className="btn sm" onClick={clearAll}>Clear filters</button></>
             : "No lines for this week. Pull one from Settings, ESPN is free and needs no key."}</div>
         )}
-        {cards && <PropCards rows={rows} books={books} sort={sort} setSort={(v) => { setSortPicked(true); setSort(v); }} onOpen={(r) => r.player_id && nav(`/research?player=${r.player_id}&market=${r.market}`)} />}
+        {cards && <PropCards rows={rows} books={books} slipAt={data ? { season: data.season, week: data.week, book: book || null } : null} sort={sort} setSort={(v) => { setSortPicked(true); setSort(v); }} onOpen={(r) => r.player_id && nav(`/research?player=${r.player_id}&market=${r.market}`)} />}
         {!cards && <div className="tbl-wrap" style={{ maxHeight: "72vh" }}>
           <table className="tbl compact tight">
             <thead>
               <tr>
-                {th("player", "Player")}<th className="left">Game</th><th className="left">Market</th>
+                <th title="Add a side to your slip">Slip</th>{th("player", "Player")}<th className="left">Game</th><th className="left">Market</th>
                 {th("consensus", "Cons.")}
                 {th("l5", "L5")}{th("l10", "L10")}{th("season", "Szn")}{th("avg", "Avg−line")}
                 {th("edge", "Proj")}{th("pover", "P(over)")}
@@ -235,6 +236,7 @@ export default function Board() {
                 const maxMove = r.books.reduce((m, b) => (Math.abs(b.moved ?? 0) > Math.abs(m) ? (b.moved ?? 0) : m), 0);
                 return (
                   <tr key={`${r.event_id}-${r.market}-${r.player_id ?? r.player_name}`} className="clickable" onClick={() => r.player_id && nav(`/research?player=${r.player_id}&market=${r.market}`)}>
+                    <td>{data && <SlipAdd row={r} season={data.season} week={data.week} book={book || null} />}</td>
                     <td className="left">{r.player_name} <span className="muted">{r.position ?? ""}</span></td>
                     <td className="left small"><b>{r.team ?? ""}</b> <span className="muted">{r.away_team}@{r.home_team}</span></td>
                     <td className="left">{r.market_label}</td>
@@ -283,8 +285,8 @@ function Meter({ label, w }: { label: string; w?: { rate: number | null; over: n
  *  hit rates as bars, and every book's number in a strip underneath. Cards come
  *  in batches as the list is scrolled, so a week of hundreds of props opens as
  *  fast as a short one. */
-function PropCards({ rows, books, sort, setSort, onOpen }: {
-  rows: BoardRow[]; books: string[]; sort: { k: SortKey; d: 1 | -1 }; setSort: (s: { k: SortKey; d: 1 | -1 }) => void; onOpen: (r: BoardRow) => void;
+function PropCards({ rows, books, slipAt, sort, setSort, onOpen }: {
+  rows: BoardRow[]; books: string[]; slipAt: { season: number; week: number; book: string | null } | null; sort: { k: SortKey; d: 1 | -1 }; setSort: (s: { k: SortKey; d: 1 | -1 }) => void; onOpen: (r: BoardRow) => void;
 }) {
   const { meta } = useMeta();
   const [n, setN] = useState(24);
@@ -319,6 +321,7 @@ function PropCards({ rows, books, sort, setSort, onOpen }: {
                   <div className="pc-name">{r.player_name} <span className="muted">{r.position ?? ""}</span></div>
                   <div className="pc-sub"><b>{r.team ?? ""}</b> {r.away_team} @ {r.home_team}</div>
                   <div className="pc-market">{r.market_label}</div>
+                  {slipAt && <SlipAdd row={r} season={slipAt.season} week={slipAt.week} book={slipAt.book} />}
                 </div>
                 <div className="pc-line">
                   <div className="v">{r.kind === "ou" ? fmtLine(r.consensus) : fmtPct(r.consensus)}</div>

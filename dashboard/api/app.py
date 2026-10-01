@@ -51,6 +51,7 @@ from ..stats import availability as avail_mod
 from ..stats import fantasy as fantasy_mod
 from ..stats import projection as proj_mod
 from ..odds import grading
+from ..odds import slip as slip_mod
 from ..stats import pbp as pbp_mod
 from ..stats import team as team_mod
 from ..stats.gamelog import availability, game_log
@@ -512,6 +513,31 @@ class GradeRequest(BaseModel):
 def grading_run(req: GradeRequest):
     g = grading.grade_week(req.season, req.week, include_sample=req.include_sample)
     return {"season": req.season, "week": req.week, "graded": g.height}
+
+
+class SlipLeg(BaseModel):
+    id: str
+    season: int
+    week: int
+    game_id: str
+    player_id: str
+    market: str
+    side: str
+    line: float | None = None
+
+
+class SlipRequest(BaseModel):
+    legs: list[SlipLeg]
+
+
+@app.post("/api/slip/grade")
+def slip_grade(req: SlipRequest):
+    """A POST only because a slip does not fit in a query string. It reads
+    the box scores and writes nothing, so a viewer's session is enough: the
+    picks live in the browser that sent them (dashboard/odds/slip.py)."""
+    if len(req.legs) > 500:
+        raise HTTPException(413, "at most 500 legs per request")
+    return {"legs": slip_mod.grade_legs([l.model_dump() for l in req.legs])}
 
 
 class LogBaselineRequest(BaseModel):
