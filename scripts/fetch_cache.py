@@ -19,11 +19,18 @@ import json
 import os
 import sys
 import tarfile
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
 
 TAG = "data-cache"
+
+# GitHub answers the odd request with a 5xx or drops the connection, and one
+# of those used to fail the whole deploy build (the 2026-10-05 stats run died
+# on a 500 halfway through the assets). Four tries, 2/4/8 s apart, rides out
+# a blip without hiding a real outage for long.
+ATTEMPTS = 4
 
 
 def _repo() -> str:
@@ -41,11 +48,34 @@ def _headers(accept: str) -> dict[str, str]:
     return h
 
 
+def _retrying(what: str, fn):
+    """Call fn(), retrying on 5xx, 429 and network errors; anything else raises."""
+    for attempt in range(1, ATTEMPTS + 1):
+        try:
+            return fn()
+        except urllib.error.HTTPError as e:
+            if e.code < 500 and e.code != 429 or attempt == ATTEMPTS:
+                raise
+            err = f"HTTP {e.code}"
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
+            if attempt == ATTEMPTS:
+                raise
+            err = str(getattr(e, "reason", e))
+        wait = 2 ** attempt
+        print(f"[retry] {what}: {err}; try {attempt + 1}/{ATTEMPTS} in {wait}s")
+        time.sleep(wait)
+
+
 def release_assets(repo: str, tag: str = TAG) -> list[dict] | None:
     url = f"https://api.github.com/repos/{repo}/releases/tags/{tag}"
-    try:
-        with urllib.request.urlopen(urllib.request.Request(url, headers=_headers("application/vnd.github+json"))) as r:
+
+    def get():
+        req = urllib.request.Request(url, headers=_headers("application/vnd.github+json"))
+        with urllib.request.urlopen(req, timeout=60) as r:
             return json.load(r)["assets"]
+
+    try:
+        return _retrying(f"release {tag}", get)
     except urllib.error.HTTPError as e:
         if e.code == 404:
             return None
@@ -55,9 +85,14 @@ def release_assets(repo: str, tag: str = TAG) -> list[dict] | None:
 def download(asset: dict, into: Path) -> Path:
     out = into / asset["name"]
     req = urllib.request.Request(asset["url"], headers=_headers("application/octet-stream"))
-    with urllib.request.urlopen(req) as r, out.open("wb") as f:
-        while chunk := r.read(1 << 20):
-            f.write(chunk)
+
+    def get():
+        # "wb" each try, so a retry starts the file over instead of appending.
+        with urllib.request.urlopen(req, timeout=60) as r, out.open("wb") as f:
+            while chunk := r.read(1 << 20):
+                f.write(chunk)
+
+    _retrying(asset["name"], get)
     return out
 
 
