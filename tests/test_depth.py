@@ -65,3 +65,35 @@ def test_unknown_format_raises_rather_than_guessing():
 def test_starters_takes_rank_one_only(raw_depth_modern):
     out = starters(normalize_depth_chart(raw_depth_modern).collect())
     assert out["player_name"].to_list() == ["Sam Darnold", "Matthew Stafford"]
+
+
+def test_latest_depth_charts_keeps_each_teams_newest_snapshot(tmp_path, monkeypatch, raw_depth_legacy):
+    """The newest chart per team, read without loading every snapshot. Same
+    rows as the window filter it replaced: SEA's newest is older than LA's,
+    and must not be emptied out by it."""
+    import nfl.depth as depth
+
+    modern = pl.DataFrame({
+        "season": [2026] * 5,
+        "dt": ["2026-08-01T00:00:00Z", "2026-08-30T12:30:54Z", "2026-08-30T12:30:54Z",
+               "2026-08-01T00:00:00Z", "2026-09-02T09:00:00Z"],
+        "team": ["SEA", "SEA", "SEA", "LA", "LA"],
+        "player_name": ["Old Starter", "Sam Darnold", "Drew Lock", "Old LA", "Matthew Stafford"],
+        "espn_id": ["9", "1", "2", "8", "3"],
+        "gsis_id": ["00-9", "00-1", "00-2", "00-8", "00-3"],
+        "pos_grp": ["OFF"] * 5, "pos_abb": ["QB"] * 5, "pos_slot": [9] * 5,
+        "pos_rank": [1, 1, 2, 1, 1],
+    })
+    files = [tmp_path / "depth_charts_2024.parquet", tmp_path / "depth_charts_2026.parquet"]
+    raw_depth_legacy.write_parquet(files[0])
+    modern.write_parquet(files[1])
+    monkeypatch.setattr(depth, "dataset_files", lambda name: files)
+
+    out = depth.latest_depth_charts(2026)
+    assert out.columns == DEPTH_COLUMNS
+    assert sorted(out["player_name"].to_list()) == ["Drew Lock", "Matthew Stafford", "Sam Darnold"]
+    expected = depth.load_depth_charts(seasons=[2026])
+    expected = expected.filter(pl.col("asof") == pl.col("asof").max().over("team"))
+    assert out.equals(expected)
+    # A legacy season has no snapshot times, so nothing is "newest".
+    assert depth.latest_depth_charts(2024).is_empty()

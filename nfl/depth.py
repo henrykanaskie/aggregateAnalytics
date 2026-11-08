@@ -106,14 +106,11 @@ def normalize_depth_chart(source: pl.DataFrame | pl.LazyFrame) -> pl.LazyFrame:
     )
 
 
-def load_depth_charts(
+def scan_depth_charts(
     *, seasons: range | list[int] | None = None, position: str | None = None
-) -> pl.DataFrame:
-    """Every cached depth chart, both eras, on one schema.
-
-    Read file by file rather than as a glob: the whole point is that the files
-    disagree, so they have to be normalised before they can be stacked.
-    """
+) -> pl.LazyFrame:
+    """:func:`load_depth_charts`, not yet collected, for a caller that keeps
+    only part of it."""
     frames = [
         normalize_depth_chart(pl.scan_parquet(f)) for f in dataset_files("depth_charts")
     ]
@@ -124,7 +121,47 @@ def load_depth_charts(
         lf = lf.filter(pl.col("season").is_in(list(seasons)))
     if position is not None:
         lf = lf.filter(pl.col("position") == position)
-    return lf.select(DEPTH_COLUMNS).sort(["season", "team", "position", "rank"]).collect()
+    return lf.select(DEPTH_COLUMNS)
+
+
+def latest_depth_charts(season: int) -> pl.DataFrame:
+    """Each team's newest chart for one season.
+
+    A modern season file holds every snapshot (one a day, ~2,700 rows each),
+    and loading it whole to keep one snapshot per team cost 280 MB of a 512 MB
+    host by November. So the newest timestamps are found first from two raw
+    columns, and a filter on the raw ``dt`` column (which the parquet reader
+    applies before decoding the rest) keeps only those snapshots: ~60 MB. The
+    exact rule -- each team's newest ``asof`` -- is then applied to what is
+    left. A legacy season has no ``asof`` and comes back empty, as it did.
+    """
+    out = []
+    for f in dataset_files("depth_charts"):
+        raw = pl.scan_parquet(f)
+        if not is_modern(raw.collect_schema().names()):
+            continue
+        raw = raw.filter(pl.col("season").cast(pl.Int32) == season)
+        newest = (raw.group_by(canonical_team_expr("team").alias("t"))
+                  .agg(pl.col("dt").max()).collect()["dt"].drop_nulls().unique().to_list())
+        if newest:
+            out.append(normalize_depth_chart(raw.filter(pl.col("dt").is_in(newest))).collect())
+    if not out:
+        return pl.DataFrame(schema=scan_depth_charts(seasons=[]).collect_schema())
+    d = pl.concat(out, how="vertical")
+    return (d.filter(pl.col("asof") == pl.col("asof").max().over("team"))
+            .select(DEPTH_COLUMNS).sort(["season", "team", "position", "rank"]))
+
+
+def load_depth_charts(
+    *, seasons: range | list[int] | None = None, position: str | None = None
+) -> pl.DataFrame:
+    """Every cached depth chart, both eras, on one schema.
+
+    Read file by file rather than as a glob: the whole point is that the files
+    disagree, so they have to be normalised before they can be stacked.
+    """
+    return scan_depth_charts(seasons=seasons, position=position).sort(
+        ["season", "team", "position", "rank"]).collect()
 
 
 def starters(depth: pl.DataFrame, *, position: str = "QB") -> pl.DataFrame:

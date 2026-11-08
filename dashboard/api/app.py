@@ -103,11 +103,22 @@ def _warm() -> None:
     _warm_responses()
 
 
+# One warm at a time. The sync at boot usually brings a snapshot, which warms
+# again while the boot warm is still running; two side by side doubled the
+# memory on a 512 MB host. The second waits, and finds most of it built.
+_WARM_LOCK = threading.Lock()
+
+
 def _warm_responses() -> None:
     """The built responses (board, fantasy week, matchups). Keyed on the data
     stamp, so a new lines snapshot retires them all; this runs after boot and
     again after every sync that brought one, so the next visitor finds them
     built instead of paying for all of them at once on a fraction of a CPU."""
+    with _WARM_LOCK:
+        _warm_steps()
+
+
+def _warm_steps() -> None:
     _run_steps((
         # The landing route is the board, so this is the request the first
         # visitor after a wake is actually waiting on. Warming it also fills
