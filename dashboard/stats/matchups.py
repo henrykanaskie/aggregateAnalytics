@@ -22,7 +22,7 @@ from functools import lru_cache
 import polars as pl
 
 from nfl.data import scan
-from nfl.depth import load_depth_charts
+from nfl.depth import latest_depth_charts
 
 from ..config import CURRENT_SEASON
 from .context import DVP_BY_POS, DVP_LABELS, POS_GROUPS, USAGE_COLS, dvp_recent, dvp_table, league_usage, snap_weeks, team_usage
@@ -436,12 +436,12 @@ def depth_chart(season: int) -> pl.DataFrame:
     filed yesterday.
     """
     try:
-        d = load_depth_charts(seasons=[season])
+        d = latest_depth_charts(season)
     except (FileNotFoundError, ValueError):
         return pl.DataFrame()
     if d.is_empty():
         return d
-    return _repair_ids(d.filter(pl.col("asof") == pl.col("asof").max().over("team")), season)
+    return _repair_ids(d, season)
 
 
 def _repair_ids(d: pl.DataFrame, season: int) -> pl.DataFrame:
@@ -902,6 +902,11 @@ def player_angles(side_players: list[dict], deff: dict | None, def_team: str, si
     for p in side_players:
         pos = p["position"]
         pid = p["player_id"]
+        # A depth-chart name with no gsis id (a practice-squad call-up) has no
+        # plays to read, and a lookup on None cannot prune the play-by-play
+        # scan: it read the whole file, 940 MB on a 512 MB host.
+        if not pid:
+            continue
         try:
             if pos == "QB":
                 sp = splits(pid, "pass", ["pressure", "blitz", "man_zone", "play_action", "coverage"], since=since, before=before)

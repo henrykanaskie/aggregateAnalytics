@@ -315,3 +315,43 @@ def test_a_player_who_got_hurt_still_counts_with_a_note(monkeypatch):
     monkeypatch.setattr(ag, "CURRENT_SEASON", 2026)
     t = ag.track_record()
     assert (t["n"], t["hits"], t["hurt"]) == (3, 3, 1)
+
+
+def test_player_angles_skips_a_player_with_no_id(monkeypatch):
+    """A depth-chart name with no gsis id must not reach the play-by-play
+    lookups: a filter on None cannot prune the scan, and it read the whole
+    file (940 MB on a 512 MB host)."""
+    from dashboard.stats import gamelog, matchups, pbp
+
+    # Recorded rather than raised: player_angles skips a player whose lookups
+    # fail, so an exception here would pass on the old code too.
+    asked = []
+
+    def record(player_id, *a, **k):
+        asked.append(player_id)
+        raise LookupError
+
+    monkeypatch.setattr(pbp, "splits", record)
+    monkeypatch.setattr(gamelog, "game_log", record)
+    players = [{"player_id": None, "player_display_name": "Call-up", "position": "RB"}]
+    assert matchups.player_angles(players, {"n_teams": 32}, "PHI", since=2025) == []
+    assert asked == []
+
+
+def test_player_plays_without_an_id_is_empty_and_reads_nothing(monkeypatch):
+    from dashboard.stats import pbp
+
+    class Frame:
+        def select(self, *a):
+            return self
+
+        def head(self, n):
+            assert n == 0, "a missing id must not scan the play-by-play"
+            return self
+
+        def collect(self):
+            import polars as pl
+            return pl.DataFrame({"play_id": pl.Series([], dtype=pl.Float64)})
+
+    monkeypatch.setattr(pbp, "scan", lambda name: Frame())
+    assert pbp.player_plays.__wrapped__(None).is_empty()

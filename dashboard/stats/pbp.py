@@ -170,7 +170,12 @@ PLAYS_CACHE = 16
 @lru_cache(maxsize=PLAYS_CACHE)
 def player_plays(player_id: str) -> pl.DataFrame:
     """Every play the player rushed, was targeted or threw on, with charting
-    columns attached where they exist."""
+    columns attached where they exist.
+
+    No id reads nothing: a filter on None matches no row but cannot skip any
+    part of the file either, so it loaded every play of every season."""
+    if not player_id:
+        return scan("pbp").select(_PBP_COLS).head(0).collect().with_columns(pl.col("play_id").cast(pl.Int64))
     lf = scan("pbp").select(_PBP_COLS).filter(
         (pl.col("rusher_player_id") == player_id)
         | (pl.col("receiver_player_id") == player_id)

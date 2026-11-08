@@ -38,6 +38,8 @@ def players_master() -> pl.DataFrame:
 
 
 def _player_ids(player_id: str) -> dict:
+    if not player_id:
+        return {"pfr_id": None, "name": None, "espn_id": None}
     row = players_master().filter(pl.col("gsis_id") == player_id)
     if row.is_empty():
         return {"pfr_id": None, "name": None, "espn_id": None}
