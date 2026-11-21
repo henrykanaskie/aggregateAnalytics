@@ -27,7 +27,6 @@ from nfl.depth import latest_depth_charts
 from ..config import CURRENT_SEASON
 from .context import DVP_BY_POS, DVP_LABELS, POS_GROUPS, USAGE_COLS, dvp_recent, dvp_table, league_usage, snap_weeks, team_usage
 from .gamelog import players_master
-from .players import player_index
 from .team import METRIC_BY_KEY
 
 # --- history -----------------------------------------------------------------
@@ -370,7 +369,7 @@ def _defense_season(season: int) -> pl.DataFrame:
         snaps = snaps.join(pfr, on=["pfr_player_id", "team"], how="left")
     except FileNotFoundError:
         pass
-    ids = players_master().select(pl.col("pfr_id").alias("pfr_player_id"), pl.col("gsis_id").alias("player_id"), pl.col("headshot"))
+    ids = players_master().select(pl.col("pfr_id").alias("pfr_player_id"), pl.col("gsis_id").alias("player_id"))
     return snaps.join(ids, on="pfr_player_id", how="left").rename({"team": "stats_team"})
 
 
@@ -409,7 +408,7 @@ def defense_personnel(team: str, season: int, roster_season: int | None = None) 
         yds = r.get("def_yards_allowed") or 0
         out.append({
             "player_id": r.get("player_id"), "name": r["player"], "position": r["position"], "group": grp,
-            "games": r["games"], "snap_pct": r["snap_pct"], "headshot": r.get("headshot"),
+            "games": r["games"], "snap_pct": r["snap_pct"],
             "stats_team": r.get("stats_team"), "new_to_team": r.get("stats_team") != team,
             "targets": tg, "targets_pg": tg / r["games"] if r["games"] else None,
             "catch_rate": cmp_ / tg if tg else None, "yards_allowed": yds, "yards_per_target": yds / tg if tg else None,
@@ -540,7 +539,6 @@ def offense_personnel(team: str, season: int, roster_season: int | None = None, 
         return _personnel_by_volume(team, season, before_week)
 
     usage = _usage_by_player(season, before_week)
-    heads = {r["player_id"]: r["headshot"] for r in player_index().select("player_id", "headshot").to_dicts()}
     blank = {c: 0 for c in USAGE_COLS + ["receiving_air_yards", "games", "team_games"]}
     quiet = _quiet_games(season, before_week)
     keep = []
@@ -568,7 +566,6 @@ def offense_personnel(team: str, season: int, roster_season: int | None = None, 
                 "depth_rank": d["rank"],
                 "stats_team": (u or q or {}).get("team"),
                 "new_to_team": bool(u or q) and (u or q).get("team") != team,
-                "headshot": heads.get(pid),
             })
             row.pop("team", None)
             keep.append(row)
@@ -580,8 +577,6 @@ def _personnel_by_volume(team: str, season: int, before_week: int | None = None)
     u = team_usage(team, season, before_week=before_week)
     if u.is_empty():
         return []
-    idx = player_index().select("player_id", "headshot")
-    u = u.join(idx, on="player_id", how="left")
     keep = []
     for pos, n in _OFF_SLOTS:
         sub = u.filter(pl.col("position") == pos)

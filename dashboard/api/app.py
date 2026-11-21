@@ -387,7 +387,7 @@ def _usage():
 # --- players ---------------------------------------------------------------
 
 _PLAYER_COLS = ["player_id", "name", "position", "team", "first_season", "last_season", "games",
-                "headshot", "jersey_number", "status"]
+                "jersey_number", "status"]
 
 
 @app.get("/api/players")

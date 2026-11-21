@@ -37,8 +37,8 @@ def _novig(over: int | None, under: int | None) -> float | None:
 
 
 def _positions() -> dict[str, str]:
-    idx = player_index().select("player_id", "position", "headshot")
-    return {r["player_id"]: (r["position"], r["headshot"]) for r in idx.to_dicts()}
+    idx = player_index().select("player_id", "position")
+    return {r["player_id"]: r["position"] for r in idx.to_dicts()}
 
 
 def build_board(latest: pl.DataFrame, markets: list[str] | None = None, threshold_scale: float = 1.0) -> list[dict]:
@@ -86,8 +86,7 @@ def build_board(latest: pl.DataFrame, markets: list[str] | None = None, threshol
         blist = sorted(books.values(), key=lambda b: _book_order(b["book"]))
         row = {**info, "sources": sorted(info["sources"]), "market_label": m.label, "stat": m.stat,
                "kind": m.kind, "group": m.group, "threshold": m.threshold * threshold_scale}
-        pinfo = pos.get(info["player_id"] or "", (None, None))
-        row["position"], row["headshot"] = pinfo
+        row["position"] = pos.get(info["player_id"] or "")
         if m.kind == "ou":
             lines = [b["line"] for b in blist if b["line"] is not None]
             if not lines:

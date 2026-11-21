@@ -274,7 +274,7 @@ def special_teams(season: int, week: int, opp_of: dict[str, dict], listed: dict[
         if g is None:
             continue
         opp = o["opponent"]
-        base = {"team": team, "headshot": None, "new_to_team": False, "stats_team": team, "target_share": None,
+        base = {"team": team, "new_to_team": False, "stats_team": team, "target_share": None,
                 "carry_share": None, "role": None, "depth_rank": 1, "factor": 1.0, **o}
 
         # Kicker: the team's kicking, scaled by how many points it is expected to score.
@@ -341,7 +341,7 @@ PRACTICE = {"DNP": "Missed practice", "Limited": "Limited practice"}
 def _players_info(pids: list[str]) -> dict[str, dict]:
     if not pids:
         return {}
-    df = (pl.read_parquet(RAW_DIR / "players.parquet", columns=["gsis_id", "display_name", "headshot"])
+    df = (pl.read_parquet(RAW_DIR / "players.parquet", columns=["gsis_id", "display_name"])
           .filter(pl.col("gsis_id").is_in(pids)))
     return {r["gsis_id"]: r for r in df.to_dicts()}
 
@@ -369,7 +369,7 @@ def reconcile(roster: list[dict], espn: dict[str, dict], opp_of: dict[str, dict]
     for pid, e in extra:
         i = info.get(pid, {})
         out.append({"player_id": pid, "name": i.get("display_name") or e["name"], "position": e["position"], "team": e["team"],
-                    "depth_rank": None, "headshot": i.get("headshot"), "new_to_team": False, "stats_team": None,
+                    "depth_rank": None, "new_to_team": False, "stats_team": None,
                     "target_share": None, "carry_share": None, "status": None, "injury": None, **opp_of[e["team"]]})
     for r in out:
         e = espn.get(r["player_id"])
@@ -428,7 +428,7 @@ def week_rankings(season: int, week: int) -> dict:
             inj = listed.get(p["player_id"])
             roster.append({
                 "player_id": p["player_id"], "name": p["player_display_name"], "position": p["position"],
-                "team": team, "depth_rank": p.get("depth_rank"), "headshot": p.get("headshot"),
+                "team": team, "depth_rank": p.get("depth_rank"),
                 "new_to_team": bool(p.get("new_to_team")), "stats_team": p.get("stats_team"),
                 "target_share": p.get("target_share"), "carry_share": p.get("carry_share"),
                 "status": inj["status"] if inj else None, "injury": inj["injury"] if inj else None,

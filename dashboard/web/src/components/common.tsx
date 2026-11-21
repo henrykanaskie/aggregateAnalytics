@@ -55,12 +55,25 @@ export function TeamTag({ abbr, name = false }: { abbr: string | null | undefine
     </span>
   );
 }
-export function Headshot({ src, size = 36 }: { src: string | null | undefined; size?: number }) {
-  const [err, setErr] = React.useState(false);
-  // Display comes from the .headshot class, never an inline style, so a
-  // layout can hide the picture and the blank placeholder alike.
-  if (!src || err) return <span className="headshot" style={{ width: size, height: size * 0.73 }} />;
-  return <img className="headshot" src={src} onError={() => setErr(true)} style={{ width: size, height: size * 0.73, objectFit: "cover" }} alt="" />;
+/** A player's initials in their team's colour, in the slot a photograph used to
+ *  fill. There is no headshot anywhere in this app on purpose: the only image a
+ *  player's likeness was ever available from is the NFL's own CDN, which this
+ *  project has no licence to serve (LICENSING.md). Initials keep the row's
+ *  shape and its scanning value, and cost no request. */
+export function Monogram({ name, team, size = 36 }: { name: string | null | undefined; team?: string | null; size?: number }) {
+  const { teamByAbbr } = useMeta();
+  const initials = (name ?? "")
+    .split(/\s+/).filter(Boolean).slice(0, 2)
+    .map((w) => w[0]?.toUpperCase() ?? "").join("");
+  const colour = (team && teamByAbbr.get(team)?.team_color) || "var(--bg-2)";
+  return (
+    <span aria-hidden="true" title={name ?? undefined} style={{
+      width: size, height: size * 0.73, borderRadius: 4, background: colour,
+      display: "inline-flex", alignItems: "center", justifyContent: "center",
+      fontSize: Math.round(size * 0.32), fontWeight: 700, letterSpacing: 0.5,
+      color: "#fff", textShadow: "0 1px 2px rgba(0,0,0,.45)", flex: "0 0 auto",
+    }}>{initials}</span>
+  );
 }
 export function SampleBanner({ sources }: { sources: string[] }) {
   if (!sources.includes("sample")) return null;

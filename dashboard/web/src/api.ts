@@ -4,7 +4,7 @@ import { cached, invalidate, prime } from "./lib/cache";
 
 export interface Team {
   team_abbr: string; team_name: string; team_nick: string; team_conf: string; team_division: string;
-  team_color: string; team_color2: string; team_logo_espn: string;
+  team_color: string; team_color2: string;
 }
 export interface StatDef { key: string; label: string; group: string; fmt: "int" | "dec1" | "dec2" | "pct"; since: number; note: string; positions: string[]; }
 export interface MarketDef { key: string; label: string; stat: string | null; kind: "ou" | "yesno"; group: string; threshold: number; positions: string[]; espn: boolean; }
@@ -18,7 +18,7 @@ export interface Meta {
   team_metrics: TeamMetric[]; team_table_ready: boolean; current_coaches: Record<string, string>;
   have_coordinators: boolean; coach_roles: CoachRole[];
 }
-export interface PlayerLite { player_id: string; name: string; position: string; team: string; first_season: number; last_season: number; games: number; headshot: string | null; jersey_number: string | null; status: string | null; }
+export interface PlayerLite { player_id: string; name: string; position: string; team: string; first_season: number; last_season: number; games: number; jersey_number: string | null; status: string | null; }
 export interface Player extends PlayerLite { birth_date: string | null; height: number | null; weight: number | null; college_name: string | null; draft_year: number | null; draft_round: number | null; draft_pick: number | null; draft_team: string | null; rookie_season: number | null; years_of_experience: number | null; espn_id: string | null; pfr_id: string | null; last_season_ppr: number | null; }
 export type GameRow = Record<string, number | string | boolean | null> & {
   season: number; week: number; season_type: "REG" | "POST"; game_id: string; gameday: string | null; team: string; opponent: string;
@@ -33,7 +33,7 @@ export interface Form { n: number; avg: number; last: number; l5: FormWindow; l1
 export interface BoardRow {
   game_id: string | null; event_id: string; home_team: string; away_team: string; commence_time: string | null; market: string; market_label: string;
   stat: string | null; kind: "ou" | "yesno"; group: string; threshold: number; player_id: string | null; player_name: string; team: string | null;
-  position: string | null; headshot: string | null; sources: string[]; consensus: number; mean_line: number; n_books: number; min_line: number; max_line: number;
+  position: string | null; sources: string[]; consensus: number; mean_line: number; n_books: number; min_line: number; max_line: number;
   line_spread: number; outliers: string[]; best_over: { book: string; title: string; line: number | null; price: number } | null;
   best_under: { book: string; title: string; line: number | null; price: number } | null; books: BookLine[]; form?: Form | null; proj?: Proj | null;
 }
@@ -143,7 +143,7 @@ export const api = {
   schedule: ep<ScheduleGame[]>()((season?: number, week?: number) => `/api/schedule${qs({ season, week })}`),
   predictions: ep<PredictionsResponse>()((season?: number, week?: number, player_id?: string) => `/api/predictions${qs({ season, week, player_id })}`),
   status: ep<OddsStatus>()(() => "/api/odds/status"),
-  teamPlayers: ep<{ player_id: string; name: string; position: string; games: number; ppr: number; headshot: string | null }[]>()((team: string, season: number) => `/api/teams/${team}/players${qs({ season })}`),
+  teamPlayers: ep<{ player_id: string; name: string; position: string; games: number; ppr: number }[]>()((team: string, season: number) => `/api/teams/${team}/players${qs({ season })}`),
   pull: async (body: Record<string, any>) => {
     const r = await fetch("/api/odds/pull", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     if (r.status === 401) toPasswordBox();
@@ -217,8 +217,8 @@ export const api3 = {
  *  player's consensus line, or the sum of a position's, next to the same players' usual. */
 export interface AngleLine { market: string; what: string; line: number; books: number | null; usual: number | null; usual_label: string; players?: string[]; }
 export interface Angle { title: string; detail: string; lean: "over" | "under" | "neutral"; tags: string[]; strength: number; offense?: string; defense: string; player_id?: string; player?: string; position?: string; line?: AngleLine; }
-export interface DefPlayer { status?: string | null; injury?: string | null; stats_team?: string | null; new_to_team?: boolean; player_id: string | null; name: string; position: string; group: string; games: number; snap_pct: number; headshot: string | null; targets: number; targets_pg: number | null; catch_rate: number | null; yards_allowed: number; yards_per_target: number | null; td_allowed: number | null; ints: number | null; adot_faced: number | null; pressures: number | null; sacks: number | null; tackles: number | null; missed_tackle_pct: number | null; }
-export interface MatchupSideFull { offense: string; defense: string; usage_season?: number; usage_label?: string; offense_block: MatchupSide; defense_block: MatchupSide; dvp: Record<string, { season_row: DvpRow | null; last4: Record<string, number> | null; stats: string[] }>; angles: Angle[]; player_angles: Angle[]; offense_personnel: (UsageRow & { headshot?: string | null; status?: string | null; injury?: string | null })[]; defense_personnel: DefPlayer[]; }
+export interface DefPlayer { status?: string | null; injury?: string | null; stats_team?: string | null; new_to_team?: boolean; player_id: string | null; name: string; position: string; group: string; games: number; snap_pct: number; targets: number; targets_pg: number | null; catch_rate: number | null; yards_allowed: number; yards_per_target: number | null; td_allowed: number | null; ints: number | null; adot_faced: number | null; pressures: number | null; sacks: number | null; tackles: number | null; missed_tackle_pct: number | null; }
+export interface MatchupSideFull { offense: string; defense: string; usage_season?: number; usage_label?: string; offense_block: MatchupSide; defense_block: MatchupSide; dvp: Record<string, { season_row: DvpRow | null; last4: Record<string, number> | null; stats: string[] }>; angles: Angle[]; player_angles: Angle[]; offense_personnel: (UsageRow & { status?: string | null; injury?: string | null })[]; defense_personnel: DefPlayer[]; }
 export interface H2H { game_id: string; season: number; week: number; game_type: string; gameday: string; home_team: string; away_team: string; roof: string | null; a: string; b: string; a_home: boolean; a_pts: number; b_pts: number; margin: number; total: number; a_spread: number | null; total_line: number | null; a_cover: boolean | null; over: boolean | null; a_coach: string | null; b_coach: string | null; a_qb: string | null; b_qb: string | null; stars: { team: string; player_id: string; name: string; position: string; line: string; ppr: number }[]; }
 export interface GameMatchup { game: ScheduleGame & Record<string, any>; season_used: number; blend: BlendInfo | null; sides: MatchupSideFull[]; metrics: TeamMetric[]; dvp_labels: Record<string, string>; history: H2H[]; venue: Record<string, any>; props: (BoardRow & { status?: string | null })[]; lines: any[]; predictions: GamePrediction[]; injuries: Record<string, InjuryRow[]>; sources: string[]; shares?: Record<string, GameShares>; }
 /** Who got the ball in a played game (dashboard/stats/matchups.game_shares). */
@@ -276,7 +276,7 @@ export interface AngleTrackRecord { season: number | null; current: boolean; wee
 export interface FantasyProj { value: number; low: number; high: number; base: number | null; last3: number | null; source?: "espn" | "baseline" }
 export interface FantasyRecent { season: number; week: number; opp: string | null; pts: Record<"ppr" | "half" | "std", number | null> }
 export interface FantasyPlayer {
-  player_id: string; name: string; position: "QB" | "RB" | "WR" | "TE" | "K" | "DST"; team: string; depth_rank: number | null; headshot: string | null;
+  player_id: string; name: string; position: "QB" | "RB" | "WR" | "TE" | "K" | "DST"; team: string; depth_rank: number | null;
   new_to_team: boolean; stats_team: string | null; target_share: number | null; carry_share: number | null;
   status: string | null; injury: string | null; opponent: string; home: boolean; game_id: string; gameday: string | null; implied: number | null;
   games: number; factor: number; matchup_rank: number | null; matchup_n: number | null;
@@ -341,7 +341,7 @@ export const api5 = {
 };
 
 // --- scatter ---------------------------------------------------------------------
-export type ScatterRow = Record<string, number | string | null> & { player_id: string; name: string; team: string; position: string; games: number; headshot: string | null };
+export type ScatterRow = Record<string, number | string | null> & { player_id: string; name: string; team: string; position: string; games: number };
 export const api6 = {
   scatterPlayers: ep<{ season: number; position: string; rows: ScatterRow[] }>()((season: number, position: string, min_games = 4) => `/api/scatter/players${qs({ season, position, min_games })}`),
 };

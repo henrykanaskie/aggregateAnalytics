@@ -1,5 +1,5 @@
 import type { Player, ScheduleGame } from "../api";
-import { Headshot, TeamTag } from "./common";
+import { Monogram, TeamTag } from "./common";
 
 export default function PlayerHeader({ p, game }: { p: Player; game: ScheduleGame | null }) {
   const age = p.birth_date ? Math.floor((Date.now() - new Date(p.birth_date).getTime()) / (365.25 * 24 * 3600 * 1000)) : null;
@@ -7,7 +7,7 @@ export default function PlayerHeader({ p, game }: { p: Player; game: ScheduleGam
   const spread = game ? (game.home_team === p.team ? -(game.spread_line ?? 0) : game.spread_line ?? 0) : null;
   return (
     <div className="phead">
-      <Headshot src={p.headshot} size={84} />
+      <Monogram name={p.name} team={p.team} size={84} />
       <div style={{ flex: 1 }}>
         <div className="name">{p.name} <span className="muted" style={{ fontWeight: 500, fontSize: 15 }}>{p.position}{p.jersey_number ? ` · #${p.jersey_number}` : ""}</span></div>
         <div className="sub">

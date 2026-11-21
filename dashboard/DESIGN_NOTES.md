@@ -156,8 +156,8 @@ decorator will do.
 ## 5. Player identity: the search index and name matching
 
 **Decision.** The search index is built from `player_stats_week` (who
-actually recorded a stat line), decorated from `players.parquet` (headshot,
-external ids, draft info). The team shown is `players.latest_team`, which
+actually recorded a stat line), decorated from `players.parquet` (external
+ids, draft info; never the headshot -- see LICENSING.md). The team shown is `players.latest_team`, which
 tracks off-season moves, falling back to the last team in the stat table.
 
 **Why build from the stat table rather than the master.** The master has

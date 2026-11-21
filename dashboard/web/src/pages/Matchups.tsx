@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, api4, api5, Angle, AngleTrackRecord, DefPlayer, GameMatchup, GradedAngle, MatchupSideFull, ScheduleGame, TeamMetric } from "../api";
 import { SharePies } from "../components/SharePies";
 import { AngleReview, TrackChip, TrackIndex, trackIndex, trackKey } from "../components/AngleReview";
-import { ApplyField, Banner, Field, Headshot, SampleBanner, Spinner, TeamTag } from "../components/common";
+import { ApplyField, Banner, Field, SampleBanner, Spinner, TeamTag } from "../components/common";
 import { fmtLine, fmtOdds, fmtPct, fmtSpread, fmtStat } from "../lib/format";
 import { gameWeek, warm } from "../lib/prefetch";
 import { useSticky } from "../lib/sticky";

@@ -251,8 +251,7 @@ def player_scatter(season: int, position: str, min_games: int = 4, season_type: 
     totals = (
         lf.group_by("player_id")
         .agg([pl.col("player_display_name").last().alias("name"), pl.col("team").last().alias("team"),
-              pl.col("position").last().alias("position"), pl.len().alias("games"),
-              pl.col("headshot_url").drop_nulls().last().alias("headshot")]
+              pl.col("position").last().alias("position"), pl.len().alias("games")]
              + [pl.col(c).sum().alias(c) for c in RAW_STAT_COLUMNS if c not in ("target_share", "air_yards_share", "wopr", "racr", "pacr", "passing_cpoe")]
              + [pl.col(c).mean().alias(c) for c in ("target_share", "air_yards_share", "wopr", "racr", "pacr", "passing_cpoe")])
         .filter(pl.col("games") >= min_games)
@@ -278,7 +277,7 @@ def player_scatter(season: int, position: str, min_games: int = 4, season_type: 
         totals = totals.join(snaps, on="player_id", how="left")
     except FileNotFoundError:
         pass
-    keep = ["player_id", "name", "team", "position", "games", "headshot"] + [c for c in totals.columns if c in {s.key for s in STATS}]
+    keep = ["player_id", "name", "team", "position", "games"] + [c for c in totals.columns if c in {s.key for s in STATS}]
     out = []
     for r in totals.select(keep).to_dicts():
         out.append({k: (None if isinstance(v, float) and v != v else v) for k, v in r.items()})

@@ -6,7 +6,7 @@ import { FANTASY_KEY, fantasyHref, fantasyStatFor, Scoring, SCORING_LABEL } from
 import { DEFAULT_SLOTS, fitsSlot, placeLineup, RosterEntry, SLOT_ORDER, Slots, toEntry } from "./MyRoster";
 import { useSticky } from "../lib/sticky";
 import { marksFor } from "./FantasySnapshot";
-import { Headshot, Spinner } from "./common";
+import { Monogram, Spinner } from "./common";
 import PlayerSearch from "./PlayerSearch";
 import LeagueImport from "./LeagueImport";
 import RangeBar, { rangeMax } from "./RangeBar";
@@ -245,7 +245,7 @@ export default function MyTeam({ data, scoring, loading, roster, setRoster, slot
       <div key={id} className={`mt-row ${w ? "dead" : ""} ${picked ? "picked" : ""} ${target ? "target" : ""} ${pick && !picked && !target ? "muted-row" : ""}`}
         onClick={target ? () => swap(pick!, id) : undefined}>
         <span className={`mt-slot ${slot === "BN" ? "bn" : ""}`}>{slot === "BN" ? "BN" : SHORT[slot]}</span>
-        <Headshot src={p?.headshot ?? null} size={38} />
+        <Monogram name={r.name} team={p?.team ?? r.team ?? null} size={38} />
         <div className="mt-who">
           <Link to={fantasyHref(r, fantasyStatFor(r.position, key))} onClick={(e) => pick && e.preventDefault()} className="mt-name" title={r.name}>{r.name}</Link>
           <div className="mt-sub">

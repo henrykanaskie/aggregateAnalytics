@@ -60,19 +60,18 @@ export default function PlayerScatter({ playerId, position, statKey, season, nam
   // label to a free side of its dot, which is what makes that many legible.
   const LABELS = 25;
 
-  // Two problems with charting the whole position. It is 188 receivers, so 188
-  // remote headshots and an unreadable cloud of faces; and most of them are
-  // bench players whose presence drags the "position average" down to a number
-  // no starter is ever measured against. So the field is the 50 most-used at
-  // the position, ranked by fantasy points because that cohort should not move
-  // when the axes do.
+  // The problem with charting the whole position: it is 188 receivers, and most
+  // of them are bench players whose presence drags the "position average" down
+  // to a number no starter is ever measured against. So the field is the 50
+  // most-used at the position, ranked by fantasy points because that cohort
+  // should not move when the axes do.
   //
   // All fifty are drawn. An earlier cut to the top 32 by the charted stat kept
   // the labels apart, but it also meant the dots and the dashed averages were
   // different populations: the lines said "the field" while the chart showed
   // its upper half, so every average looked low against what was on screen.
-  // Plus this player wherever he lands, and every dot is named: only he keeps
-  // a face, since finding him is what the chart is for.
+  // Plus this player wherever he lands, and every dot is named: he alone is
+  // ringed and drawn large, since finding him is what the chart is for.
   const { dots, avg, me, missing, gaps } = useMemo(() => {
     const plottable = (r: ScatterRow) => r[x] !== null && r[y] !== null;
     const all = rows ?? [];
@@ -100,7 +99,6 @@ export default function PlayerScatter({ playerId, position, statKey, season, nam
       dots: top.map((r, i) => ({
         // `top` is sorted by the charted stat, so these are the leaders in it.
         id: r.player_id, label: shortName(r.name), labelled: i < LABELS, x: r[x] as number | null, y: r[y] as number | null,
-        image: r.player_id === playerId ? r.headshot : null,
         // Team colour on the marker, so a dot with no room for a name still
         // says who it is at a glance.
         color: teamByAbbr.get(r.team as string)?.team_color ?? null,
@@ -124,7 +122,7 @@ export default function PlayerScatter({ playerId, position, statKey, season, nam
       {missing === "season" && <div className="banner info">{name ?? "This player"} has no {yr} season on record, so there is nothing to place on this chart. Pick another season.</div>}
       {missing === "stat" && <div className="banner info">{name ?? "This player"} has no {gaps.map((k) => statByKey.get(k)?.label ?? k).join(" and no ")} recorded for {yr}, so there is no point to place. Change that axis to see him.</div>}
       {me && (me.games as number) < minG && <div className="hint" style={{ marginBottom: 6 }}>Shown despite {me.games as number} games, under the {minG}-game minimum: the minimum trims the field, never the player you are looking at.</div>}
-      {rows === null ? <div className="hint">loading…</div> : <ScatterPlot dots={dots} xLabel={axis(x, sx)} yLabel={axis(y, sy)} xFmt={fx} yFmt={fy} xAvg={avg.x} yAvg={avg.y} quadrants={describeQuadrants(x, y, sx?.label ?? x, sy?.label ?? y)} xEnds={axisEnds(x, sx?.label ?? x)} yEnds={axisEnds(y, sy?.label ?? y)} onPick={(id) => nav(`/research?player=${id}`)} showLabels="some" imageSize={24} height={520} />}
+      {rows === null ? <div className="hint">loading…</div> : <ScatterPlot dots={dots} xLabel={axis(x, sx)} yLabel={axis(y, sy)} xFmt={fx} yFmt={fy} xAvg={avg.x} yAvg={avg.y} quadrants={describeQuadrants(x, y, sx?.label ?? x, sy?.label ?? y)} xEnds={axisEnds(x, sx?.label ?? x)} yEnds={axisEnds(y, sy?.label ?? y)} onPick={(id) => nav(`/research?player=${id}`)} showLabels="some" height={520} />}
     </div>
   );
 }
