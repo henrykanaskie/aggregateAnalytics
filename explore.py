@@ -23,11 +23,15 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent
 PKG_DIR = REPO_ROOT / "data_handling"
-DATA_DIR = PKG_DIR / "data" / "raw"
-MANIFEST = PKG_DIR / "data" / "manifest.json"
 
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 if str(PKG_DIR) not in sys.path:
     sys.path.insert(0, str(PKG_DIR))
+
+# One source of truth for where the cache is; see data_handling/explorer/paths.py.
+from nfl.data import MANIFEST_PATH as MANIFEST  # noqa: E402
+from nfl.data import RAW_DIR as DATA_DIR  # noqa: E402
 
 INGEST = "venv/bin/python data_handling/ingest.py"
 
@@ -57,6 +61,15 @@ def check_interpreter() -> int:
     return 0
 
 
+def _shown(path: Path) -> str:
+    """The cache path as the reader knows it: relative inside the repo, absolute
+    when NFL_DATA_DIR points somewhere else."""
+    try:
+        return str(path.relative_to(REPO_ROOT))
+    except ValueError:
+        return str(path)
+
+
 def check_data() -> int:
     if not PKG_DIR.is_dir():
         return fail(
@@ -65,7 +78,7 @@ def check_data() -> int:
         )
     if not DATA_DIR.is_dir():
         return fail(
-            f"No data cache at {DATA_DIR.relative_to(REPO_ROOT)}.",
+            f"No data cache at {_shown(DATA_DIR)}.",
             "Build it first (this downloads from nflverse and takes a while):",
             "",
             f"    {INGEST}",
@@ -81,7 +94,7 @@ def check_data() -> int:
     )
     if not has_data:
         return fail(
-            f"The data cache at {DATA_DIR.relative_to(REPO_ROOT)} is empty.",
+            f"The data cache at {_shown(DATA_DIR)} is empty.",
             "Build it first:",
             "",
             f"    {INGEST}",
@@ -93,7 +106,7 @@ def check_manifest() -> None:
     """A missing or stale manifest is a warning, not a failure: the catalog
     falls back to what is actually on disk."""
     if not MANIFEST.exists():
-        print(f"[warn] no manifest at {MANIFEST.relative_to(REPO_ROOT)}; "
+        print(f"[warn] no manifest at {_shown(MANIFEST)}; "
               f"the catalog will read row counts from disk only. "
               f"Run `{INGEST}` to rebuild it.", file=sys.stderr)
         return
@@ -103,7 +116,7 @@ def check_manifest() -> None:
         if not isinstance(data, dict) or not data:
             raise ValueError("empty or not an object")
     except (OSError, ValueError) as exc:
-        print(f"[warn] manifest at {MANIFEST.relative_to(REPO_ROOT)} is unreadable "
+        print(f"[warn] manifest at {_shown(MANIFEST)} is unreadable "
               f"({exc}); falling back to disk. Run `{INGEST}` to rebuild it.",
               file=sys.stderr)
 

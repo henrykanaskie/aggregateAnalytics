@@ -23,7 +23,7 @@ import ingest  # noqa: E402  (import order matters: paths sets sys.path)
 
 REGISTRY = ingest.REGISTRY
 
-DERIVED_DIR = paths.PKG_DIR / "data" / "derived"
+DERIVED_DIR = paths.DERIVED_DIR
 DERIVED_REGISTRY = DERIVED_DIR / "_registry.json"
 
 MAX_SEARCH_LIMIT = 200
