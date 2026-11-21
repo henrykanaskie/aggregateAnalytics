@@ -101,7 +101,7 @@ export function modeOf(p: Profile | null): Mode {
   return p.purposes.includes(m) ? m : p.purposes[0];
 }
 
-const BASE_ORDER = ["/research", "/fantasy", "/board", "/matchups", "/games", "/teams", "/coaches", "/predictions", "/results", "/settings"];
+const BASE_ORDER = ["/research", "/fantasy", "/board", "/matchups", "/games", "/teams", "/coaches", "/predictions", "/results", "/bets", "/settings"];
 function tabOrderOf(p: Profile | null, mode: Mode): string[] {
   if (!p) return BASE_ORDER;
   const first: string[] =
@@ -149,6 +149,7 @@ export const TABS: { path: string; label: string; tags: Tags }[] = [
   { path: "/coaches", label: "Coaches", tags: { deep: true } },
   { path: "/predictions", label: "Predictions", tags: { for: ["betting"], deep: true } },
   { path: "/results", label: "Results", tags: { for: ["betting"] } },
+  { path: "/bets", label: "My bets", tags: { for: ["betting"] } },
   { path: "/settings", label: "Settings", tags: {} },
 ];
 

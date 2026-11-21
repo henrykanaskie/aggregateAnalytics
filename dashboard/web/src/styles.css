@@ -1168,3 +1168,29 @@ th.range-col { white-space: nowrap; }
 /* Inside a tailored layout the rows already have a gap; the balanced panels'
    own bottom margin would double it. */
 .lay > .balanced.placed { margin-bottom: 0; }
+
+/* slip: the add buttons on the board, the pill and drawer, My bets */
+.slip-add { display: inline-flex; gap: 3px; }
+.slip-add-btn { background: transparent; border: 1px solid var(--border-2); border-radius: 6px; padding: 1px 6px; font-size: 11.5px; font-weight: 600; color: var(--muted); font-family: var(--mono); line-height: 1.5; }
+.slip-add-btn:hover { border-color: var(--accent); color: var(--text); }
+.slip-add-btn.over.on, .slip-add-btn.yes.on { background: color-mix(in srgb, var(--over) 18%, transparent); border-color: var(--over); color: var(--over); }
+.slip-add-btn.under.on { background: color-mix(in srgb, var(--under) 18%, transparent); border-color: var(--under); color: var(--under); }
+.prop-card .slip-add { margin-top: 6px; }
+.prop-card .slip-add-btn { padding: 3px 10px; font-size: 12.5px; }
+.slip-pill { position: fixed; right: 18px; bottom: 18px; z-index: 45; background: var(--accent-2); color: #fff; border: 0; border-radius: 999px; padding: 9px 16px; font-size: 13px; box-shadow: 0 8px 24px rgba(0,0,0,0.35); }
+.slip-pill:hover { background: var(--accent); }
+.slip-pill.quiet { opacity: 0.85; }
+.is-phone .slip-pill { bottom: calc(72px + env(safe-area-inset-bottom)); right: 12px; }
+.slip-legs { display: flex; flex-direction: column; gap: 8px; }
+.slip-leg { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; background: var(--bg-2); border: 1px solid var(--border); border-radius: 8px; padding: 9px 11px; }
+.slip-pairs { margin-top: 12px; padding: 10px 12px; border: 1px dashed var(--border-2); border-radius: 8px; display: flex; flex-direction: column; gap: 4px; }
+.slip-save { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+.slip-save .input { flex: 1 1 180px; }
+.bets { display: flex; flex-direction: column; gap: 12px; }
+.bet { border: 1px solid var(--border); border-left: 3px solid var(--border-2); border-radius: 8px; padding: 10px 12px; background: var(--bg-2); min-width: 0; overflow-x: auto; }
+.bet-hit { border-left-color: var(--over); }
+.bet-miss { border-left-color: var(--under); }
+.bet-push { border-left-color: var(--push); }
+.bet-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 6px; flex-wrap: wrap; }
+.bet-verdict { font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-left: 6px; }
+.bet-actions { display: flex; gap: 4px; }
