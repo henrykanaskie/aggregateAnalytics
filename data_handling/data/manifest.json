@@ -1,0 +1,286 @@
+{
+  "pbp": {
+    "status": "ok",
+    "rows": 1279628,
+    "cols": 372,
+    "seasons": [
+      1999,
+      2025
+    ],
+    "files": 27,
+    "mb": 320.0,
+    "note": "Play-by-play w/ EPA, WP, CPOE, xpass. ~370 cols. The backbone."
+  },
+  "schedules": {
+    "status": "ok",
+    "rows": 7548,
+    "cols": 46,
+    "seasons": [
+      1999,
+      2026
+    ],
+    "files": 28,
+    "mb": 0.9,
+    "note": "Games + spread_line, total_line, moneylines, rest, roof, surface, temp, wind, starting QB ids, coaches, referee."
+  },
+  "snap_counts": {
+    "status": "ok",
+    "rows": 324611,
+    "cols": 16,
+    "seasons": [
+      2013,
+      2025
+    ],
+    "files": 13,
+    "mb": 3.1,
+    "note": "Offense/defense/ST snap counts and pct. Foundation of role."
+  },
+  "depth_charts": {
+    "status": "ok",
+    "rows": 1908677,
+    "cols": 15,
+    "seasons": [
+      2001,
+      2026
+    ],
+    "files": 26,
+    "mb": 10.6,
+    "note": "Nominal role. Weaker than snap share -- use as fallback."
+  },
+  "rosters_weekly": {
+    "status": "ok",
+    "rows": 906378,
+    "cols": 36,
+    "seasons": [
+      2002,
+      2025
+    ],
+    "files": 24,
+    "mb": 9.3,
+    "note": "Who was actually on the roster that week."
+  },
+  "player_stats_week": {
+    "status": "ok",
+    "rows": 476159,
+    "cols": 150,
+    "seasons": [
+      1999,
+      2025
+    ],
+    "files": 27,
+    "mb": 15.7,
+    "note": "Weekly player box score + fantasy points."
+  },
+  "team_stats_week": {
+    "status": "ok",
+    "rows": 14531,
+    "cols": 138,
+    "seasons": [
+      1999,
+      2025
+    ],
+    "files": 27,
+    "mb": 2.8,
+    "note": "Weekly team box score."
+  },
+  "ff_opportunity": {
+    "status": "ok",
+    "rows": 112297,
+    "cols": 159,
+    "seasons": [
+      2006,
+      2025
+    ],
+    "files": 20,
+    "mb": 17.9,
+    "note": "EXPECTED fantasy points from opportunity. Directly implements the 'opportunity beats efficiency' principle."
+  },
+  "injuries": {
+    "status": "ok",
+    "rows": 90752,
+    "cols": 16,
+    "seasons": [
+      2009,
+      2025
+    ],
+    "files": 17,
+    "mb": 1.6,
+    "note": "Official practice participation (DNP/Limited/Full) + game status. Structured, leakage-safe, historical."
+  },
+  "ngs_passing": {
+    "status": "ok",
+    "rows": 5933,
+    "cols": 29,
+    "seasons": [
+      2016,
+      2025
+    ],
+    "files": 10,
+    "mb": 0.7,
+    "note": "Time to throw, aggressiveness, CPOE."
+  },
+  "ngs_receiving": {
+    "status": "ok",
+    "rows": 14731,
+    "cols": 23,
+    "seasons": [
+      2016,
+      2025
+    ],
+    "files": 10,
+    "mb": 1.0,
+    "note": "Separation, cushion, YAC over expected."
+  },
+  "ngs_rushing": {
+    "status": "ok",
+    "rows": 6059,
+    "cols": 22,
+    "seasons": [
+      2016,
+      2025
+    ],
+    "files": 10,
+    "mb": 0.4,
+    "note": "Rush yards over expected (RYOE), 8+ defenders in box."
+  },
+  "pfr_pass": {
+    "status": "ok",
+    "rows": 5424,
+    "cols": 24,
+    "seasons": [
+      2018,
+      2025
+    ],
+    "files": 8,
+    "mb": 0.2,
+    "note": "PRESSURE RATE allowed/generated. Tier-1 feature."
+  },
+  "pfr_rush": {
+    "status": "ok",
+    "rows": 18461,
+    "cols": 16,
+    "seasons": [
+      2018,
+      2025
+    ],
+    "files": 8,
+    "mb": 0.3,
+    "note": "Yards before/after contact, broken tackles."
+  },
+  "pfr_rec": {
+    "status": "ok",
+    "rows": 35724,
+    "cols": 17,
+    "seasons": [
+      2018,
+      2025
+    ],
+    "files": 8,
+    "mb": 0.4,
+    "note": ""
+  },
+  "pfr_def": {
+    "status": "ok",
+    "rows": 62345,
+    "cols": 29,
+    "seasons": [
+      2018,
+      2025
+    ],
+    "files": 8,
+    "mb": 1.4,
+    "note": "Pressures, blitzes, missed tackles."
+  },
+  "ftn_charting": {
+    "status": "ok",
+    "rows": 185215,
+    "cols": 29,
+    "seasons": [
+      2022,
+      2025
+    ],
+    "files": 4,
+    "mb": 1.3,
+    "note": "Manual charting: play action, screen, RPO, motion, blitz. Short history -- 2022+ only."
+  },
+  "participation": {
+    "status": "ok",
+    "rows": 478989,
+    "cols": 27,
+    "seasons": [
+      2016,
+      2025
+    ],
+    "files": 10,
+    "mb": 20.0,
+    "note": "Personnel groupings + who was on the field. NFL stopped supplying this after 2023; treat as a closed archive."
+  },
+  "draft_picks": {
+    "status": "ok",
+    "rows": 7154,
+    "cols": 36,
+    "seasons": [
+      1999,
+      2026
+    ],
+    "files": 28,
+    "mb": 0.7,
+    "note": "Draft capital -- strong prior for players with <2 seasons."
+  },
+  "combine": {
+    "status": "ok",
+    "rows": 8968,
+    "cols": 18,
+    "seasons": [
+      2000,
+      2026
+    ],
+    "files": 27,
+    "mb": 0.5,
+    "note": ""
+  },
+  "officials": {
+    "status": "ok",
+    "rows": 21900,
+    "cols": 9,
+    "seasons": [
+      2015,
+      2025
+    ],
+    "files": 11,
+    "mb": 0.2,
+    "note": "Referee assignment. Penalty rate varies by crew."
+  },
+  "players": {
+    "status": "ok",
+    "rows": 25066,
+    "cols": 39,
+    "seasons": null,
+    "mb": 2.2,
+    "note": "Player master incl. birthdate -> AGE, which you need."
+  },
+  "teams": {
+    "status": "ok",
+    "rows": 36,
+    "cols": 16,
+    "seasons": null,
+    "mb": 0.0,
+    "note": ""
+  },
+  "contracts": {
+    "status": "ok",
+    "rows": 52120,
+    "cols": 26,
+    "seasons": null,
+    "mb": 18.0,
+    "note": "For testing the contract-year hypothesis. Expect it to fail."
+  },
+  "trades": {
+    "status": "ok",
+    "rows": 4975,
+    "cols": 11,
+    "seasons": null,
+    "mb": 0.1,
+    "note": ""
+  }
+}
